@@ -10,12 +10,14 @@ from starburst.event_sources.sched_tick_event_source import SchedTickEventSource
 from starburst.scheduler.starburst_scheduler import StarburstScheduler
 from starburst.utils.event_logger import SimpleEventLogger
 
-logging.basicConfig(level=logging.DEBUG,
+logging.basicConfig(level=logging.DEBUG, #CRITICAL or INFO
                     format='%(asctime)s | %(levelname)-6s | %(name)-40s || %(message)s',
                     datefmt='%m-%d %H:%M:%S'
                     )
 
 logger = logging.getLogger(__name__)
+
+# TODO: Resolve local logs from being overriden by logs of imported packages (e.g. kubeflow)
 
 # Job submission parameters
 GRPC_PORT = 10000

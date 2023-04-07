@@ -8,6 +8,9 @@ from kubernetes.client import models
 
 from starburst.types.job import Job
 
+# TODO: Resolve TFJob logs from overriding starburst logs initialized in main_driver.py
+import starburst.utils.tf_job as TFJob
+
 logger = logging.getLogger(__name__)
 
 
@@ -61,8 +64,13 @@ class KubernetesManager(object):
         nodes = self.core_v1.list_node()
         node_res = {}
         for node in nodes.items:
+            cpu_val = node.status.allocatable["cpu"]
+            if cpu_val[-1].isdigit():
+                cpu_val = int(cpu_val)
+            else: 
+                cpu_val = int(cpu_val[:-1])
             node_res[node.metadata.name] = {
-                "cpu": int(node.status.allocatable["cpu"]),
+                "cpu": cpu_val, #int(node.status.allocatable["cpu"]),
                 "memory": int(node.status.allocatable["memory"][:-2]),
                 "gpu": int(node.status.allocatable.get("nvidia.com/gpu", 0)),
             }
@@ -81,20 +89,25 @@ class KubernetesManager(object):
 
     def submit_job(self, job: Job):
         """ Submit a YAML which contains the Kubernetes Job declaration using the batch api"""
+
         job.job_submit_time = time.time()
         # Parse the YAML file into a dictionary
         job_dict = yaml.safe_load(job.job_yaml)
+        
+        if job_dict['kind'] == "TFJob":
+            #TFJob.submit_tf_job()
+            return
+        else: 
+            # Create a Kubernetes job object from the dictionary
+            k8s_job = models.V1Job()
+            # Append random string to job name to avoid name collision
+            k8s_job.metadata = models.V1ObjectMeta(name=job_dict['metadata']['name'] + '-' + job.job_id)
+            k8s_job.spec = models.V1JobSpec(template=job_dict['spec']['template'])
 
-        # Create a Kubernetes job object from the dictionary
-        k8s_job = models.V1Job()
-        # Append random string to job name to avoid name collision
-        k8s_job.metadata = models.V1ObjectMeta(name=job_dict['metadata']['name'] + '-' + job.job_id)
-        k8s_job.spec = models.V1JobSpec(template=job_dict['spec']['template'])
-
-        self.batch_v1.create_namespaced_job(namespace="default", body=k8s_job)
-
+            self.batch_v1.create_namespaced_job(namespace="default", body=k8s_job)
 
     def get_job_status(self, job_name):
         """ Get job status. """
         job = self.batch_v1.read_namespaced_job_status(job_name, namespace="default")
         return job.status
+    

@@ -3,7 +3,7 @@
 A hybrid cloud scheduler that enables you to run your k8s workloads on-prem and in the cloud.
 
 # Quickstart
-0. `pip install -e . && pip install -r requirements.txt`
+0. ``pip3 install -e . && pip3 install -r requirements.txt``
 1. Setup your k8s clusters. These can be either GKE clusters or setup locally for quick debug. Here I'll setup two k8s clusters locally on my laptop. 
    ```console
    # This creates two clusters on your laptop
@@ -13,11 +13,11 @@ A hybrid cloud scheduler that enables you to run your k8s workloads on-prem and 
    After you have done this, make sure they show up in `kubectl config get-contexts`.
 2. Once you have your two k8s clusters ready, run Starburst:
    ```console
-   python -m starburst.drivers.main_driver --policy fifo_onprem_only
+   python3 -m starburst.drivers.main_driver --policy fifo_onprem_only
    ```
 3. You can now submit k8s jobs to starburst. We have an example job in `examples/example_job.yaml`. In a new terminal, submit the job to starburst.
    ```console
-   python -m starburst.drivers.submit_job --job-yaml examples/example_job.yaml
+   python3 -m starburst.drivers.submit_job --job-yaml examples/example_job.yaml
    ```
 4. If you have chosen the `fifo_onprem_only` policy, your job should now be running on the onprem cluster! 🥳 You should see an output like:
     ```console
