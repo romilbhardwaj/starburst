@@ -6,7 +6,6 @@ from starburst.event_sources.grpc.protogen import job_submit_pb2_grpc, job_submi
 
 DEFAULT_IP = 'localhost'
 DEFAULT_PORT = 10000
-JOB_YAML_PATH = 'examples/example_job.yaml'
 
 def parseargs():
     parser = argparse.ArgumentParser(description='Starburst Job Submission client that sends jobs to the scheduler.')
@@ -16,13 +15,14 @@ def parseargs():
     args = parser.parse_args()
     return args
 
-def run_client(ip, port):
+def run_client(ip, port, job_yaml_path):
     with grpc.insecure_channel(f'{ip}:{port}') as channel:
         stub = job_submit_pb2_grpc.JobSubmissionStub(channel)
         print("-------------- SubmitJob --------------")
         # Read the job yaml
-        with open(JOB_YAML_PATH, 'r') as f:
+        with open(job_yaml_path, 'r') as f:
             job_yaml = f.read()
+        print(job_yaml)
         ret = stub.SubmitJob(job_submit_pb2.JobMessage(JobYAML=job_yaml))
         print(f"Got retcode {ret.retcode}")
 
@@ -31,4 +31,4 @@ if __name__ == '__main__':
     logging.basicConfig()
     args = parseargs()
     logging.info(args)
-    run_client(args.ip, args.port)
+    run_client(args.ip, args.port, args.job_yaml)

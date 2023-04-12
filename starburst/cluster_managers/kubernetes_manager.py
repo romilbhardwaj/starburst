@@ -1,4 +1,5 @@
 import logging
+import re
 import time
 from typing import Dict, Optional
 
@@ -8,6 +9,7 @@ from kubernetes.client import models
 
 from starburst.types.job import Job
 
+client.rest.logger.setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
@@ -56,17 +58,66 @@ class KubernetesManager(object):
             total_res["gpu"] += int(node.status.allocatable.get("nvidia.com/gpu", 0))
         return total_res
 
+    @staticmethod
+    def parse_resource_cpu(resource_str):
+        """ Parse CPU string to cpu count. """
+        unit_map = {'m': 1e-3, 'K': 1e3}
+        value = re.search(r'\d+', resource_str).group()
+        unit = resource_str[len(value):]
+        return float(value) * unit_map.get(unit, 1)
+
+    @staticmethod
+    def parse_resource_memory(resource_str):
+        """ Parse resource string to megabytes. """
+        unit_map = {'Ki': 2 ** 10, 'Mi': 2 ** 20, 'Gi': 2 ** 30, 'Ti': 2 ** 40}
+        value = re.search(r'\d+', resource_str).group()
+        unit = resource_str[len(value):]
+        return float(value) * unit_map.get(unit, 1) / (
+                    2 ** 20)  # Convert to megabytes
+
     def get_allocatable_resources_per_node(self) -> Dict[str, Dict[str, int]]:
-        """ Get allocatable resources per node. """
-        nodes = self.core_v1.list_node()
-        node_res = {}
-        for node in nodes.items:
-            node_res[node.metadata.name] = {
-                "cpu": int(node.status.allocatable["cpu"]),
-                "memory": int(node.status.allocatable["memory"][:-2]),
-                "gpu": int(node.status.allocatable.get("nvidia.com/gpu", 0)),
+        # Get the nodes and running pods
+        nodes = self.core_v1.list_node().items
+        pods = self.core_v1.list_pod_for_all_namespaces(watch=False).items
+
+        # Initialize a dictionary to store available resources per node
+        available_resources = {}
+
+        for node in nodes:
+            name = node.metadata.name
+            total_cpu = self.parse_resource_cpu(node.status.allocatable['cpu'])
+            total_memory = self.parse_resource_memory(
+                node.status.allocatable['memory'])
+            total_gpu = int(node.status.allocatable.get('nvidia.com/gpu', 0))
+
+            used_cpu = 0
+            used_memory = 0
+            used_gpu = 0
+
+            for pod in pods:
+                if pod.spec.node_name == name and pod.status.phase in ['Running', 'Pending']:
+                    for container in pod.spec.containers:
+                        if container.resources.requests:
+                            used_cpu += self.parse_resource_cpu(
+                                container.resources.requests.get('cpu', '0m'))
+                            used_memory += self.parse_resource_memory(
+                                container.resources.requests.get('memory',
+                                                                 '0Mi'))
+                            used_gpu += int(container.resources.requests.get(
+                                'nvidia.com/gpu', 0))
+
+            available_cpu = total_cpu - used_cpu
+            available_memory = total_memory - used_memory
+            available_gpu = total_gpu - used_gpu
+
+            available_resources[name] = {
+                'cpu': available_cpu,
+                'memory': available_memory, # MB
+                'gpu': available_gpu
             }
-        return node_res
+
+        return available_resources
+
 
     def can_fit(self, job: Job) -> Optional[str]:
         """ Check if a job can fit in the cluster. """
@@ -81,7 +132,6 @@ class KubernetesManager(object):
 
     def submit_job(self, job: Job):
         """ Submit a YAML which contains the Kubernetes Job declaration using the batch api"""
-        job.job_submit_time = time.time()
         # Parse the YAML file into a dictionary
         job_dict = yaml.safe_load(job.job_yaml)
 
