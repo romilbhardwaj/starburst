@@ -18,7 +18,7 @@ def parseargs():
 
     return args
 
-def run_client(ip, port):
+def run_client(ip, port, job_yaml_path):
     with grpc.insecure_channel(f'{ip}:{port}') as channel:
         stub = job_submit_pb2_grpc.JobSubmissionStub(channel)
         print("-------------- SubmitJob --------------")
@@ -30,6 +30,7 @@ def run_client(ip, port):
         #else: 
         with open(args.job_yaml, 'r') as f:
             job_yaml = f.read()
+        print(job_yaml)
         ret = stub.SubmitJob(job_submit_pb2.JobMessage(JobYAML=job_yaml))
         print(f"Got retcode {ret.retcode}")
 
@@ -38,4 +39,4 @@ if __name__ == '__main__':
     logging.basicConfig()
     args = parseargs()
     logging.info(args)
-    run_client(args.ip, args.port)
+    run_client(args.ip, args.port, args.job_yaml)

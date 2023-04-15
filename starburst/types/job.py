@@ -21,4 +21,4 @@ class Job(object):
 
     def __repr__(self):
         return f"Job, name: {self.job_name}, submit: {self.job_submit_time}, start: {self.job_start_time}, " + \
-               f"end: {self.job_end_time}, yaml: {self.job_yaml}, resources: {self.resources}"
+               f"end: {self.job_end_time}, resources: {self.resources}"
