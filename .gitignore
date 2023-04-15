@@ -2,3 +2,4 @@
 /starburst/plots/*
 /starburst/utils/kube_logging/kube-state-metrics-configs
 /starburst/utils/kube_logging/prometheus
+/examples/sampled/sampled_job.yaml

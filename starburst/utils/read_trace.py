@@ -86,5 +86,7 @@ def plot_trace_spacetime_and_spillover(jobs, num_nodes):
     plt.ylim(bottom=1)  #, #top=total_gpus + 1)
     plt.xlim(right=1.1 * max_arrival)
     plt.axvline(x=max_arrival, color='black', linewidth=5)
-    plt.tight_layout()
+    #plt.tight_layout()
+    plt.xlabel('Time')
+    plt.ylabel('Nodes')
     plt.show()
