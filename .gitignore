@@ -1,2 +1,4 @@
 /local
 /starburst/plots/*
+/starburst/utils/kube_logging/kube-state-metrics-configs
+/starburst/utils/kube_logging/prometheus
