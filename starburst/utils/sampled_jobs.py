@@ -56,8 +56,8 @@ def arrival_times(num_jobs):
 	plt.savefig('../plots/arrival_times.png')
 	return times
 
-def start_scheduler(policy = "fifo_onprem_only", onprem_cluster="gke_sky-burst_us-central1-c_starburst"):
-	os.system('python3 -m starburst.drivers.main_driver --policy {} --onprem_k8s_cluster_name {}'.format(policy, onprem_cluster))	
+def start_scheduler(policy="fifo_onprem_only", onprem_cluster="gke_sky-burst_us-central1-c_starburst", cloud_cluster="gke_sky-burst_us-central1-c_starburst-cloud"):
+	os.system('python3 -m starburst.drivers.main_driver --policy {} --onprem_k8s_cluster_name {} --cloud_k8s_cluster_name {}'.format(policy, onprem_cluster, cloud_cluster))	
 
 def submit_jobs(arrival_times, timeout): 
 	""" Submits a a default job for each time stamp of the inputed arrival times """
@@ -134,7 +134,7 @@ def pod_data():
 
 def main():
 	times = arrival_times(10)
-	start_scheduler(policy="")
+	#start_scheduler(policy="fifo_wait")
 	submit_jobs(times, 30)
 
 if __name__ == '__main__':
