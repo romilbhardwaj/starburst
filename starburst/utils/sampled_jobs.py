@@ -70,7 +70,7 @@ def submit_jobs(arrival_times, timeout):
 			job += 1
 			print(job)
 			job_duration = np.random.normal(10, 3) #exponential(scale=10)
-			cpus = 0.1 #min(0, int(np.random.exponential(scale=3)))
+			cpus = 0.2 #min(0, int(np.random.exponential(scale=3)))
 			gpus = min(0, int(np.random.exponential(scale=2)))
 			memory = min(0, int(np.random.exponential(scale=50)))
 			job_workload = {"gpu": gpus, "cpu":cpus, "memory":memory}

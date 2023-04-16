@@ -12,6 +12,8 @@ from starburst.event_sources.grpc.protogen import job_submit_pb2
 from starburst.types.events import JobAddEvent
 from starburst.types.job import Job
 
+import yaml
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,12 +30,20 @@ class JobSubmissionServicer(job_submit_pb2_grpc.JobSubmissionServicer):
                        request: job_submit_pb2.JobMessage,
                        context):
         # Update this to fill in resources using JobMessage.
+        #print(request)
+        #print(request.JobYAML)
+        #print(type(request.JobYAML))
+        job_dict = yaml.safe_load(request.JobYAML)
+        #print(job_dict)
+        #print(job_dict['spec']['template']['spec']['containers'][0]['resources']['limits']['cpu'])
         job = Job(job_name="MyJob",
                   job_submit_time=time.time(),
                   job_start_time=0,
                   job_end_time=0,
                   job_yaml=request.JobYAML,
-                  resources={'cpu': 1})
+                  #request.JobYAML
+                  #request.cpu
+                  resources={'cpu': job_dict['spec']['template']['spec']['containers'][0]['resources']['limits']['cpu']}) #1})
         event = JobAddEvent(job, timestamp=time.time())
         self.event_queues.put_nowait(event)
         if self.debug_mode:

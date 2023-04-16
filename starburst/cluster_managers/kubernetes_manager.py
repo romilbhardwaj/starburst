@@ -122,7 +122,6 @@ class KubernetesManager(object):
 
         return available_resources
 
-
     def can_fit(self, job: Job) -> Optional[str]:
         """ Check if a job can fit in the cluster. """
         job_resources = job.resources

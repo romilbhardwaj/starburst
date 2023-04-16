@@ -65,7 +65,7 @@ class FIFOWaitPolicy(BasePolicy):
     def __init__(self,
                  onprem_manager: KubernetesManager,
                  cloud_manager: KubernetesManager,
-                 wait_threshold: int = 60):
+                 wait_threshold: int = 5):
         self.wait_threshold = wait_threshold
         super().__init__(onprem_manager, cloud_manager)
 
