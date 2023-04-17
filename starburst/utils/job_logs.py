@@ -8,6 +8,7 @@ import time
 import json
 import re
 import copy
+import os 
 
 # TODO: Integrate kubecost or GCP calculator
 # TODO: Include accurate cloud specific costs (e.g. network, disk, instance type)
@@ -459,6 +460,30 @@ def write_cluster_event_data(event_data=event_data):
 	Normal  Created    52m   kubelet            Created container sleep
 	Normal  Started    52m   kubelet            Started container sleep
 	'''
+	# TODO: Write experiment metadata to job events metadata
+
+	# TODO: Move existing logs to archive
+	existing_log_path = "../logs/event_data.json"
+	archive_path = "../logs/archive/"
+
+	# Get a list of all files in the current directory
+	log_path = "../logs/"
+	files = os.listdir(log_path)
+
+	# Iterate over the files and check if they have the ".json" extension
+	for file in files:
+		if file.endswith(".json"):
+			existing_log_path = str(file)
+			os.rename(log_path + existing_log_path, archive_path + existing_log_path)
+
+	'''
+	if os.path.exists(existing_log_path):
+		if not os.path.exists(archive_path):
+			os.mkdir(archive_path)
+		os.rename(existing_log_path, archive_path + "event_data_" + str(int(datetime.datetime.now().timestamp())))
+	'''
+
+	current_log_path = "../logs/event_data_" + str(int(datetime.datetime.now().timestamp())) + ".json"
 
 	# Load the Kubernetes configuration from the default location
 	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst")
@@ -544,6 +569,6 @@ def write_cluster_event_data(event_data=event_data):
 							event_data['job_completion_times'][job_name] = int(job_completion_time.timestamp())
 					
 
-		with open("../logs/event_data.json", "w") as f:
+		with open(current_log_path, "w") as f: #"../logs/event_data.json", "w") as f:
 			json.dump(cluster_event_data, f)
 	return 0 
