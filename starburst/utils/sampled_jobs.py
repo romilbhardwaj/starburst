@@ -114,24 +114,6 @@ def generate_sampled_job_yaml(job_id=0, arrival_time=0, sleep_time=5, workload={
 	job_yaml.close()
 	return 
 
-def pod_data():
-	# Load the Kubernetes configuration from the default location
-	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst")
-
-	# Create a Kubernetes API client
-	api = client.CoreV1Api()
-	#scheduler = main_driver.SCHEDULER
-	#scheduler = main_driver.starburst
-	#api = scheduler.onprem_cluster_manager.core_v1
-
-	# Get a list of all pods in the default namespace
-	while True: 
-		pod_list = api.list_namespaced_pod(namespace="default")
-		print(pod_list)
-		break
-
-	return
-
 def main():
 	times = arrival_times(10)
 	#start_scheduler(policy="fifo_wait")
