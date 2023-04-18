@@ -35,6 +35,7 @@ scheduled_nodes = {}
 job_creation_times = {}
 job_completion_times = {}
 job_pods = {}
+node_instances = {}
 
 event_data = {
 	'container_creation_times': container_creation_times,
@@ -44,7 +45,8 @@ event_data = {
 	'scheduled_nodes': scheduled_nodes,
 	'job_creation_times': job_creation_times,
 	'job_completion_times': job_completion_times,
-	'job_pods': job_pods
+	'job_pods': job_pods, 
+	'node_instances': node_instances
 }
 
 cluster_event_data = {
@@ -56,7 +58,7 @@ cluster_event_data = {
 onprem = PrometheusConnect(url="http://34.67.143.10:30000/", disable_ssl=True)
 cloud = PrometheusConnect(url="http://34.28.53.85:30000/", disable_ssl=True)
 
-def plot_docker_pull_time():
+def plot_docker_pull_time(event_data=None):
 	# TODO: Store docker pull time
 	'''
 	Outputs: 
@@ -84,7 +86,34 @@ def plot_docker_pull_time():
 	(6) Grafana Agent: https://www.cncf.io/blog/2023/03/13/how-to-use-kubernetes-events-for-effective-alerting-and-monitoring/ 
 	(x) Something else
 	'''
-	return 0 
+	image_pull_times = []
+	if event_data: 
+		clusters = {"onprem": event_data['onprem'], "cloud": event_data['cloud']}
+	for type in clusters: 
+		cluster = clusters[type]
+		if cluster is not None: 
+			# TODO: Plot all pods running on the same node together
+			'''
+			Parse `kube_pod_info` --> if node name is not found, then pod not scheduled onto a node
+			'''
+			image_pull_start_times = cluster['image_pull_start_times']
+			image_pull_end_times = cluster['image_pull_end_times']
+			print(image_pull_start_times)
+			print(image_pull_end_times)
+			
+			for pod in image_pull_start_times: 
+				image_pull_time = image_pull_end_times[pod] - image_pull_start_times[pod]
+				image_pull_times.append(image_pull_time)
+	
+	fig, ax = plt.subplots()
+	ax.hist(image_pull_times, bins=5)
+
+	plt.xlabel('Image Pull Time (Seconds)')
+	plt.ylabel('Frequency')
+	
+	plt.show()
+
+	return image_pull_times
 
 def plot_instance_run_time():
 	# TODO: 
@@ -128,7 +157,7 @@ def average_job_running_time(jobs):
 def average_jct():
 	return average_job_running_time() + average_waiting_time()
 
-def cloud_cost(jobs, num_nodes): 
+def cloud_cost(event_data):#jobs, num_nodes): 
 	# TODO: Compute steady state value i.e. remove cloud cost from first X and last X jobs
 	# TODO: Compute total value i.e. beg to end simulation cost --> compute start and end time for each node
 	arrivals = jobs['arrival']
@@ -407,7 +436,7 @@ def increase_ttl():
 
 def retrieve_pod_data():
 	# Load the Kubernetes configuration from the default location
-	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst")
+	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst-cloud")
 
 	# Create a Kubernetes API client
 	api = client.CoreV1Api()
@@ -419,6 +448,19 @@ def retrieve_pod_data():
 		break
 	return
 
+def retrieve_node_instance(api):
+	#config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst")
+	#api = client.CoreV1Api()
+	node_list = api.list_node().items
+	instance_types = {}
+	for node_data in node_list:
+		node_name = node_data.metadata.name
+		for label, value in node_data.metadata.labels.items(): 
+			if label == "node.kubernetes.io/instance-type":
+				instance_types[node_name] = value
+				break 
+	return instance_types
+
 def retrieve_raw_events():
 	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst")
 	api = client.CoreV1Api()
@@ -427,9 +469,20 @@ def retrieve_raw_events():
 	n = text_file.write(str(events))
 	text_file.close()
 
-def read_cluster_event_data():
-	with open("../logs/event_data.json", "r") as f:
+def read_cluster_event_data(log_path=None):
+	if not log_path: 
+		log_path = "../logs/"
+		files = os.listdir(log_path)
+
+		# Iterate over the files and check if they have the ".json" extension
+		for file in files:
+			if file.endswith(".json"):
+				log_path = log_path + str(file)
+				break 
+
+	with open(log_path, "r") as f: #"../logs/event_data.json", "r") as f:
 		loaded_data = json.load(f)
+
 	return loaded_data
 
 def write_cluster_event_data(event_data=event_data):
@@ -493,6 +546,15 @@ def write_cluster_event_data(event_data=event_data):
 	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst-cloud")
 	cloud_api = client.CoreV1Api()
 
+	'''
+	clusters = {"onprem": onprem_api, "cloud": cloud_api}
+	for type in clusters: 
+		api = clusters[type]
+		instances = retrieve_node_instance(api)
+		event_data = cluster_event_data[type]
+		event_data['node_instances'] = instances
+	'''
+
 	# Get a list of all pods in the default namespace
 	while True: 
 		# Retrieve data each minute 
@@ -507,6 +569,8 @@ def write_cluster_event_data(event_data=event_data):
 				# TODO: Determine what to do with message data - item.message
 				# TODO: Set TTL value to 30 days
 				# TODO: Store events outside the cluster etcd database
+				instances = retrieve_node_instance(api)
+				event_data['node_instances'] = instances
 				
 				for item in events.items:
 					event_reason = item.reason
@@ -568,7 +632,6 @@ def write_cluster_event_data(event_data=event_data):
 							job_completion_time = item.first_timestamp
 							event_data['job_completion_times'][job_name] = int(job_completion_time.timestamp())
 					
-
 		with open(current_log_path, "w") as f: #"../logs/event_data.json", "w") as f:
 			json.dump(cluster_event_data, f)
 	return 0 
