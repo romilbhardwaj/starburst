@@ -14,6 +14,10 @@ import os
 # TODO: Include accurate cloud specific costs (e.g. network, disk, instance type)
 # TODO: Submit cloud quotas requests
 
+GCP_PRICES = {
+	"e2-medium": 0.038795
+}
+
 AWS_PRICES = {
 	"vCPU": 0.05,
 	"V100": 2.66,
@@ -160,6 +164,8 @@ def average_jct():
 def cloud_cost(jobs, num_nodes):
 	# TODO: Compute steady state value i.e. remove cloud cost from first X and last X jobs
 	# TODO: Compute total value i.e. beg to end simulation cost --> compute start and end time for each node
+
+	'''
 	arrivals = jobs['arrival']
 	runtimes = jobs['runtime']
 	terminations = arrivals + runtimes
@@ -167,7 +173,18 @@ def cloud_cost(jobs, num_nodes):
 	end_time = max(terminations)
 	total_time = end_time - start_time
 	cost = AWS_PRICES['vCPU'] * total_time/60
-	return cost * num_nodes
+	'''
+
+	cost = 0 
+	instance_types = jobs['instance_type']
+	runtimes = jobs['runtime']
+	for i in range(len(runtimes)): 
+		runtime = runtimes[i]
+		instance_type = instance_types[i]
+		instance_cost = GCP_PRICES[instance_type]
+		cost += runtime * instance_cost
+
+	return cost
 
 def plot_job_intervals(jobs, num_nodes):
 	read_trace.plot_trace_spacetime_and_spillover(jobs, num_nodes)
@@ -314,14 +331,16 @@ def parse_prometheus_logs(onprem=onprem, cloud=cloud):
 	jobs['start'] = [i - min_arrival if i is not None else None for i in jobs['start']]
 	return jobs, len(all_nodes)
 
-def parse_event_logs(onprem_event_logs = None, cloud_event_logs = None):
+def parse_event_logs(cluster_event_data):#onprem_event_logs = None, cloud_event_logs = None):
 		# TODO: Plot cloud and onprem cluster jobs together
 	job_names = {}
-	jobs = {'idx':[], 'runtime':[], 'arrival':[], 'num_gpus':[], 'allocated_gpus':[], 'start':[]}
+	jobs = {'idx':[], 'runtime':[], 'arrival':[], 'num_gpus':[], 'allocated_gpus':[], 'start':[], 'instance_type':[]}
 
 	all_nodes = set()
 	nodes = {}
 	node_id = 0
+	onprem_event_logs = cluster_event_data['onprem']
+	cloud_event_logs = cluster_event_data['cloud']
 
 	#clusters = {"onprem": onprem, "cloud": cloud}
 	clusters = {"onprem": onprem_event_logs, "cloud": cloud_event_logs}
@@ -337,6 +356,7 @@ def parse_event_logs(onprem_event_logs = None, cloud_event_logs = None):
 			end_times = cluster['job_completion_times']
 			pod_nodes = cluster['scheduled_nodes']
 			job_pods = cluster['job_pods']
+			node_instances = cluster['node_instances']
 
 			pod_start_times = {}
 			pod_end_times = {}
@@ -392,6 +412,7 @@ def parse_event_logs(onprem_event_logs = None, cloud_event_logs = None):
 					jobs['start'].append(None)
 				else:
 					jobs['start'].append(value[0])
+				jobs['instance_type'].append(node_instances[pod_nodes[job_pods[key]]])
 		
 	min_arrival = min(jobs['arrival'])
 	jobs['arrival'] = [i - min_arrival for i in jobs['arrival']]
