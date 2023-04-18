@@ -157,7 +157,7 @@ def average_job_running_time(jobs):
 def average_jct():
 	return average_job_running_time() + average_waiting_time()
 
-def cloud_cost(event_data):#jobs, num_nodes): 
+def cloud_cost(jobs, num_nodes):
 	# TODO: Compute steady state value i.e. remove cloud cost from first X and last X jobs
 	# TODO: Compute total value i.e. beg to end simulation cost --> compute start and end time for each node
 	arrivals = jobs['arrival']
