@@ -61,7 +61,8 @@ def plot_trace_spacetime_and_spillover(jobs, num_nodes):
                     height=jobs['num_gpus'][j_idx],
                     left=segment[0],
                     align='edge',
-                    color=colors[jobs['idx'][j_idx]])
+                    color=colors[jobs['idx'][j_idx]],
+                    alpha = 0.5)
         else:
             for node_idx in allocated_gpus.keys():
                 for node_gpu_idx in allocated_gpus[node_idx]:
@@ -75,7 +76,8 @@ def plot_trace_spacetime_and_spillover(jobs, num_nodes):
                             height=1.0,
                             left=jobs['start'][j_idx],
                             align='edge',
-                            color=colors[jobs['idx'][j_idx]])
+                            color=colors[jobs['idx'][j_idx]],
+                            alpha = 0.5)
     for i in range(total_gpus + 1):
         multiplier = math.ceil(num_nodes / 32)
         if (i + 1) % GPUS_PER_NODE == 1:
