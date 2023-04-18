@@ -179,7 +179,7 @@ def cloud_cost(jobs, num_nodes):
 	instance_types = jobs['instance_type']
 	runtimes = jobs['runtime']
 	for i in range(len(runtimes)): 
-		runtime = runtimes[i]
+		runtime = runtimes[i] / (60 * 60)
 		instance_type = instance_types[i]
 		instance_cost = GCP_PRICES[instance_type]
 		cost += runtime * instance_cost
