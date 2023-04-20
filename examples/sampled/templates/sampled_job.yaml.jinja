@@ -8,4 +8,5 @@ spec:
       containers: 
       - name: sleep
         image: alpine:latest
+        imagePullPolicy: Always
         command: ["sleep", "{{time}}"]
