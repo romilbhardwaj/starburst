@@ -38,6 +38,10 @@ class Job(object):
 GPUS_PER_NODE = 1
 
 def plot_trace_spacetime_and_spillover(jobs, num_nodes):
+    # TODO: Modify function to plot CPU jobs --> number of jobs concurrently running may exceed cpu count
+    '''
+    Create "threads index" that track CPU jobs running together
+    '''
     jobs = jobs.copy()
     NUM_COLORS = len(jobs['idx'])
     cm = plt.get_cmap('gist_rainbow')
