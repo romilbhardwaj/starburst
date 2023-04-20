@@ -62,6 +62,35 @@ cluster_event_data = {
 onprem = PrometheusConnect(url="http://34.67.143.10:30000/", disable_ssl=True)
 cloud = PrometheusConnect(url="http://34.28.53.85:30000/", disable_ssl=True)
 
+def event_data_dict():
+	container_creation_times = {}
+	container_start_times = {}
+	image_pull_start_times = {}
+	image_pull_end_times = {}
+	scheduled_nodes = {}
+	job_creation_times = {}
+	job_completion_times = {}
+	job_pods = {}
+	node_instances = {}
+
+	event_data = {
+		'container_creation_times': container_creation_times,
+		'container_start_times': container_start_times,
+		'image_pull_start_times': image_pull_start_times,
+		'image_pull_end_times': image_pull_end_times,
+		'scheduled_nodes': scheduled_nodes,
+		'job_creation_times': job_creation_times,
+		'job_completion_times': job_completion_times,
+		'job_pods': job_pods, 
+		'node_instances': node_instances
+	}
+
+	cluster_event_data = {
+		'onprem': copy.deepcopy(event_data),
+		'cloud': copy.deepcopy(event_data)
+	}
+	return cluster_event_data
+
 def plot_docker_pull_time(event_data=None):
 	# TODO: Store docker pull time
 	'''
@@ -334,7 +363,7 @@ def parse_prometheus_logs(onprem=onprem, cloud=cloud):
 def parse_event_logs(cluster_event_data):#onprem_event_logs = None, cloud_event_logs = None):
 		# TODO: Plot cloud and onprem cluster jobs together
 	job_names = {}
-	jobs = {'idx':[], 'runtime':[], 'arrival':[], 'num_gpus':[], 'allocated_gpus':[], 'start':[], 'instance_type':[]}
+	jobs = {'idx':[], 'runtime':[], 'arrival':[], 'num_gpus':[], 'allocated_gpus':[], 'start':[], 'instance_type':[], 'node': []}
 
 	all_nodes = set()
 	nodes = {}
@@ -407,12 +436,23 @@ def parse_event_logs(cluster_event_data):#onprem_event_logs = None, cloud_event_
 				jobs['runtime'].append(value[1] - value[0])
 				jobs['arrival'].append(value[0])
 				jobs['num_gpus'].append(1)
-				jobs['allocated_gpus'].append({nodes[pod_nodes[job_pods[key]]]: [1]})
+				#if key in job_pods:
+				if job_pods[key] in pod_nodes:
+					jobs['allocated_gpus'].append({nodes[pod_nodes[job_pods[key]]]: [1]})
+				else: 
+					jobs['allocated_gpus'].append({})
 				if type == "cloud":
 					jobs['start'].append(None)
 				else:
 					jobs['start'].append(value[0])
-				jobs['instance_type'].append(node_instances[pod_nodes[job_pods[key]]])
+				if job_pods[key] in pod_nodes:
+					jobs['node'].append(pod_nodes[job_pods[key]])
+				else: 
+					jobs['node'].append("unknown")
+				if job_pods[key] in pod_nodes:
+					jobs['instance_type'].append(node_instances[pod_nodes[job_pods[key]]])
+				else: 
+					jobs['instance_type'].append("unknown")
 		
 	min_arrival = min(jobs['arrival'])
 	jobs['arrival'] = [i - min_arrival for i in jobs['arrival']]
@@ -506,7 +546,7 @@ def read_cluster_event_data(log_path=None):
 
 	return loaded_data
 
-def write_cluster_event_data(event_data=event_data):
+def write_cluster_event_data(event_data=event_data, tag=None):
 	'''
 	Outputs: 
 	(1) Store relevant event data in a dictionary continously to disk
@@ -536,8 +576,9 @@ def write_cluster_event_data(event_data=event_data):
 	'''
 	# TODO: Write experiment metadata to job events metadata
 
+	#existing_log_path = "../logs/event_data.json"
+
 	# TODO: Move existing logs to archive
-	existing_log_path = "../logs/event_data.json"
 	archive_path = "../logs/archive/"
 
 	# Get a list of all files in the current directory
@@ -557,7 +598,10 @@ def write_cluster_event_data(event_data=event_data):
 		os.rename(existing_log_path, archive_path + "event_data_" + str(int(datetime.datetime.now().timestamp())))
 	'''
 
-	current_log_path = "../logs/event_data_" + str(int(datetime.datetime.now().timestamp())) + ".json"
+	if tag: 
+		current_log_path = "../logs/event_data_" + tag + "_" + str(int(datetime.datetime.now().timestamp())) + ".json"
+	else: 
+		current_log_path = "../logs/event_data_" + str(int(datetime.datetime.now().timestamp())) + ".json"
 
 	# Load the Kubernetes configuration from the default location
 	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst")
@@ -655,4 +699,5 @@ def write_cluster_event_data(event_data=event_data):
 					
 		with open(current_log_path, "w") as f: #"../logs/event_data.json", "w") as f:
 			json.dump(cluster_event_data, f)
+	
 	return 0 
