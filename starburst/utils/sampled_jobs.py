@@ -95,9 +95,9 @@ def submit_jobs(num_jobs=10, arrival_rate=0.5, sleep_mean=10, timeout=60, plot_a
 			os.system('python3 -m starburst.drivers.submit_job --job-yaml ../../examples/sampled/sampled_job.yaml')	
 		elif curr_time >= start_time + timeout:
 			break
-		with open("cpu_workload.json", "w") as f:
+		with open("../logs/cpu/cpu_workload.json", "w") as f:
 			json.dump(job_cpu_size, f)
-		with open("sleep_time.json", "w") as f:
+		with open("../logs/sleep/sleep_time.json", "w") as f:
 			json.dump(job_sleep_time, f)
 
 def generate_sampled_job_yaml(job_id=0, arrival_time=0, sleep_time=5, workload={"cpu": 0, "memory": 0, "gpu": 0}):
