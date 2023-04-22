@@ -78,9 +78,21 @@ class StarburstScheduler:
         """ Process an add job event. This is where you probably want to add job to your queue"""
         self.job_queue.append(event.job)
 
-    async def scheduler_loop(self):
+    async def scheduler_loop(self, queue, conn):
         """Main loop"""
         while True:
+            #while not queue.empty():
+            #    print("Clearing Process Queue...")
+            #    queue.get()
+            conn.send(self.job_queue)
+            #conn.close()
+            '''
+            if not queue.empty():
+                print("Clearing Process Queue...")
+                queue.get()
+            print("Current Job Queue" + str(self.job_queue))
+            queue.put(self.job_queue)
+            '''
             logger.debug("Waiting for event.")
 
             # Fetch event

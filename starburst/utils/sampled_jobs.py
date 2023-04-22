@@ -64,11 +64,11 @@ def submit_jobs(num_jobs=10, arrival_rate=0.5, sleep_mean=10, timeout=60, plot_a
 	cpu_size = [1, 2, 4]
 	cpu_dist = [0.2, 0.4, 0.4]
 
-	curr_time = 0
+	submit_time = 0
 	arrival_times = []
 	for i in range(num_jobs):
-		curr_time += np.random.exponential(scale=arrival_rate)#0.5)
-		arrival_times.append(curr_time)
+		submit_time += np.random.exponential(scale=arrival_rate)#0.5)
+		arrival_times.append(submit_time)
 
 	if plot_arrival_times: 
 		plt.eventplot(arrival_times)
@@ -79,6 +79,7 @@ def submit_jobs(num_jobs=10, arrival_rate=0.5, sleep_mean=10, timeout=60, plot_a
 
 	while True: 
 		curr_time = time.time()
+		#print("job submissions: " + str(start_time) + " " + str(curr_time) + " " + str(timeout))
 		if job < total_jobs and curr_time > arrival_times[job] + start_time: 
 			job += 1
 			#print(job)
@@ -94,7 +95,9 @@ def submit_jobs(num_jobs=10, arrival_rate=0.5, sleep_mean=10, timeout=60, plot_a
 			generate_sampled_job_yaml(job_id=job, sleep_time=job_duration, workload=job_workload)#10)
 			os.system('python3 -m starburst.drivers.submit_job --job-yaml ../../examples/sampled/sampled_job.yaml')	
 		elif curr_time >= start_time + timeout:
+			print("Time Out...")
 			break
+
 		with open("../logs/cpu/cpu_workload.json", "w") as f:
 			json.dump(job_cpu_size, f)
 		with open("../logs/sleep/sleep_time.json", "w") as f:
@@ -138,6 +141,7 @@ def generate_sampled_job_yaml(job_id=0, arrival_time=0, sleep_time=5, workload={
 def clear_logs():
 	# TODO: Automate log cleaning
 	# TODO: Remove logs and both onprem and cloud cluster
+	print("Started Clearing Logs...")
 
 	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst")
 	onprem_api = client.CoreV1Api()
@@ -153,6 +157,8 @@ def clear_logs():
 			namespace='default',  # Replace with the namespace where you want to delete the events
 			body=client.V1DeleteOptions(),
 		)
+	
+	print("Completed Clearing Logs...")
 
 def start_logs(tag=None):
 	# TODO: Run job_logs.write_cluster_event_data()
@@ -184,15 +190,16 @@ def empty_cluster():
 def hyperparameter_sweep():
 	# TODO: Vary and log jobs with different arrival rates
 	arrival_rates = [0.1, 0.2, 0.3, 0.4, 0.5]
-	driver.custom_start()
-	starburst, event_sources, event_loop = driver.custom_start(onprem_k8s_cluster_name="gke_sky-burst_us-central1-c_starburst",  cloud_k8s_cluster_name="gke_sky-burst_us-central1-c_starburst-cloud", policy="fifo_wait")
+	#driver.custom_start()
+	q = mp.Queue()
+	c1, c2 = mp.Pipe()
+	#starburst, event_sources, event_loop = driver.custom_start(onprem_k8s_cluster_name="gke_sky-burst_us-central1-c_starburst",  cloud_k8s_cluster_name="gke_sky-burst_us-central1-c_starburst-cloud", policy="fifo_wait")
 	#p0 = mp.Process(target=start_scheduler, args=("fifo_wait",))
 	#driver.start_events(starburst, event_sources, event_loop)
-	p0 = mp.Process(target=driver.custom_start, args=(10000, 1, "gke_sky-burst_us-central1-c_starburst","gke_sky-burst_us-central1-c_starburst-cloud","fifo_wait",))
+	p0 = mp.Process(target=driver.custom_start, args=(q, c2, 10000, 1, "gke_sky-burst_us-central1-c_starburst","gke_sky-burst_us-central1-c_starburst-cloud","fifo_wait",))
 	#p0 = mp.Process(target=driver.start_events, args=(starburst, event_sources, event_loop,))
 	#p2 = mp.Process(target=submit_jobs, args=(100, 0.5, 300, False))#(num_jobs=100, timeout=300, arrival_rate=ar,))
 	p0.start()
-
 	#p2.start()
 	#print("p2 reached")
 	#p0.join()
@@ -203,27 +210,66 @@ def hyperparameter_sweep():
 
 	#print("reached")
 	for ar in arrival_rates:
-		starburst = driver.starburst_scheduler
-		print(starburst)
-		while not (len(starburst.job_queues) == 0 and empty_cluster()): 
-			print("Waiting....")
+		#starburst = driver.starburst_scheduler
+		#print(starburst)
+		print("Job Queue:")
+		#print(q.get())
+		#clear_logs()
+		# TODO: Make sure mp Queue is not empty 
+		#while not (len(q.get()) == 0 and empty_cluster()):
+		#if not q.empty():
+		#jobQueue = c1.recv()
+		while (c1.poll() == False) or (not (len(c1.recv()) == 0 and empty_cluster())):
+		#while q.empty() or (not (len(q[-1]) == 0 and empty_cluster())): 
+			print("Cleaning Logs and Cluster....")
+			# TODO: Figure out why the function pauses after this print statement
+			#clear_logs()
+			# TODO: manually delete any remaining jobs 
+			print("Connection Value: " + str(c1.recv()))
 			time.sleep(1)
+		clear_logs()
 		
 		p1 = mp.Process(target=start_logs, args=("arrival_rate_" + str(ar),))
 		p2 = mp.Process(target=submit_jobs, args=(10, ar, 10, 30, False))
-		p3 = mp.Process(target=clear_logs)
-		p3.start()
-		p3.join()
+		#p3 = mp.Process(target=clear_logs)
+		#p3.start()
+		#p3.join()
 		
-		p1.start()
-		time.sleep(5)
+		p1.start()#5)#timeout=5)
+		#time.sleep(5)
 		p2.start()
-		p2.join()
-		time.sleep(5)
-		p1.terminate()
+
+		#p2.join()
+		#time.sleep(5)
 		#clear_logs()
 		
-		time.sleep(5)
+		#i = 0
+		#while i < 100: 
+		#	print("Current Queue " + str(i) )
+		#	i += 1
+		#print(q.get())
+
+		#while c1.poll():
+		#	print(c1.poll())
+		#	print(c1.recv())
+
+		#while not (len(q.get()) == 0 and empty_cluster()): 
+		#while not c1.recv() or (not (len(c1.recv()) == 0 and empty_cluster())):
+		#time.sleep(5)
+		#p2.join()
+		#p1.join()
+		while (p2.is_alive()) or (c1.poll() == False) or (not (len(c1.recv()) == 0 and empty_cluster())):
+			print("Wait for Job to Complete....")
+			print("p2 alive status: " + str(p2.is_alive()))
+			print("Job Queue: " + str(c1.recv()))
+			#clear_logs()
+			# TODO: manually delete any remaining jobs 
+			time.sleep(1)
+
+		#p2.terminate()
+		p1.terminate()
+
+		#time.sleep(5)
 
 		# TODO: only start next arrival rate one the queue is empty again
 		# TODO: check how to find if starburst queue is empty
