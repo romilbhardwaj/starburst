@@ -232,10 +232,12 @@ def submit_jobs(time_constrained = True, batch_time=10, num_jobs=10, arrival_rat
 		#current_log_path = log_path + "job.json"
 		with open(current_log_path, "w") as f:
 			json.dump(job_data, f)
+		'''
 		with open("../logs/cpu/cpu_workload.json", "w") as f:
 			json.dump(job_cpu_size, f)
 		with open("../logs/sleep/sleep_time.json", "w") as f:
 			json.dump(job_sleep_time, f)
+		'''
 
 def generate_sampled_job_yaml(job_id=0, arrival_time=0, sleep_time=5, workload={"cpu": 0, "memory": 0, "gpu": 0}):
 	""" Generalizes job submission to perform hyperparameter sweep """
