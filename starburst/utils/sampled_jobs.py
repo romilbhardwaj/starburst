@@ -172,6 +172,12 @@ def submit_jobs(time_constrained = True, batch_time=10, num_jobs=10, arrival_rat
 	job_sleep_time = {}
 	job_data = {}
 
+	log_path = "../logs/"
+	if not os.path.exists(log_path):
+		os.mkdir(log_path)
+	log_path = "../logs/archive/"
+	if not os.path.exists(log_path):
+		os.mkdir(log_path)
 	log_path = "../logs/archive/jobs/"
 	if not os.path.exists(log_path):
 		os.mkdir(log_path)
