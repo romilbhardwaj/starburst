@@ -431,9 +431,6 @@ def parse_event_logs(cluster_event_data=None, submission_data=None):#onprem_even
 			for pod in pod_start_times:
 				if pod in pod_end_times:
 					pod_completion_times[pod] = [pod_start_times[pod], pod_end_times[pod]]
-
-
-
 			
 			intervals = pod_completion_times
 
@@ -483,8 +480,10 @@ def parse_event_logs(cluster_event_data=None, submission_data=None):#onprem_even
 				else: 
 					jobs['instance_type'].append("unknown")
 		
-	min_arrival = min(jobs['arrival'])
+	# TODO: Determine if logs should be initialized to submission_time or arrival_time
+	min_arrival = min(jobs['submission_time']) #min(jobs['arrival'])
 	jobs['arrival'] = [i - min_arrival for i in jobs['arrival']]
+	jobs['submission_time'] = [i - min_arrival for i in jobs['submission_time']]
 	jobs['start'] = [i - min_arrival if i is not None else None for i in jobs['start']]
 
 	print("NODE NAMES: ")
@@ -595,49 +594,13 @@ def graph_benchmark(costs):
 	plt.show()
 	'''
 
-'''
-def view_real_arrival_times_redacted_redacted(path=None):
-	costs = {}
-	if path: 
-		files = os.listdir(path)
-		fig, axs = plt.subplots(nrows=len(files), ncols=1)
-		# Iterate over the files and check if they have the ".json" extension
-		#for file in files:
-		for i in range(len(files)):
-			file = files[i]
-			log_path = path + file
-			print(log_path)
-			cluster_data = read_cluster_event_data(log_path = log_path)
-			jobs, num_nodes = parse_event_logs(cluster_data)
-			#cost = job_logs.cloud_cost(jobs=jobs, num_nodes=num_nodes)
-			#costs[file] = cost
-			plot_dir = "../logs/archive/plots/"
-			if not os.path.exists(plot_dir):
-				#os.mkdir(archive_path)
-				os.mkdir(plot_dir)
-
-			plot_path = "../logs/archive/plots/" + file[:-5] + ".png"
-			print(plot_path)
-			plot_job_intervals(jobs, num_nodes, save=True, path=plot_path, subplt=axs, plt_index=i, tag=str(file))
-			
-			#job_logs.plot_job_intervals(jobs, num_nodes)
-			
-			#if file.endswith(".json"):
-			#	log_path = log_path + str(file)
-			#	break 
-	#return costs
-	plt.show()
-
-	return 
-'''
-
-
 def view_real_arrival_times(cluster_data_path=None, submission_data_path=None):
 	costs = {}
 	if cluster_data_path and submission_data_path: 
 		files = os.listdir(cluster_data_path)
-		fig, axs = plt.subplots(nrows=len(files) + 1, ncols=1)
-		#fig, axs = plt.subplots(nrows=1, ncols=1)
+		num_graphs = len(files) + 1 #2
+		fig, axs = plt.subplots(nrows=num_graphs, ncols=1)
+		#fig, axs = plt.subplots(nrows=2, ncols=1)
 		# Iterate over the files and check if they have the ".json" extension
 		#for file in files:
 		file_count = 0 
@@ -647,8 +610,6 @@ def view_real_arrival_times(cluster_data_path=None, submission_data_path=None):
 			submission_log_path = submission_data_path + file
 
 			print(cluster_log_path)
-
-
 			cluster_event_data = read_cluster_event_data(cluster_log_path=cluster_log_path)
 			submission_data = read_submission_data(submission_log_path=submission_log_path)
 			jobs, num_nodes = parse_event_logs(cluster_event_data=cluster_event_data, submission_data=submission_data)#data)
@@ -669,9 +630,11 @@ def view_real_arrival_times(cluster_data_path=None, submission_data_path=None):
 			#if file.endswith(".json"):
 			#	log_path = log_path + str(file)
 			#	break 
-			#file_count += 1
-			#if file_count >= 2: 
-			#	break 
+			''''
+			file_count += 1
+			if file_count >= 2: 
+				break 
+			'''
 			
 	#return costs
 	plt.show()

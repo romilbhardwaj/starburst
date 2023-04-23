@@ -23,7 +23,8 @@ class StarburstScheduler:
                  event_logger: object,
                  onprem_cluster_name: str,
                  cloud_cluster_name: str,
-                 queue_policy_str: str = "fifo_onprem_only"):
+                 queue_policy_str: str = "fifo_onprem_only",
+                 wait_time: int = 0):
         """
         Main Starburst scheduler class. Responsible for processing events in the provided event queue.
         :param event_queue: Main event queue
@@ -43,8 +44,12 @@ class StarburstScheduler:
         self.cloud_cluster_manager = KubernetesManager(self.cloud_cluster_name)
 
         # Set up policy
+        
         queue_policy_class = queue_policies.get_policy(queue_policy_str)
-        self.queue_policy = queue_policy_class(self.onprem_cluster_manager, self.cloud_cluster_manager)
+        if queue_policy_str == "fifo_wait":
+            self.queue_policy = queue_policy_class(self.onprem_cluster_manager, self.cloud_cluster_manager, wait_threshold=wait_time)
+        else: 
+            self.queue_policy = queue_policy_class(self.onprem_cluster_manager, self.cloud_cluster_manager)
 
         # Get asyncio loop
         self.aioloop = asyncio.get_event_loop()
