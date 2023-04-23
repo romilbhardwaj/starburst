@@ -36,7 +36,7 @@ class Job(object):
     def __repr__(self):
         return f'Job(idx={self.idx}, resources={self.resources}, arr={self.arrival}, run = {self.runtime}, deadline={self.deadline}, start={self.start})\n'
 
-GPUS_PER_NODE = 32#16#8#128#1
+GPUS_PER_NODE = 8#32#16#8#128#1
 
 def cpu_index_mapping(jobs):
     #TODO: Implemement greedy algorithm to plot cpu indices
@@ -57,9 +57,11 @@ def cpu_index_mapping(jobs):
     print("TOTAL NODES: ")
     print(nodes)
 
+    node_jobs ={}
     node_queues = {}
     for node in nodes:
-        node_queues[node] = [i + 1 for i in range(128)]#8)] #heapq.heapify([i + 1 for i in range(8)]) #12-cpus -- 100 -- 256
+        node_queues[node] = [i + 1 for i in range(8)]#128)]#8)] #heapq.heapify([i + 1 for i in range(8)]) #12-cpus -- 100 -- 256
+        node_jobs[node] = []
 
     # TODO: Create a list of times that include all arrival times and completion times in the same list in numerical order 
     global_queue = []#heapq.heapify([])
@@ -73,21 +75,34 @@ def cpu_index_mapping(jobs):
         job_arrival = jobs['arrival'][i]
         job_runtime = jobs['runtime'][i]
        
-        while global_queue and global_queue[-1][0] <= job_arrival: 
+        while global_queue and global_queue[0][0] <= job_arrival: 
             end_time, end_job_id = heapq.heappop(global_queue)
             released_index = job_id_to_index[end_job_id]
-            released_cpus = jobs['allocated_gpus'][released_index]#job_id_to_index[end_job_id]]#end_job_id]
-            released_node_queue = node_queues[jobs['node_index'][released_index]]
-            for cpu in released_cpus: 
-                heapq.heappush(released_node_queue, cpu)
+            #released_cpus = jobs['allocated_gpus'][released_index].keys()[0] #job_id_to_index[end_job_id]]#end_job_id]
+            for released_node in jobs['allocated_gpus'][released_index]: 
+                released_cpus = jobs['allocated_gpus'][released_index][released_node]
+                #released_node = jobs['node_index'][released_index]
+                released_node_queue = node_queues[released_node]
+                node_jobs[released_node].remove(end_job_id)
+                for cpu in released_cpus: 
+                    heapq.heappush(released_node_queue, cpu)
 
         heapq.heappush(global_queue, (job_arrival + job_runtime, job_id))
+        print("GLOBAL QUEUE") # Queue sorted on end time -- earliest to latest end time
+        print(global_queue)
         
         job_allocated_cpus = []
         node_queue = node_queues[job_node]
+        node_jobs[job_node].append(job_id)
         for j in range(job_cpu_size): 
             # TODO: Determine how to handle if jobs run more than total feasible cpus
             #if node_queue: 
+            print("Job Queue")
+            print(node_queues)
+            print("Node Jobs")
+            print(node_jobs)
+            print("Current Node")
+            print(job_node)
             cpu_index = heapq.heappop(node_queue)
             job_allocated_cpus.append(cpu_index)
             
@@ -100,6 +115,8 @@ def plot_trace_spacetime_and_spillover(jobs, num_nodes, save=False, path=None, s
     '''
     Create "threads index" that track CPU jobs running together
     '''
+    print("NUM NODES")
+    print(num_nodes)
     jobs = cpu_index_mapping(jobs)
     print("DISPLAYED JOBS")
     print(jobs)
@@ -111,7 +128,7 @@ def plot_trace_spacetime_and_spillover(jobs, num_nodes, save=False, path=None, s
     cm = plt.get_cmap('gist_rainbow')
     colors = [cm(1. * i / NUM_COLORS) for i in range(NUM_COLORS)]
     fig, ax = plt.subplots(figsize=(100, 50))
-    total_gpus = num_nodes * GPUS_PER_NODE
+    total_gpus = num_nodes * GPUS_PER_NODE #GPUs equivalent to CPUs
     segment_height_list = {}
     for j_idx in range(len(jobs['idx'])):
         allocated_gpus = jobs['allocated_gpus'][j_idx]

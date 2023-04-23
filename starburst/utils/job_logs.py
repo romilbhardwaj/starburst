@@ -486,6 +486,10 @@ def parse_event_logs(cluster_event_data=None, submission_data=None):#onprem_even
 	min_arrival = min(jobs['arrival'])
 	jobs['arrival'] = [i - min_arrival for i in jobs['arrival']]
 	jobs['start'] = [i - min_arrival if i is not None else None for i in jobs['start']]
+
+	print("NODE NAMES: ")
+	print(all_nodes)
+	print(len(all_nodes))
 	return jobs, len(all_nodes)
 
 def increase_ttl():
