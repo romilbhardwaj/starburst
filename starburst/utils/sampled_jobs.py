@@ -55,7 +55,7 @@ def start_scheduler(policy="fifo_onprem_only", onprem_cluster="gke_sky-burst_us-
 	#starburst, driver.custom_start(onprem_k8s_cluster_name=onprem_cluster, cloud_k8s_cluster_name=cloud_cluster, policy=policy)
 	return 
 
-def view_submitted_arrival_times(): 
+def view_submitted_arrival_times(num_jobs = 100, batch_time=100): 
 	batches = 5
 	fig, axs = plt.subplots(nrows=5, ncols=1)
 	#arrival_rates = [(i + 1) for i in range(10)]
@@ -65,7 +65,8 @@ def view_submitted_arrival_times():
 	#for ar in arrival_rates: 
 	for i in range(len(arrival_rates)):
 		ar = arrival_rates[i]
-		times = submit_jobs(num_jobs=100, arrival_rate=ar, sleep_mean=10, submit=False)
+		#times = submit_jobs(num_jobs=num_jobs, arrival_rate=ar, sleep_mean=10, submit=False)
+		times = submit_jobs(time_constrained=True, batch_time=batch_time, arrival_rate=ar, sleep_mean=10, submit=False)
 		arrival_times.append(times)
 		axs[i].eventplot(times)
 		axs[i].set_ylabel(str(ar))
@@ -114,7 +115,7 @@ def view_real_arrival_times_redacted(path=None):
 	return 
 '''
 
-def submit_jobs(num_jobs=10, arrival_rate=0.5, sleep_mean=10, timeout=5, plot_arrival_times=False, submit=True, batch_repo=None, hyperparameters={}): #arrival_times, 
+def submit_jobs(time_constrained = True, batch_time=10, num_jobs=10, arrival_rate=0.5, sleep_mean=10, timeout=5, plot_arrival_times=False, submit=True, batch_repo=None, hyperparameters={}): #arrival_times, 
 	""" Submits a a default job for each time stamp of the inputed arrival times """
 	hyperparameters = {
 		"num_jobs": 0,
@@ -131,19 +132,34 @@ def submit_jobs(num_jobs=10, arrival_rate=0.5, sleep_mean=10, timeout=5, plot_ar
 
 	#batch_times = []
 	total_jobs = num_jobs #len(arrival_times)
-	start_time = time.time()
 	job = 0
 
 	cpu_size = [1, 2, 4]
 	cpu_dist = [0.2, 0.4, 0.4]
 
+	'''
 	submit_time = 0
 	arrival_times = []
 	print(arrival_rate)
 	for i in range(num_jobs):
 		submit_time += np.random.exponential(scale=arrival_rate)#0.5)
-		
 		arrival_times.append(submit_time)
+	'''
+	if time_constrained: 
+		submit_time = 0
+		submitted_jobs = 0
+		arrival_times = []
+		while submit_time <= batch_time: 
+			submit_time += np.random.exponential(scale=arrival_rate)#0.5)
+			arrival_times.append(submit_time)
+			submitted_jobs += 1 
+	else: 
+		submit_time = 0
+		arrival_times = []
+		#print(arrival_rate)
+		for i in range(num_jobs):
+			submit_time += np.random.exponential(scale=arrival_rate)#0.5)
+			arrival_times.append(submit_time)
 	
 	if not submit: 
 		return arrival_times	
@@ -164,7 +180,12 @@ def submit_jobs(num_jobs=10, arrival_rate=0.5, sleep_mean=10, timeout=5, plot_ar
 		os.mkdir(log_path)
 	current_log_path = log_path + str(arrival_rate) + ".json" #"job.json"
 
-	while True: 
+
+	start_time = time.time()
+	curr_time = time.time()
+	submitted_jobs = 0
+	while True:
+	#while curr_time <= start_time + batch_time:  
 		curr_time = time.time()
 		#print("job submissions: " + str(start_time) + " " + str(curr_time) + " " + str(timeout))
 		if job < total_jobs and curr_time > arrival_times[job] + start_time:
@@ -294,7 +315,7 @@ def empty_cluster():
 	
 	return True 
 
-def hyperparameter_sweep(num_jobs=100, sleep_mean=30, timeout=10,):
+def hyperparameter_sweep(batch_time=500, num_jobs=100, sleep_mean=30, timeout=10,):
 	# TODO: Vary and log jobs with different arrival rates
 	batches = 5
 	arrival_rates = np.linspace(0, 8, num=batches+1).tolist()[1:]
@@ -342,7 +363,7 @@ def hyperparameter_sweep(num_jobs=100, sleep_mean=30, timeout=10,):
 		
 		#p1 = mp.Process(target=start_logs, args=("arrival_rate_" + str(ar), batch_repo))
 		p1 = mp.Process(target=start_logs, args=(str(ar), batch_repo))
-		p2 = mp.Process(target=submit_jobs, args=(num_jobs, ar, sleep_mean, timeout, False, True, batch_repo, {}))
+		p2 = mp.Process(target=submit_jobs, args=(True, batch_time, num_jobs, ar, sleep_mean, timeout, False, True, batch_repo, {}))
 		#p3 = mp.Process(target=clear_logs)
 		#p3.start()
 		#p3.join()
@@ -397,9 +418,11 @@ def main():
 	#times = arrival_times(10000)#10)
 	#start_scheduler(policy="fifo_wait")
 	#submit_jobs(num_jobs=10000, timeout=10000000) #arrival_times=times
-	hyperparameter_sweep()
 	#view_submitted_arrival_times()
 	#view_real_arrival_times()
+
+	#hyperparameter_sweep()
+	return 
 
 if __name__ == '__main__':
     main()
