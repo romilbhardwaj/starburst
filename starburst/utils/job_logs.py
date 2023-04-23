@@ -15,7 +15,8 @@ import os
 # TODO: Submit cloud quotas requests
 
 GCP_PRICES = {
-	"e2-medium": 0.038795
+	"e2-medium": 0.038795,
+	"e2-standard-8": 0.31036
 }
 
 AWS_PRICES = {
@@ -194,6 +195,7 @@ def cloud_cost(jobs, num_nodes):
 	# TODO: Compute steady state value i.e. remove cloud cost from first X and last X jobs
 	# TODO: Compute total value i.e. beg to end simulation cost --> compute start and end time for each node
 
+	# TODO: Only consider jobs with start=None, because they are run on the cloud
 	'''
 	arrivals = jobs['arrival']
 	runtimes = jobs['runtime']
@@ -204,19 +206,28 @@ def cloud_cost(jobs, num_nodes):
 	cost = AWS_PRICES['vCPU'] * total_time/60
 	'''
 
-	cost = 0 
+	cloud_cost = 0 
+	onprem_cost = 0 
 	instance_types = jobs['instance_type']
 	runtimes = jobs['runtime']
-	for i in range(len(runtimes)): 
-		runtime = runtimes[i] / (60 * 60)
-		instance_type = instance_types[i]
-		instance_cost = GCP_PRICES[instance_type]
-		cost += runtime * instance_cost
+	start = jobs['start']
+	for i in range(len(runtimes)):
+		print(start[i])
+		if start[i] == None: 
+			runtime = runtimes[i] / (60 * 60)
+			instance_type = instance_types[i]
+			instance_cost = GCP_PRICES[instance_type]
+			cloud_cost += runtime * instance_cost
+		else: 
+			runtime = runtimes[i] / (60 * 60)
+			instance_type = instance_types[i]
+			instance_cost = GCP_PRICES[instance_type]
+			onprem_cost += runtime * instance_cost
 
-	return cost
+	return cloud_cost, onprem_cost
 
-def plot_job_intervals(jobs, num_nodes):
-	read_trace.plot_trace_spacetime_and_spillover(jobs, num_nodes)
+def plot_job_intervals(jobs, num_nodes, save=False, path=None, subplt=None, plt_index=None, tag=None):
+	read_trace.plot_trace_spacetime_and_spillover(jobs, num_nodes, save=save, path=path, subplt=subplt, plt_index=plt_index, tag=tag)
 
 def parse_prometheus_logs(onprem=onprem, cloud=cloud):
 	# TODO: Plot cloud and onprem cluster jobs together
@@ -256,6 +267,7 @@ def parse_prometheus_logs(onprem=onprem, cloud=cloud):
 			#print(pod_start_times.values())
 			#print(min_arrival)
 				
+
 			#for pod in pod_start_times: 
 			#	pod_start_times[pod] -= min_arrival
 			
@@ -360,10 +372,10 @@ def parse_prometheus_logs(onprem=onprem, cloud=cloud):
 	jobs['start'] = [i - min_arrival if i is not None else None for i in jobs['start']]
 	return jobs, len(all_nodes)
 
-def parse_event_logs(cluster_event_data):#onprem_event_logs = None, cloud_event_logs = None):
+def parse_event_logs(cluster_event_data=None, submission_data=None):#onprem_event_logs = None, cloud_event_logs = None):
 		# TODO: Plot cloud and onprem cluster jobs together
 	job_names = {}
-	jobs = {'idx':[], 'runtime':[], 'arrival':[], 'num_gpus':[], 'allocated_gpus':[], 'start':[], 'instance_type':[], 'node': []}
+	jobs = {'idx':[], 'runtime':[], 'arrival':[], 'num_gpus':[], 'allocated_gpus':[], 'start':[], 'instance_type':[], 'node_index': [], 'node': [], 'cpus': [], 'submission_time': []}
 
 	all_nodes = set()
 	nodes = {}
@@ -380,7 +392,8 @@ def parse_event_logs(cluster_event_data):#onprem_event_logs = None, cloud_event_
 			'''
 			Parse `kube_pod_info` --> if node name is not found, then pod not scheduled onto a node
 			'''
-
+			#pod_start_times = cluster[]
+			#pod_end_times = cluster[]
 			start_times = cluster['job_creation_times']
 			end_times = cluster['job_completion_times']
 			pod_nodes = cluster['scheduled_nodes']
@@ -419,6 +432,9 @@ def parse_event_logs(cluster_event_data):#onprem_event_logs = None, cloud_event_
 				if pod in pod_end_times:
 					pod_completion_times[pod] = [pod_start_times[pod], pod_end_times[pod]]
 
+
+
+			
 			intervals = pod_completion_times
 
 			# Job Trace Format
@@ -431,16 +447,29 @@ def parse_event_logs(cluster_event_data):#onprem_event_logs = None, cloud_event_
 			print(nodes)
 			print(intervals)
 			for i, (key, value) in enumerate(intervals.items()):
+				#job_id 
+				#s = "sleep-26-100444"
+				job_id = re.findall(r'\d+', key)[0]
+				# sleep-26-100444 - format
 				job_names[i] = key
-				jobs['idx'].append(i)
+				jobs['idx'].append(int(job_id))#i)
 				jobs['runtime'].append(value[1] - value[0])
 				jobs['arrival'].append(value[0])
 				jobs['num_gpus'].append(1)
+
+				#if job_id in submission_data: 
+				jobs['cpus'].append(submission_data[job_id]['cpus'])
+				jobs['submission_time'].append(submission_data[job_id]['submit_time'])
+
 				#if key in job_pods:
 				if job_pods[key] in pod_nodes:
-					jobs['allocated_gpus'].append({nodes[pod_nodes[job_pods[key]]]: [1]})
+					#jobs['allocated_gpus'].append({nodes[pod_nodes[job_pods[key]]]: [1]})
+					jobs['allocated_gpus'].append({nodes[pod_nodes[job_pods[key]]]: []})
+					jobs['node_index'].append(nodes[pod_nodes[job_pods[key]]])
 				else: 
 					jobs['allocated_gpus'].append({})
+					jobs['node_index'].append(None)
+				
 				if type == "cloud":
 					jobs['start'].append(None)
 				else:
@@ -530,23 +559,176 @@ def retrieve_raw_events():
 	n = text_file.write(str(events))
 	text_file.close()
 
-def read_cluster_event_data(log_path=None):
-	if not log_path: 
-		log_path = "../logs/"
-		files = os.listdir(log_path)
+def graph_benchmark(costs):
+	graph = []
+	for cost in costs: 
+		cost_int = float(cost[:3])
+		graph.append((cost_int, costs[cost]))
+	data = graph
+	x = [x[0] for x in data]
+	y1 = [y[1][0] for y in data]
+	y2 = [y[1][1] for y in data]
+	print(data)
+	print(x)
+	print(y1)
+	print(y2)
+	plt.bar(x, y1, width=0.025, label="cloud_cost")
+	plt.bar([i + 0.025 for i in x], y2, width=0.025, label="onprem_cost")
+	plt.xlabel('Arrival Rate')
+	plt.ylabel('Cost ($)')
+	plt.show()
+	'''
+	x = [x[0] for x in data]
+	y1 = [y[1][0] for y in data]
+	y2 = [y[1][1] for y in data]
+
+	plt.bar(x, y1, label='Y1')
+	#plt.bar(x, y2, label='Y2', bottom=y1)
+
+	plt.xlabel('X')
+	plt.ylabel('Y')
+	plt.legend()
+	plt.show()
+	'''
+
+'''
+def view_real_arrival_times_redacted_redacted(path=None):
+	costs = {}
+	if path: 
+		files = os.listdir(path)
+		fig, axs = plt.subplots(nrows=len(files), ncols=1)
+		# Iterate over the files and check if they have the ".json" extension
+		#for file in files:
+		for i in range(len(files)):
+			file = files[i]
+			log_path = path + file
+			print(log_path)
+			cluster_data = read_cluster_event_data(log_path = log_path)
+			jobs, num_nodes = parse_event_logs(cluster_data)
+			#cost = job_logs.cloud_cost(jobs=jobs, num_nodes=num_nodes)
+			#costs[file] = cost
+			plot_dir = "../logs/archive/plots/"
+			if not os.path.exists(plot_dir):
+				#os.mkdir(archive_path)
+				os.mkdir(plot_dir)
+
+			plot_path = "../logs/archive/plots/" + file[:-5] + ".png"
+			print(plot_path)
+			plot_job_intervals(jobs, num_nodes, save=True, path=plot_path, subplt=axs, plt_index=i, tag=str(file))
+			
+			#job_logs.plot_job_intervals(jobs, num_nodes)
+			
+			#if file.endswith(".json"):
+			#	log_path = log_path + str(file)
+			#	break 
+	#return costs
+	plt.show()
+
+	return 
+'''
+
+
+def view_real_arrival_times(cluster_data_path=None, submission_data_path=None):
+	costs = {}
+	if cluster_data_path and submission_data_path: 
+		files = os.listdir(cluster_data_path)
+		fig, axs = plt.subplots(nrows=len(files) + 1, ncols=1)
+		#fig, axs = plt.subplots(nrows=1, ncols=1)
+		# Iterate over the files and check if they have the ".json" extension
+		#for file in files:
+		file_count = 0 
+		for i in range(len(files)):
+			file = files[i]
+			cluster_log_path = cluster_data_path + file
+			submission_log_path = submission_data_path + file
+
+			print(cluster_log_path)
+
+
+			cluster_event_data = read_cluster_event_data(cluster_log_path=cluster_log_path)
+			submission_data = read_submission_data(submission_log_path=submission_log_path)
+			jobs, num_nodes = parse_event_logs(cluster_event_data=cluster_event_data, submission_data=submission_data)#data)
+			
+			#cost = job_logs.cloud_cost(jobs=jobs, num_nodes=num_nodes)
+			#costs[file] = cost
+			plot_dir = "../logs/archive/plots/"
+			if not os.path.exists(plot_dir):
+				#os.mkdir(archive_path)
+				os.mkdir(plot_dir)
+
+			plot_path = "../logs/archive/plots/" + file[:-5] + ".png"
+			print(plot_path)
+			plot_job_intervals(jobs, num_nodes, save=True, path=plot_path, subplt=axs, plt_index=i, tag=str(file))
+			
+			#job_logs.plot_job_intervals(jobs, num_nodes)
+			
+			#if file.endswith(".json"):
+			#	log_path = log_path + str(file)
+			#	break 
+			#file_count += 1
+			#if file_count >= 2: 
+			#	break 
+			
+	#return costs
+	plt.show()
+
+	return 
+
+
+def benchmark_hyperparamter_search(path=None):
+	'''
+	0.1 -> 0.01137
+	0.2 -> 0.00931
+	0.3 -> 0.01448
+	0.4 -> 0.00862
+	0.5 -> 0.01500
+	'''
+	costs = {}
+	if path: 
+		files = os.listdir(path)
+
+		# Iterate over the files and check if they have the ".json" extension
+		for file in files:
+			log_path = path + file
+			print(log_path)
+			data = read_cluster_event_data(log_path = log_path)
+			jobs, num_nodes = parse_event_logs(data)
+			cost = cloud_cost(jobs=jobs, num_nodes=num_nodes)
+			costs[file] = cost
+			
+			#job_logs.plot_job_intervals(jobs, num_nodes)
+			
+			#if file.endswith(".json"):
+			#	log_path = log_path + str(file)
+			#	break 
+	graph_benchmark(costs)
+	return costs
+
+def read_cluster_event_data(cluster_log_path=None):#, submission_log_path=None):
+	if not cluster_log_path: 
+		cluster_log_path = "../logs/"
+		files = os.listdir(cluster_log_path)
 
 		# Iterate over the files and check if they have the ".json" extension
 		for file in files:
 			if file.endswith(".json"):
-				log_path = log_path + str(file)
+				cluster_log_path += str(file)
 				break 
 
-	with open(log_path, "r") as f: #"../logs/event_data.json", "r") as f:
+	with open(cluster_log_path, "r") as f: #"../logs/event_data.json", "r") as f:
 		loaded_data = json.load(f)
 
 	return loaded_data
 
-def write_cluster_event_data(event_data=event_data, tag=None):
+def read_submission_data(submission_log_path=None):
+	if submission_log_path: 
+		with open(submission_log_path, "r") as f: #"../logs/event_data.json", "r") as f:
+			loaded_data = json.load(f)
+		return loaded_data
+	return {}
+
+
+def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None):
 	'''
 	Outputs: 
 	(1) Store relevant event data in a dictionary continously to disk
@@ -597,11 +779,18 @@ def write_cluster_event_data(event_data=event_data, tag=None):
 			os.mkdir(archive_path)
 		os.rename(existing_log_path, archive_path + "event_data_" + str(int(datetime.datetime.now().timestamp())))
 	'''
-
-	if tag: 
-		current_log_path = "../logs/event_data_" + tag + "_" + str(int(datetime.datetime.now().timestamp())) + ".json"
+	if batch_repo: 
+		log_path = log_path + "archive/" + batch_repo + "/"
+		if not os.path.exists(log_path):
+			#os.mkdir(archive_path)
+			os.mkdir(log_path)
+		print("Made directory for hyperparameter search...")
+		current_log_path = log_path + tag + ".json"
 	else: 
-		current_log_path = "../logs/event_data_" + str(int(datetime.datetime.now().timestamp())) + ".json"
+		if tag: 
+			current_log_path = log_path + "event_data_" + tag + "_" + str(int(datetime.datetime.now().timestamp())) + ".json"
+		else: 
+			current_log_path = log_path + "event_data_" + str(int(datetime.datetime.now().timestamp())) + ".json"
 
 	# Load the Kubernetes configuration from the default location
 	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst")
