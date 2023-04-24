@@ -36,7 +36,7 @@ class Job(object):
     def __repr__(self):
         return f'Job(idx={self.idx}, resources={self.resources}, arr={self.arrival}, run = {self.runtime}, deadline={self.deadline}, start={self.start})\n'
 
-GPUS_PER_NODE = 8#32#16#8#128#1
+GPUS_PER_NODE = 12#10#9 #32#16#8#128#1
 
 def cpu_index_mapping(jobs):
     #TODO: Implemement greedy algorithm to plot cpu indices
@@ -60,7 +60,7 @@ def cpu_index_mapping(jobs):
     node_jobs ={}
     node_queues = {}
     for node in nodes:
-        node_queues[node] = [i + 1 for i in range(8)]#128)]#8)] #heapq.heapify([i + 1 for i in range(8)]) #12-cpus -- 100 -- 256
+        node_queues[node] = [i + 1 for i in range(GPUS_PER_NODE)]#8)]#128)]#8)] #heapq.heapify([i + 1 for i in range(8)]) #12-cpus -- 100 -- 256
         node_jobs[node] = []
 
     # TODO: Create a list of times that include all arrival times and completion times in the same list in numerical order 
@@ -123,7 +123,7 @@ def plot_trace_spacetime_and_spillover(jobs, num_nodes, save=False, path=None, s
     jobs = jobs.copy()
     #TODO: Plot color based on job start time and not job index
     #NUM_COLORS = max(jobs['arrival']) + 1
-    NUM_COLORS = len(jobs['idx']) + 1
+    NUM_COLORS = len(jobs['idx']) + 5#1
     print(NUM_COLORS)
     cm = plt.get_cmap('gist_rainbow')
     colors = [cm(1. * i / NUM_COLORS) for i in range(NUM_COLORS)]
@@ -149,7 +149,8 @@ def plot_trace_spacetime_and_spillover(jobs, num_nodes, save=False, path=None, s
                             left=segment[0],#jobs['start'][j_idx],
                             align='edge',
                             #color=colors[jobs['arrival'][j_idx]],
-                            color=colors[jobs['idx'][j_idx]],
+                            #color=colors[jobs['idx'][j_idx]],
+                            color=colors[jobs['idx'][j_idx]] if jobs['idx'][j_idx] < len(colors) else None,
                             alpha = 0.5)
                 else: 
                     ax.barh(gpu_idx,
@@ -159,7 +160,8 @@ def plot_trace_spacetime_and_spillover(jobs, num_nodes, save=False, path=None, s
                             left=segment[0],#jobs['start'][j_idx],
                             align='edge',
                             #color=colors[jobs['arrival'][j_idx]],
-                            color=colors[jobs['idx'][j_idx]],
+                            #color=colors[jobs['idx'][j_idx]],
+                            color=colors[jobs['idx'][j_idx]] if jobs['idx'][j_idx] < len(colors) else None,
                             alpha = 0.5)
         '''
         if not allocated_gpus:
@@ -222,24 +224,30 @@ def plot_trace_spacetime_and_spillover(jobs, num_nodes, save=False, path=None, s
     for i in range(total_gpus + 1):
         multiplier = math.ceil(num_nodes / 32)
         if (i + 1) % GPUS_PER_NODE == 1:
-            plt.axhline(y=i + 1, linewidth=8 / multiplier, color='brown')
+            subplt[plt_index].axhline(y=i + 1, linewidth=0.75 / multiplier, color='black')
+            #plt.axhline(y=i + 1, linewidth=8 / multiplier, color='brown')
         else:
             pass
-
+    
     max_arrival = max(jobs['arrival'])
+    completions = [jobs['arrival'][i] + jobs['runtime'][i] for i in range(len(jobs['arrival']))]
+    max_completion = max(completions)
     if subplt is not None:
         if plt_index is not None: 
             subplt[plt_index].set_ylim(bottom=-128, top=10)  #, #top=total_gpus + 1) #(-4, 10) (-16, 10)
             subplt[plt_index].set_xlim(left=-50, right=800)#2* max_arrival)
+            #subplt[plt_index].axvline(x=max_arrival, color='black', linewidth=5)
+            subplt[plt_index].axvline(x=max_completion, color='brown', linewidth=0.75)
             #subplt[plt_index].set_axvline(x=max_arrival, color='black', linewidth=5)
             #plt.tight_layout()
             subplt[plt_index].set_xlabel('Time')
             subplt[plt_index].set_ylabel('Nodes' + str(tag))
+
             return subplt
     else: 
         plt.ylim(bottom=-4, top=10)  #, #top=total_gpus + 1)
         plt.xlim(left=-50, right=800)#2* max_arrival)
-        plt.axvline(x=max_arrival, color='black', linewidth=5)
+        #plt.axvline(x=max_arrival, color='black', linewidth=5)
         #plt.tight_layout()
         plt.xlabel('Time')
         plt.ylabel('Nodes')
