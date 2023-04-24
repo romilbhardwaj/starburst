@@ -76,7 +76,7 @@ class Config:
     def __init__(self, config_dict):
         self.__dict__.update(config_dict)
 
-def generate(hyperparameters): 
+def generate_jobs(hyperparameters): 
 	jobs = {}
 	hyperparameters = {
 		"time_constrained": True,
@@ -126,7 +126,7 @@ def generate(hyperparameters):
 		arrivals.append(job_index, submit_time)
 	return jobs, arrivals
 
-def save(jobs, repo, tag):
+def save_jobs(jobs, repo, tag):
 	log_path = "../logs/"
 	if not os.path.exists(log_path):
 		os.mkdir(log_path)
@@ -161,8 +161,8 @@ def submit(jobs, arrivals):
 	return 
 
 def execute(hyperparameters, repo, tag): 
-	jobs, arrivals = generate(hyperparameters)
-	save(jobs, repo, tag)
+	jobs, arrivals = generate_jobs(hyperparameters)
+	save_jobs(jobs, repo, tag)
 	submit(jobs, arrivals)
 
 def submit_jobs(time_constrained = True, batch_time=10, num_jobs=10, arrival_rate=0.5, sleep_mean=10, timeout=5, plot_arrival_times=False, submit=True, batch_repo=None, hyperparameters={}, random_seed=0, tag="job", wait_time=0): #arrival_times, 
@@ -183,7 +183,7 @@ def submit_jobs(time_constrained = True, batch_time=10, num_jobs=10, arrival_rat
 		"memory_dict": [0.25, 0.25, 0.25, 0.25],
 	}
 	# TODO: Set random seed, to allow same values given the variables
-	np.random.seed(random_seed)#42)
+	np.random.seed(random_seed)
 
 	#batch_times = []
 	total_jobs = num_jobs #len(arrival_times)
@@ -383,19 +383,62 @@ def empty_cluster():
 	
 	return True 
 
+def submit_sweep():
+	sweep = generate_sweep()
+	run_sweep(sweep)
+
 def generate_sweep(): 
-	sweep = {}
+	hyperparameters = {
+		"time_constrained": True,
+		"random_seed": 42,
+		"num_jobs": 100,
+		"batch_time": 300,
+		"wait_time": 0,
+		"time_out": 5,
+		"mean_sleep": 40,
+		"arrival_rate": 1,
+		"cpu_sizes": [1,2,4,8,16,32],
+		"cpu_dist": [0, 0.2, 0.2, 0.2, 0.2], 
+		"gpu_sizes": [1,2,4,8,16,32],
+		"gpu_dist": [0, 0.2, 0.2, 0.2, 0.2],
+		"memory_sizes": [100, 500, 1000, 50000],
+		"memory_dict": [0.25, 0.25, 0.25, 0.25],
+	}
+	sweep = {hyperparameters}
 	return sweep 
 
-def perform_sweep(sweep):
-	for hp in sweep: 
-		# TODO: Run mp.Pipe code here
-		run(hp)
+def run_sweep(sweep):
+	sweep_timestamp =  str(int(datetime.now().timestamp()))
+	for i in range(len(sweep)):
+		hp = sweep[i] 
+		run(hp, sweep_timestamp, i)
 	return 0 
 
-def run(hyperparameters):
-	return 0 
+def run(hyperparameters, batch_repo, index):
+	hp = Config(hyperparameters)
+	q = mp.Queue()
+	c1, c2 = mp.Pipe()
+	p0 = mp.Process(target=driver.custom_start, args=(q, c2, 10000, 1, "gke_sky-burst_us-central1-c_starburst","gke_sky-burst_us-central1-c_starburst-cloud",hp.policy, hp.wait_time,))
+	p0.start()
+	
+	while (c1.poll() == False) or (not (len(c1.recv()) == 0 and empty_cluster())):
+		print("Cleaning Logs and Cluster....")
+		time.sleep(1)
+	clear_logs()
+	
+	tag = str(index)
+	p1 = mp.Process(target=start_logs, args=(tag, batch_repo,))
+	p2 = mp.Process(target=submit_jobs, args=(True, hp.batch_time, hp.num_jobs, hp.arrival_time, hp.sleep_mean, hp.time_out, False, True, batch_repo, {}, hp.random_seed, tag, hp.wait_time))
+	p1.start()
+	p2.start()
 
+	while (p2.is_alive()) or (c1.poll() == False) or (not (len(c1.recv()) == 0 and empty_cluster())):
+		print("Wait for Job to Complete....")
+		time.sleep(1)
+
+	p1.terminate()
+	p0.terminate()
+	return 0 
 
 def hyperparameter_sweep(batch_time=500, num_jobs=100, sleep_mean=30, timeout=10, policy="fifo_wait"):
 	# TODO: Vary and log jobs with different arrival rates
