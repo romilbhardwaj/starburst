@@ -49,7 +49,6 @@ Option 1:
 	- if proability of event is less than generated thresshold then submit job 
 	- space betwen two events follows exponential 
 '''
-
 def start_scheduler(policy="fifo_onprem_only", onprem_cluster="gke_sky-burst_us-central1-c_starburst", cloud_cluster="gke_sky-burst_us-central1-c_starburst-cloud"):
 	os.system('python3 -m starburst.drivers.main_driver --policy {} --onprem_k8s_cluster_name {} --cloud_k8s_cluster_name {}'.format(policy, onprem_cluster, cloud_cluster))	
 	#starburst, driver.custom_start(onprem_k8s_cluster_name=onprem_cluster, cloud_k8s_cluster_name=cloud_cluster, policy=policy)
@@ -62,15 +61,13 @@ def view_submitted_arrival_times(num_jobs = 100, batch_time=100):
 	arrival_rates = np.linspace(0, 8, num=batches+1).tolist()[1:]
 	
 	arrival_times = []
-	#for ar in arrival_rates: 
 	for i in range(len(arrival_rates)):
 		ar = arrival_rates[i]
-		#times = submit_jobs(num_jobs=num_jobs, arrival_rate=ar, sleep_mean=10, submit=False)
 		times = submit_jobs(time_constrained=True, batch_time=batch_time, arrival_rate=ar, sleep_mean=10, submit=False)
 		arrival_times.append(times)
 		axs[i].eventplot(times)
 		axs[i].set_ylabel(str(ar))
-		axs[i].set_xlim((0, 800))#100))#times[-1]))
+		axs[i].set_xlim((0, 800))
 		axs[i].set_yticks([])
 
 	plt.show()
@@ -78,7 +75,6 @@ def view_submitted_arrival_times(num_jobs = 100, batch_time=100):
 class Config:
     def __init__(self, config_dict):
         self.__dict__.update(config_dict)
-
 
 def generate(hyperparameters): 
 	jobs = {}
@@ -155,7 +151,6 @@ def submit(jobs, arrivals):
 	while True:
 		curr_time = time.time()
 		if job < total_jobs and curr_time > arrivals[job] + start_time:
-			job_values = {}
 			job = jobs[job_index]
 			job_index += 1
 			generate_sampled_job_yaml(job_id=job_index, sleep_time=job["duration"], workload=job['workload'])
@@ -164,6 +159,11 @@ def submit(jobs, arrivals):
 			print("Job Connection Time Out...")
 			break
 	return 
+
+def execute(hyperparameters, repo, tag): 
+	jobs, arrivals = generate(hyperparameters)
+	save(jobs, repo, tag)
+	submit(jobs, arrivals)
 
 def submit_jobs(time_constrained = True, batch_time=10, num_jobs=10, arrival_rate=0.5, sleep_mean=10, timeout=5, plot_arrival_times=False, submit=True, batch_repo=None, hyperparameters={}, random_seed=0, tag="job", wait_time=0): #arrival_times, 
 	""" Submits a a default job for each time stamp of the inputed arrival times """
@@ -362,8 +362,6 @@ def clear_logs():
 	print("Completed Clearing Logs...")
 
 def start_logs(tag=None, batch_repo=None):
-	# TODO: Run job_logs.write_cluster_event_data()
-	#print('reached')
 	event_data = job_logs.event_data_dict()
 	job_logs.write_cluster_event_data(batch_repo=batch_repo, event_data=event_data, tag=tag)
 
@@ -384,6 +382,20 @@ def empty_cluster():
 			return False 
 	
 	return True 
+
+def generate_sweep(): 
+	sweep = {}
+	return sweep 
+
+def perform_sweep(sweep):
+	for hp in sweep: 
+		# TODO: Run mp.Pipe code here
+		run(hp)
+	return 0 
+
+def run(hyperparameters):
+	return 0 
+
 
 def hyperparameter_sweep(batch_time=500, num_jobs=100, sleep_mean=30, timeout=10, policy="fifo_wait"):
 	# TODO: Vary and log jobs with different arrival rates
@@ -432,13 +444,10 @@ def hyperparameter_sweep(batch_time=500, num_jobs=100, sleep_mean=30, timeout=10
 			p1.terminate()
 			# TODO: only start next arrival rate one the queue is empty again
 			# TODO: check how to find if starburst queue is empty
-			# TODO: check when not more jobs being processed in the cluster 
-
+			# TODO: check when not more jobs being processed in the cluster
+ 
 		p0.terminate()
-
-	return 0 
-
-
+	return 0
 
 def main():
 	#times = arrival_times(10000)#10)
@@ -454,17 +463,3 @@ def main():
 if __name__ == '__main__':
     main()
 	#pass
-
-
-'''
-def arrival_times(num_jobs = 100, arrival_rate = 0.5):
-	""" Generates arrival times of jobs into an array and plots values """
-	curr_time = 0
-	times = []
-	for i in range(num_jobs):
-		curr_time += np.random.exponential(scale=arrival_rate)#0.5)
-		times.append(curr_time)
-	plt.eventplot(times)
-	plt.savefig('../plots/arrival_times.png')
-	return times
-'''
