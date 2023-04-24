@@ -74,52 +74,12 @@ def view_submitted_arrival_times(num_jobs = 100, batch_time=100):
 		axs[i].set_yticks([])
 
 	plt.show()
-	#print(arrival_times)
-'''
-def view_real_arrival_times_redacted(path=None):
-	
-	costs = {}
-	if path: 
-		files = os.listdir(path)
-		fig, axs = plt.subplots(nrows=len(files), ncols=1)
-		# Iterate over the files and check if they have the ".json" extension
-		#for file in files:
-		for i in range(len(files)):
-			file = files[i]
-			log_path = path + file
-			print(log_path)
-			cluster_data = job_logs.read_cluster_event_data(cluster_log_path=log_path)
-			jobs, num_nodes = job_logs.parse_event_logs(cluster_data)#data)
-
-			submission_data = job_logs.read_submission_data(submission_log_path=log_path)
-
-			#cost = job_logs.cloud_cost(jobs=jobs, num_nodes=num_nodes)
-			#costs[file] = cost
-			plot_dir = "../logs/archive/plots/"
-			if not os.path.exists(plot_dir):
-				#os.mkdir(archive_path)
-				os.mkdir(plot_dir)
-
-			plot_path = "../logs/archive/plots/" + file[:-5] + ".png"
-			print(plot_path)
-			job_logs.plot_job_intervals(jobs, num_nodes, save=True, path=plot_path, subplt=axs, plt_index=i, tag=str(file))
-			
-			#job_logs.plot_job_intervals(jobs, num_nodes)
-			
-			#if file.endswith(".json"):
-			#	log_path = log_path + str(file)
-			#	break 
-	#return costs
-	plt.show()
-
-	return 
-'''
 
 class Config:
     def __init__(self, config_dict):
         self.__dict__.update(config_dict)
 
-# TODO: Generate Jobs -- Generate data for future jobs
+
 def generate(hyperparameters): 
 	jobs = {}
 	hyperparameters = {
@@ -407,9 +367,6 @@ def start_logs(tag=None, batch_repo=None):
 	event_data = job_logs.event_data_dict()
 	job_logs.write_cluster_event_data(batch_repo=batch_repo, event_data=event_data, tag=tag)
 
-def test():
-	print("hello")
-
 def empty_cluster():
 	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst")
 	onprem_api = client.CoreV1Api()
@@ -428,7 +385,7 @@ def empty_cluster():
 	
 	return True 
 
-def hyperparameter_sweep(batch_time=500, num_jobs=100, sleep_mean=30, timeout=10, policy=""fifo_wait""):
+def hyperparameter_sweep(batch_time=500, num_jobs=100, sleep_mean=30, timeout=10, policy="fifo_wait"):
 	# TODO: Vary and log jobs with different arrival rates
 	arrival_intervals = 5
 	waiting_intervals = 3
