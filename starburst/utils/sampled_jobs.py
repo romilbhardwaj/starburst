@@ -115,13 +115,15 @@ def view_real_arrival_times_redacted(path=None):
 	return 
 '''
 
-def submit_jobs(time_constrained = True, batch_time=10, num_jobs=10, arrival_rate=0.5, sleep_mean=10, timeout=5, plot_arrival_times=False, submit=True, batch_repo=None, hyperparameters={}, random_seed=0, tag="job"): #arrival_times, 
+def submit_jobs(time_constrained = True, batch_time=10, num_jobs=10, arrival_rate=0.5, sleep_mean=10, timeout=5, plot_arrival_times=False, submit=True, batch_repo=None, hyperparameters={}, random_seed=0, tag="job", wait_time=0): #arrival_times, 
 	""" Submits a a default job for each time stamp of the inputed arrival times """
 	hyperparameters = {
-		"num_jobs": 0,
-		"time_out": 0,
-		"mean_sleep": 0,
-		"arrival_rate": 0, 
+		"num_jobs": num_jobs, #0,
+		"batch_time": batch_time,
+		"wait_time": wait_time,
+		"time_out": timeout, #0,
+		"mean_sleep": sleep_mean, #0,
+		"arrival_rate": arrival_rate, #0, 
 		"cpu_sizes": [1,2,4,8,16,32],
 		"cpu_dist": [0, 0.2, 0.2, 0.2, 0.2], 
 		"gpu_sizes": [1,2,4,8,16,32],
@@ -138,6 +140,8 @@ def submit_jobs(time_constrained = True, batch_time=10, num_jobs=10, arrival_rat
 
 	cpu_size = [1, 2, 4]
 	cpu_dist = [0.2, 0.4, 0.4]
+	hyperparameters['cpu_sizes'] = cpu_size
+	hyperparameters['cpu_dist'] = cpu_dist
 
 	'''
 	submit_time = 0
@@ -172,7 +176,9 @@ def submit_jobs(time_constrained = True, batch_time=10, num_jobs=10, arrival_rat
 
 	job_cpu_size = {}
 	job_sleep_time = {}
-	job_data = {}
+	#job_data = {}
+	# TODO: Verify hyperparamters gets parsed successfully by read_submission_data()
+	job_data = {'hyperparameters': hyperparameters}
 
 	log_path = "../logs/"
 	if not os.path.exists(log_path):
@@ -180,12 +186,13 @@ def submit_jobs(time_constrained = True, batch_time=10, num_jobs=10, arrival_rat
 	log_path = "../logs/archive/"
 	if not os.path.exists(log_path):
 		os.mkdir(log_path)
-	log_path = "../logs/archive/jobs/"
+	log_path += batch_repo + "/"
 	if not os.path.exists(log_path):
 		os.mkdir(log_path)
-	log_path += batch_repo + "/"#str(int(datetime.now().timestamp())) + '/'
+	log_path += "jobs/"
 	if not os.path.exists(log_path):
 		os.mkdir(log_path)
+	
 	#current_log_path = log_path + str(arrival_rate) + ".json"
 	current_log_path = log_path + tag + ".json"
 
@@ -219,9 +226,10 @@ def submit_jobs(time_constrained = True, batch_time=10, num_jobs=10, arrival_rat
 			job_sleep_time[job] = job_duration
 			job_workload = {"gpu": gpus, "cpu":cpus, "memory":memory}
 			generate_sampled_job_yaml(job_id=job, sleep_time=job_duration, workload=job_workload)#10)
-			job_data[job] = job_values
 			submit_time = int(datetime.now().timestamp())
 			job_values['submit_time'] = submit_time
+
+			job_data[job] = job_values
 			os.system('python3 -m starburst.drivers.submit_job --job-yaml ../../examples/sampled/sampled_job.yaml')	
 		elif (arrival_times != []) and (curr_time >= start_time + arrival_times[-1] + timeout): 
 			print("Time Out...")
@@ -231,7 +239,8 @@ def submit_jobs(time_constrained = True, batch_time=10, num_jobs=10, arrival_rat
 			print("Time Out...")
 			break
 		'''
-		
+
+		# TODO: Save job hyperparameters directly into job events metadata	
 		#current_log_path = log_path + "job.json"
 		with open(current_log_path, "w") as f:
 			json.dump(job_data, f)
@@ -340,7 +349,7 @@ def hyperparameter_sweep(batch_time=500, num_jobs=100, sleep_mean=30, timeout=10
 	for wait in waiting_times:  
 		q = mp.Queue()
 		c1, c2 = mp.Pipe()
-		p0 = mp.Process(target=driver.custom_start, args=(q, c2, 10000, 1, "gke_sky-burst_us-central1-c_starburst","gke_sky-burst_us-central1-c_starburst-cloud","fifo_wait", wait))
+		p0 = mp.Process(target=driver.custom_start, args=(q, c2, 10000, 1, "gke_sky-burst_us-central1-c_starburst","gke_sky-burst_us-central1-c_starburst-cloud","fifo_wait", wait,))
 
 		p0.start()
 		# TODO: Vary wait_time (i.e. time_out for each arrival_rate) 
@@ -358,9 +367,8 @@ def hyperparameter_sweep(batch_time=500, num_jobs=100, sleep_mean=30, timeout=10
 			clear_logs()
 			
 			tag = str(wait) + "_" + str(ar)
-			p1 = mp.Process(target=start_logs, args=(tag, batch_repo))
-			p2 = mp.Process(target=submit_jobs, args=(True, batch_time, num_jobs, ar, sleep_mean, timeout, False, True, batch_repo, {}, 42, tag))
-
+			p1 = mp.Process(target=start_logs, args=(tag, batch_repo,))
+			p2 = mp.Process(target=submit_jobs, args=(True, batch_time, num_jobs, ar, sleep_mean, timeout, False, True, batch_repo, {}, 42, tag, wait))
 			p1.start()
 			p2.start()
 
@@ -389,7 +397,8 @@ def main():
 	#view_submitted_arrival_times()
 	#view_real_arrival_times()
 
-	#hyperparameter_sweep()
+	# TODO: Remind users to only execute hyperparameter sweep through the main function, since mp package fails otherwise
+	hyperparameter_sweep()
 	return 
 
 if __name__ == '__main__':
