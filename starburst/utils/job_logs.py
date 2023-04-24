@@ -373,7 +373,12 @@ def parse_prometheus_logs(onprem=onprem, cloud=cloud):
 	return jobs, len(all_nodes)
 
 def parse_event_logs(cluster_event_data=None, submission_data=None):#onprem_event_logs = None, cloud_event_logs = None):
-		# TODO: Plot cloud and onprem cluster jobs together
+	# TODO: Plot cloud and onprem cluster jobs together
+
+	hyperparameters = None
+	if 'hyperparamters' in submission_data: 
+		hyperparameters = submission_data['hyperparameters']
+
 	job_names = {}
 	jobs = {'idx':[], 'runtime':[], 'arrival':[], 'num_gpus':[], 'allocated_gpus':[], 'start':[], 'instance_type':[], 'node_index': [], 'node': [], 'cpus': [], 'submission_time': []}
 
@@ -563,14 +568,25 @@ def retrieve_raw_events():
 	text_file.close()
 
 def graph_benchmark(costs):
+	# TODO: Add 
 	graph = []
-	for cost in costs: 
-		cost_int = float(cost[:3])
-		graph.append((cost_int, costs[cost]))
+	for i in costs: 
+		cost = costs[i]
+		cost_value = cost['cost']
+		hyperparameters = cost['hyperparameters']
+		
+	#for cost in costs: 
+		#cost_int = float(cost[:3])
+		#cost_int = float(cost[5:8])
+		arrival_rate = hyperparameters['arrival_rate']
+		wait_time = hyperparameters['wait_time']
+		#graph.append((cost_int, costs[cost]))
+		graph.append((arrival_rate, cost_value, wait_time))
 	data = graph
 	x = [x[0] for x in data]
 	y1 = [y[1][0] for y in data]
 	y2 = [y[1][1] for y in data]
+	y3 = [y[2] for y in data]
 	print(data)
 	print(x)
 	print(y1)
@@ -579,6 +595,7 @@ def graph_benchmark(costs):
 	plt.bar([i + 0.025 for i in x], y2, width=0.025, label="onprem_cost")
 	plt.xlabel('Arrival Rate')
 	plt.ylabel('Cost ($)')
+	plt.title('Wait Time ' + str(y3[0]))
 	plt.show()
 	'''
 	x = [x[0] for x in data]
@@ -594,11 +611,13 @@ def graph_benchmark(costs):
 	plt.show()
 	'''
 
-def view_real_arrival_times(cluster_data_path=None, submission_data_path=None):
+def view_real_arrival_times(event_number=None):#cluster_data_path=None, submission_data_path=None):
 	costs = {}
-	if cluster_data_path and submission_data_path: 
+	if event_number: #cluster_data_path and submission_data_path: 
+		cluster_data_path = "../logs/archive/" + str(event_number) + "/events/"
+		submission_data_path = "../logs/archive/" + str(event_number) + "/jobs/"
 		files = os.listdir(cluster_data_path)
-		num_graphs = len(files) + 1 #2
+		num_graphs = len(files) #-2#+ 1 #2
 		fig, axs = plt.subplots(nrows=num_graphs, ncols=1)
 		#fig, axs = plt.subplots(nrows=2, ncols=1)
 		# Iterate over the files and check if they have the ".json" extension
@@ -630,11 +649,10 @@ def view_real_arrival_times(cluster_data_path=None, submission_data_path=None):
 			#if file.endswith(".json"):
 			#	log_path = log_path + str(file)
 			#	break 
-			''''
+			
 			file_count += 1
-			if file_count >= 2: 
+			if file_count >= num_graphs: 
 				break 
-			'''
 			
 	#return costs
 	plt.show()
@@ -642,7 +660,7 @@ def view_real_arrival_times(cluster_data_path=None, submission_data_path=None):
 	return 
 
 
-def benchmark_hyperparamter_search(path=None):
+def benchmark_hyperparamter_search(event_number=None):#path=None):
 	'''
 	0.1 -> 0.01137
 	0.2 -> 0.00931
@@ -651,24 +669,38 @@ def benchmark_hyperparamter_search(path=None):
 	0.5 -> 0.01500
 	'''
 	costs = {}
-	if path: 
-		files = os.listdir(path)
+	if event_number: #path: 
+		cluster_data_path = "../logs/archive/" + str(event_number) + '/events/'
+		submission_data_path = "../logs/archive/" + str(event_number) + '/jobs/'
+		files = os.listdir(cluster_data_path)#path)
 
 		# Iterate over the files and check if they have the ".json" extension
-		for file in files:
-			log_path = path + file
-			print(log_path)
-			data = read_cluster_event_data(log_path = log_path)
-			jobs, num_nodes = parse_event_logs(data)
+		for i in range(len(files)):
+		#for file in files:
+			#log_path = path + file
+			#print(log_path)
+			#data = read_cluster_event_data(cluster_log_path=log_path)
+			#jobs, num_nodes = parse_event_logs(data)
+			file = files[i]
+			cluster_log_path = cluster_data_path + file
+			submission_log_path = submission_data_path + file
+
+			print(cluster_log_path)
+			cluster_event_data = read_cluster_event_data(cluster_log_path=cluster_log_path)
+			submission_data = read_submission_data(submission_log_path=submission_log_path)
+			jobs, num_nodes = parse_event_logs(cluster_event_data=cluster_event_data, submission_data=submission_data)
+			hyperparameters = submission_data['hyperparameters']
+
 			cost = cloud_cost(jobs=jobs, num_nodes=num_nodes)
-			costs[file] = cost
+			costs[i] = {"cost": cost, "hyperparameters": hyperparameters}
+			#costs[file] = cost
 			
 			#job_logs.plot_job_intervals(jobs, num_nodes)
 			
 			#if file.endswith(".json"):
 			#	log_path = log_path + str(file)
 			#	break 
-	graph_benchmark(costs)
+	graph_benchmark(costs)#, hyperparameters)
 	return costs
 
 def read_cluster_event_data(cluster_log_path=None):#, submission_log_path=None):
@@ -748,6 +780,10 @@ def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None):
 	'''
 	if batch_repo: 
 		log_path = log_path + "archive/" + batch_repo + "/"
+		if not os.path.exists(log_path):
+			#os.mkdir(archive_path)
+			os.mkdir(log_path)
+		log_path += 'events/'
 		if not os.path.exists(log_path):
 			#os.mkdir(archive_path)
 			os.mkdir(log_path)
@@ -852,8 +888,9 @@ def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None):
 							job_name = involved_object.name 
 							job_completion_time = item.first_timestamp
 							event_data['job_completion_times'][job_name] = int(job_completion_time.timestamp())
-					
+
+		# TODO: Save job hyperparameters directly into job events metadata	
 		with open(current_log_path, "w") as f: #"../logs/event_data.json", "w") as f:
 			json.dump(cluster_event_data, f)
 	
-	return 0 
+	return 0
