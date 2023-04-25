@@ -79,7 +79,7 @@ if __name__ == '__main__':
     main()
 
 
-def custom_start(queue, conn, grpc_port=GRPC_PORT, sched_tick_time=SCHED_TICK_TIME, onprem_k8s_cluster_name=ONPREM_K8S_CLUSTER_NAME, cloud_k8s_cluster_name=CLOUD_K8S_CLUSTER_NAME, policy=POLICY_STR, wait_time=0):
+def custom_start(queue, conn, grpc_port=GRPC_PORT, sched_tick_time=SCHED_TICK_TIME, onprem_k8s_cluster_name=ONPREM_K8S_CLUSTER_NAME, cloud_k8s_cluster_name=CLOUD_K8S_CLUSTER_NAME, policy=POLICY_STR, wait_time=0, job_data={}):
     global startburst_scheduler
     '''
     # Parse command line arguments =================================================================
@@ -111,7 +111,8 @@ def custom_start(queue, conn, grpc_port=GRPC_PORT, sched_tick_time=SCHED_TICK_TI
                                     onprem_cluster_name=onprem_k8s_cluster_name,
                                     cloud_cluster_name=cloud_k8s_cluster_name,
                                     queue_policy_str=policy,
-                                    wait_time=wait_time)
+                                    wait_time=wait_time,
+                                    job_data=job_data)
     
     #starburst_scheduler = starburst
     for s in event_sources:

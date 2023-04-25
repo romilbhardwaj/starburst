@@ -24,7 +24,8 @@ class StarburstScheduler:
                  onprem_cluster_name: str,
                  cloud_cluster_name: str,
                  queue_policy_str: str = "fifo_onprem_only",
-                 wait_time: int = 0):
+                 wait_time: int = 0,
+                 job_data: dict = {}):
         """
         Main Starburst scheduler class. Responsible for processing events in the provided event queue.
         :param event_queue: Main event queue
@@ -48,6 +49,8 @@ class StarburstScheduler:
         queue_policy_class = queue_policies.get_policy(queue_policy_str)
         if queue_policy_str == "fifo_wait":
             self.queue_policy = queue_policy_class(self.onprem_cluster_manager, self.cloud_cluster_manager, wait_threshold=wait_time)
+        elif queue_policy_str == "time_estimator":
+            self.queue_policy = queue_policy_class(self.onprem_cluster_manager, self.cloud_cluster_manager, wait_threshold=wait_time, job_data=job_data)
         else: 
             self.queue_policy = queue_policy_class(self.onprem_cluster_manager, self.cloud_cluster_manager)
 
