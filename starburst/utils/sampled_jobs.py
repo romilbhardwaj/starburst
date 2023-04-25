@@ -78,6 +78,7 @@ class Config:
 
 def generate_jobs(hyperparameters): 
 	jobs = {}
+	'''
 	hyperparameters = {
 		"time_constrained": True,
 		"random_seed": 42,
@@ -88,12 +89,13 @@ def generate_jobs(hyperparameters):
 		"mean_sleep": 40,
 		"arrival_rate": 1,
 		"cpu_sizes": [1,2,4,8,16,32],
-		"cpu_dist": [0, 0.2, 0.2, 0.2, 0.2], 
+		"cpu_dist": [0, 0.2, 0.2, 0.2, 0.2],
 		"gpu_sizes": [1,2,4,8,16,32],
 		"gpu_dist": [0, 0.2, 0.2, 0.2, 0.2],
 		"memory_sizes": [100, 500, 1000, 50000],
 		"memory_dict": [0.25, 0.25, 0.25, 0.25],
 	}
+	'''
 	hp = Config(hyperparameters)
 	jobs = {}
 	jobs['hyperparameters'] = hyperparameters
@@ -101,29 +103,29 @@ def generate_jobs(hyperparameters):
 	np.random.seed(hp.random_seed)
 	job_index = 0
 	submit_time = 0
-	while True: 
-		if hp.time_constrained and submit_time > hp.batch_time: 
-			break 
-		elif job_index >= hp.num_jobs: 
-			break 
+	while True:
+		if hp.time_constrained and submit_time > hp.batch_time:
+			break
+		elif job_index >= hp.num_jobs:
+			break
 		job = {}
-		job_index += 1
-		np.random.seed(hp.random_seed) 
+		np.random.seed(hp.random_seed)
 		submit_time += np.random.exponential(scale=hp.arrival_rate)
-		np.random.seed(hp.random_seed) 
-		job_duration = np.random.exponential(scale=hp.sleep_mean)
-		np.random.seed(hp.random_seed) 
+		np.random.seed(hp.random_seed)
+		job_duration = np.random.exponential(scale=hp.mean_duration)#sleep_mean)
+		np.random.seed(hp.random_seed)
 		cpus = int(np.random.choice(hp.cpu_sizes, p=hp.cpu_dist))
-		np.random.seed(hp.random_seed) 
+		np.random.seed(hp.random_seed)
 		gpus = min(0, int(np.random.exponential(scale=2)))
-		np.random.seed(hp.random_seed) 
+		np.random.seed(hp.random_seed)
 		memory = min(0, int(np.random.exponential(scale=50)))
 		job['submit_time'] = submit_time
 		job['job_duration'] = job_duration
 		workload = {"gpu": gpus, "cpu":cpus, "memory":memory}
 		job['workload'] = workload
 		jobs[job_index] = job
-		arrivals.append(job_index, submit_time)
+		arrivals.append((job_index, submit_time))
+		job_index += 1
 	return jobs, arrivals
 
 def save_jobs(jobs, repo, tag):
@@ -150,12 +152,14 @@ def submit(jobs, arrivals):
 	total_jobs = len(jobs) - 1
 	while True:
 		curr_time = time.time()
-		if job < total_jobs and curr_time > arrivals[job] + start_time:
+		#print(str(job_index) + " " + str(total_jobs) +  " " + str(curr_time) + " " + str(arrivals[job_index]) + " " + str(start_time))
+		if job_index < total_jobs and curr_time > arrivals[job_index][1] + start_time:
 			job = jobs[job_index]
 			job_index += 1
-			generate_sampled_job_yaml(job_id=job_index, sleep_time=job["duration"], workload=job['workload'])
-			os.system('python3 -m starburst.drivers.submit_job --job-yaml ../../examples/sampled/sampled_job.yaml')	
-		elif (arrivals != []) and (curr_time >= start_time + arrivals[-1] + jobs["hyperparameters"]["time_out"]): 
+			generate_sampled_job_yaml(job_id=job_index, sleep_time=job["job_duration"], workload=job['workload'])
+			os.system('python3 -m starburst.drivers.submit_job --job-yaml ../../examples/sampled/sampled_job.yaml')
+		#TODO: Improve stop condition -- wait until last job completes
+		elif (arrivals != []) and (curr_time >= start_time + arrivals[-1][1] + jobs["hyperparameters"]["time_out"]): 
 			print("Job Connection Time Out...")
 			break
 	return 
@@ -388,37 +392,61 @@ def submit_sweep():
 	run_sweep(sweep)
 
 def generate_sweep(): 
+	# Default Hyperparameters
 	hyperparameters = {
+		"policy": "fifo_onprem_only",
 		"time_constrained": True,
-		"random_seed": 42,
+		"random_seed": 0,
 		"num_jobs": 100,
 		"batch_time": 300,
 		"wait_time": 0,
 		"time_out": 5,
-		"mean_sleep": 40,
+		"mean_duration": 30,
 		"arrival_rate": 1,
 		"cpu_sizes": [1,2,4,8,16,32],
-		"cpu_dist": [0, 0.2, 0.2, 0.2, 0.2], 
+		"cpu_dist": [0, 0.2, 0.2, 0.2, 0.2, 0.2], 
 		"gpu_sizes": [1,2,4,8,16,32],
-		"gpu_dist": [0, 0.2, 0.2, 0.2, 0.2],
+		"gpu_dist": [0, 0.2, 0.2, 0.2, 0.2, 0.2],
 		"memory_sizes": [100, 500, 1000, 50000],
 		"memory_dict": [0.25, 0.25, 0.25, 0.25],
 	}
-	sweep = {hyperparameters}
-	return sweep 
+	
+	# TODO: Integrate hpo tool (e.g. optuna)
+
+	index = 0
+	sweep = {}
+
+	arrival_intervals = 5
+	waiting_intervals = 3
+	arrival_rates = np.linspace(0, 5, num=arrival_intervals+1).tolist()[1:]
+	wait_times = np.linspace(0, 30, num=waiting_intervals+1).tolist()
+
+	hyperparameters["policy"] = "time_estimator" #"fifo_wait"
+	hyperparameters["cpu_sizes"] = [1, 2, 4]
+	hyperparameters["cpu_dist"] = [0.2, 0.4, 0.4]
+
+	for w in wait_times:
+		for a in arrival_rates:
+			hyperparameters["arrival_rate"] = a
+			hyperparameters["wait_time"] = w
+			sweep[index] = hyperparameters
+			index += 1
+
+	return sweep
 
 def run_sweep(sweep):
 	sweep_timestamp =  str(int(datetime.now().timestamp()))
 	for i in range(len(sweep)):
-		hp = sweep[i] 
-		run(hp, sweep_timestamp, i)
-	return 0 
+		hp = sweep[i]
+		run(hp, sweep_timestamp, str(i))
+	return 0
 
 def run(hyperparameters, batch_repo, index):
 	hp = Config(hyperparameters)
-	q = mp.Queue()
+	jobs, arrivals = generate_jobs(hyperparameters=hyperparameters)
+	save_jobs(jobs=jobs, repo=batch_repo, tag=index)
 	c1, c2 = mp.Pipe()
-	p0 = mp.Process(target=driver.custom_start, args=(q, c2, 10000, 1, "gke_sky-burst_us-central1-c_starburst","gke_sky-burst_us-central1-c_starburst-cloud",hp.policy, hp.wait_time,))
+	p0 = mp.Process(target=driver.custom_start, args=(None, c2, 10000, 1, "gke_sky-burst_us-central1-c_starburst","gke_sky-burst_us-central1-c_starburst-cloud",hp.policy, hp.wait_time, jobs))
 	p0.start()
 	
 	while (c1.poll() == False) or (not (len(c1.recv()) == 0 and empty_cluster())):
@@ -428,23 +456,26 @@ def run(hyperparameters, batch_repo, index):
 	
 	tag = str(index)
 	p1 = mp.Process(target=start_logs, args=(tag, batch_repo,))
-	p2 = mp.Process(target=submit_jobs, args=(True, hp.batch_time, hp.num_jobs, hp.arrival_time, hp.sleep_mean, hp.time_out, False, True, batch_repo, {}, hp.random_seed, tag, hp.wait_time))
+	p2 = mp.Process(target=submit, args=(jobs, arrivals))
 	p1.start()
 	p2.start()
 
 	while (p2.is_alive()) or (c1.poll() == False) or (not (len(c1.recv()) == 0 and empty_cluster())):
 		print("Wait for Job to Complete....")
+		print("p2 alive status: " + str(p2.is_alive()))
+		print("Job Queue: " + str(c1.recv()))
 		time.sleep(1)
-
+	
+	# TODO: Ensure p2 dies only after all submitted jobs have completed
 	p1.terminate()
 	p0.terminate()
+	
 	return 0 
 
 def hyperparameter_sweep(batch_time=500, num_jobs=100, sleep_mean=30, timeout=10, policy="fifo_wait"):
 	# TODO: Vary and log jobs with different arrival rates
 	arrival_intervals = 5
 	waiting_intervals = 3
-
 	arrival_rates = np.linspace(0, 5, num=arrival_intervals+1).tolist()[1:]
 	waiting_times = np.linspace(0, 30, num=waiting_intervals+1).tolist()
 
@@ -500,7 +531,8 @@ def main():
 	#view_real_arrival_times()
 
 	# TODO: Remind users to only execute hyperparameter sweep through the main function, since mp package fails otherwise
-	hyperparameter_sweep()
+	#hyperparameter_sweep()
+	submit_sweep()
 	return 
 
 if __name__ == '__main__':
