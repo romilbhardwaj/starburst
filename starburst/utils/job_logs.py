@@ -1,6 +1,6 @@
 from prometheus_api_client import PrometheusConnect
 import matplotlib.pyplot as plt
-import read_trace
+import plot_jobs #read_trace
 import math
 from kubernetes import client, config
 import datetime
@@ -211,23 +211,26 @@ def cloud_cost(jobs, num_nodes):
 	instance_types = jobs['instance_type']
 	runtimes = jobs['runtime']
 	start = jobs['start']
+	max_arrival = max(jobs['arrival'])
+	min_arrival = min(jobs['arrival'])
+	total_time = (4 * 8 * (max_arrival - min_arrival)) / (60 * 60) # 4 nodes per cluster w/ 8 CPU's each
+	#total_time = 0 
 	for i in range(len(runtimes)):
 		print(start[i])
+		runtime = runtimes[i] / (60 * 60)
+		#total_time += runtime
+		instance_type = instance_types[i]
+		instance_cost_per_hour = GCP_PRICES[instance_type]
 		if start[i] == None: 
-			runtime = runtimes[i] / (60 * 60)
-			instance_type = instance_types[i]
-			instance_cost = GCP_PRICES[instance_type]
-			cloud_cost += runtime * instance_cost
+			cloud_cost += runtime * instance_cost_per_hour
 		else: 
-			runtime = runtimes[i] / (60 * 60)
-			instance_type = instance_types[i]
-			instance_cost = GCP_PRICES[instance_type]
-			onprem_cost += runtime * instance_cost
+			onprem_cost += runtime * instance_cost_per_hour
+		
 
-	return cloud_cost, onprem_cost
+	return (cloud_cost, onprem_cost), (cloud_cost/total_time, onprem_cost/total_time)
 
 def plot_job_intervals(jobs, num_nodes, save=False, path=None, subplt=None, plt_index=None, tag=None):
-	read_trace.plot_trace_spacetime_and_spillover(jobs, num_nodes, save=save, path=path, subplt=subplt, plt_index=plt_index, tag=tag)
+	plot_jobs.plot_trace_spacetime_and_spillover(jobs, num_nodes, save=save, path=path, subplt=subplt, plt_index=plt_index, tag=tag)
 
 def parse_prometheus_logs(onprem=onprem, cloud=cloud):
 	# TODO: Plot cloud and onprem cluster jobs together
@@ -569,10 +572,11 @@ def retrieve_raw_events():
 
 def graph_benchmark(costs):
 	# TODO: Add 
-	graph = []
+	graph = {}
 	for i in costs: 
 		cost = costs[i]
 		cost_value = cost['cost']
+		#cost_value = cost['cost_density'] # dollars/seconds
 		hyperparameters = cost['hyperparameters']
 		
 	#for cost in costs: 
@@ -581,7 +585,12 @@ def graph_benchmark(costs):
 		arrival_rate = hyperparameters['arrival_rate']
 		wait_time = hyperparameters['wait_time']
 		#graph.append((cost_int, costs[cost]))
-		graph.append((arrival_rate, cost_value, wait_time))
+		if wait_time in graph: 
+			graph[wait_time].append((arrival_rate, cost_value,))
+		else: 
+			graph[wait_time] = []
+			graph[wait_time].append((arrival_rate, cost_value,))
+	'''
 	data = graph
 	x = [x[0] for x in data]
 	y1 = [y[1][0] for y in data]
@@ -597,6 +606,29 @@ def graph_benchmark(costs):
 	plt.ylabel('Cost ($)')
 	plt.title('Wait Time ' + str(y3[0]))
 	plt.show()
+	'''
+
+	fig, axs = plt.subplots(nrows=len(graph), ncols=1)
+
+	plt_index = 0 
+	for wait in graph: 
+		data = graph[wait]
+		x = [x[0] for x in data]
+		y1 = [y[1][0] for y in data]
+		y2 = [y[1][1] for y in data]
+		axs[plt_index].bar(x, y1, width=0.025, label="cloud_cost")
+		axs[plt_index].bar([i + 0.025 for i in x], y2, width=0.025, label="onprem_cost")
+		axs[plt_index].set_xlabel('Arrival Rate (1/lambda)')
+		axs[plt_index].set_ylabel('Cost ($)')
+		axs[plt_index].set_title('Wait Time ' + str(wait))
+		plt_index += 1
+
+	#fig.tight_layout(pad=20.0)#, h_pad=50.0, w_pad=50.0)
+	plt.subplots_adjust(hspace=1)
+	plt.show()
+		
+
+		
 	'''
 	x = [x[0] for x in data]
 	y1 = [y[1][0] for y in data]
@@ -673,6 +705,7 @@ def benchmark_hyperparamter_search(event_number=None):#path=None):
 		cluster_data_path = "../logs/archive/" + str(event_number) + '/events/'
 		submission_data_path = "../logs/archive/" + str(event_number) + '/jobs/'
 		files = os.listdir(cluster_data_path)#path)
+		#exempt_files = []
 
 		# Iterate over the files and check if they have the ".json" extension
 		for i in range(len(files)):
@@ -691,8 +724,8 @@ def benchmark_hyperparamter_search(event_number=None):#path=None):
 			jobs, num_nodes = parse_event_logs(cluster_event_data=cluster_event_data, submission_data=submission_data)
 			hyperparameters = submission_data['hyperparameters']
 
-			cost = cloud_cost(jobs=jobs, num_nodes=num_nodes)
-			costs[i] = {"cost": cost, "hyperparameters": hyperparameters}
+			cost, cost_density = cloud_cost(jobs=jobs, num_nodes=num_nodes)
+			costs[i] = {"cost": cost, "cost_density": cost_density, "hyperparameters": hyperparameters}
 			#costs[file] = cost
 			
 			#job_logs.plot_job_intervals(jobs, num_nodes)
