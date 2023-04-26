@@ -350,6 +350,43 @@ def clear_logs():
 
 	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst")
 	onprem_api = client.CoreV1Api()
+	onprem_api_batch = client.BatchV1Api()
+
+	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst-cloud")
+	cloud_api = client.CoreV1Api()
+	cloud_api_batch = client.BatchV1Api()
+
+	cluster_apis = [(onprem_api, onprem_api_batch), (cloud_api, cloud_api_batch)]
+
+	for apis in cluster_apis:
+		api, api_batch = apis
+		# Delete all event logs in the cluster
+		api.delete_collection_namespaced_event(
+			namespace='default',  # Replace with the namespace where you want to delete the events
+			body=client.V1DeleteOptions(),
+		)
+
+		jobs_list = api_batch.list_namespaced_job(namespace='default')
+		for job in jobs_list.items:
+			api_batch.delete_namespaced_job(
+				name=job.metadata.name, 
+				namespace='default', 
+				body=client.V1DeleteOptions(
+					propagation_policy='Foreground', 
+					grace_period_seconds=0
+					)
+			)
+	
+	print("Completed Clearing Logs...")
+
+
+def clear_logs_redacted():
+	# TODO: Automate log cleaning
+	# TODO: Remove logs and both onprem and cloud cluster
+	print("Started Clearing Logs...")
+
+	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst")
+	onprem_api = client.CoreV1Api()
 
 	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst-cloud")
 	cloud_api = client.CoreV1Api()
