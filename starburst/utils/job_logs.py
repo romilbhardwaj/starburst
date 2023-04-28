@@ -191,43 +191,11 @@ def average_job_running_time(jobs):
 def average_jct():
 	return average_job_running_time() + average_waiting_time()
 
-def cloud_cost(jobs, num_nodes):
-	# TODO: Compute steady state value i.e. remove cloud cost from first X and last X jobs
-	# TODO: Compute total value i.e. beg to end simulation cost --> compute start and end time for each node
 
-	# TODO: Only consider jobs with start=None, because they are run on the cloud
-	'''
-	arrivals = jobs['arrival']
-	runtimes = jobs['runtime']
-	terminations = arrivals + runtimes
-	start_time = min(arrivals)
-	end_time = max(terminations)
-	total_time = end_time - start_time
-	cost = AWS_PRICES['vCPU'] * total_time/60
-	'''
-
-	cloud_cost = 0 
-	onprem_cost = 0 
-	instance_types = jobs['instance_type']
-	runtimes = jobs['runtime']
-	start = jobs['start']
-	max_arrival = max(jobs['arrival'])
-	min_arrival = min(jobs['arrival'])
-	total_time = (4 * 8 * (max_arrival - min_arrival)) / (60 * 60) # 4 nodes per cluster w/ 8 CPU's each
-	#total_time = 0 
-	for i in range(len(runtimes)):
-		print(start[i])
-		runtime = runtimes[i] / (60 * 60)
-		#total_time += runtime
-		instance_type = instance_types[i]
-		instance_cost_per_hour = GCP_PRICES[instance_type]
-		if start[i] == None: 
-			cloud_cost += runtime * instance_cost_per_hour
-		else: 
-			onprem_cost += runtime * instance_cost_per_hour
-		
-
-	return (cloud_cost, onprem_cost), (cloud_cost/total_time, onprem_cost/total_time)
+#total_job_volume = 1155998.77277777
+#job_makespan = 2559.3205555555555
+#diff_df['norm_system_utilization'] = total_job_volume/(job_makespan*diff_df['cluster_size']*sim_df['gpus_per_node'].iloc[0])
+#x_axis = 'norm_system_utilization'
 
 def plot_job_intervals(jobs, num_nodes, save=False, path=None, subplt=None, plt_index=None, tag=None):
 	plot_jobs.plot_trace_spacetime_and_spillover(jobs, num_nodes, save=save, path=path, subplt=subplt, plt_index=plt_index, tag=tag)
@@ -450,20 +418,32 @@ def parse_event_logs(cluster_event_data=None, submission_data=None):#onprem_even
 			print(all_nodes)
 			print(pod_nodes)
 			print(nodes)
+			print(len(intervals))
 			print(intervals)
+			print(len(submission_data))
 			for i, (key, value) in enumerate(intervals.items()):
+				#print(len(intervals))
+				print("index " + str(i))
+				#print(key)
+				
 				#job_id 
 				#s = "sleep-26-100444"
+				# TODO: Note that event_job_id = job_data + 1
 				job_id = re.findall(r'\d+', key)[0]
+				print("job_id" + str(job_id))
 				# sleep-26-100444 - format
 				job_names[i] = key
-				jobs['idx'].append(int(job_id))#i)
+				jobs['idx'].append(int(job_id) - 1)#i)
 				jobs['runtime'].append(value[1] - value[0])
 				jobs['arrival'].append(value[0])
 				jobs['num_gpus'].append(1)
 
+				#if i >= len(submission_data) - 2: 
+				#	print("reached")
+				#	break 
+
 				#if job_id in submission_data: 
-				jobs['cpus'].append(submission_data[job_id]['cpus'])
+				jobs['cpus'].append(submission_data[job_id]['workload']['cpu'])
 				jobs['submission_time'].append(submission_data[job_id]['submit_time'])
 
 				#if key in job_pods:
@@ -489,7 +469,7 @@ def parse_event_logs(cluster_event_data=None, submission_data=None):#onprem_even
 					jobs['instance_type'].append("unknown")
 		
 	# TODO: Determine if logs should be initialized to submission_time or arrival_time
-	min_arrival = min(jobs['submission_time']) #min(jobs['arrival'])
+	min_arrival = min(jobs['arrival']) #min(jobs['submission_time']) #min(jobs['arrival'])
 	jobs['arrival'] = [i - min_arrival for i in jobs['arrival']]
 	jobs['submission_time'] = [i - min_arrival for i in jobs['submission_time']]
 	jobs['start'] = [i - min_arrival if i is not None else None for i in jobs['start']]
@@ -570,78 +550,6 @@ def retrieve_raw_events():
 	n = text_file.write(str(events))
 	text_file.close()
 
-def graph_benchmark(costs):
-	# TODO: Add 
-	graph = {}
-	for i in costs: 
-		cost = costs[i]
-		cost_value = cost['cost']
-		#cost_value = cost['cost_density'] # dollars/seconds
-		hyperparameters = cost['hyperparameters']
-		
-	#for cost in costs: 
-		#cost_int = float(cost[:3])
-		#cost_int = float(cost[5:8])
-		arrival_rate = hyperparameters['arrival_rate']
-		wait_time = hyperparameters['wait_time']
-		#graph.append((cost_int, costs[cost]))
-		if wait_time in graph: 
-			graph[wait_time].append((arrival_rate, cost_value,))
-		else: 
-			graph[wait_time] = []
-			graph[wait_time].append((arrival_rate, cost_value,))
-	'''
-	data = graph
-	x = [x[0] for x in data]
-	y1 = [y[1][0] for y in data]
-	y2 = [y[1][1] for y in data]
-	y3 = [y[2] for y in data]
-	print(data)
-	print(x)
-	print(y1)
-	print(y2)
-	plt.bar(x, y1, width=0.025, label="cloud_cost")
-	plt.bar([i + 0.025 for i in x], y2, width=0.025, label="onprem_cost")
-	plt.xlabel('Arrival Rate')
-	plt.ylabel('Cost ($)')
-	plt.title('Wait Time ' + str(y3[0]))
-	plt.show()
-	'''
-
-	fig, axs = plt.subplots(nrows=len(graph), ncols=1)
-
-	plt_index = 0 
-	for wait in graph: 
-		data = graph[wait]
-		x = [x[0] for x in data]
-		y1 = [y[1][0] for y in data]
-		y2 = [y[1][1] for y in data]
-		axs[plt_index].bar(x, y1, width=0.025, label="cloud_cost")
-		axs[plt_index].bar([i + 0.025 for i in x], y2, width=0.025, label="onprem_cost")
-		axs[plt_index].set_xlabel('Arrival Rate (1/lambda)')
-		axs[plt_index].set_ylabel('Cost ($)')
-		axs[plt_index].set_title('Wait Time ' + str(wait))
-		plt_index += 1
-
-	#fig.tight_layout(pad=20.0)#, h_pad=50.0, w_pad=50.0)
-	plt.subplots_adjust(hspace=1)
-	plt.show()
-		
-
-		
-	'''
-	x = [x[0] for x in data]
-	y1 = [y[1][0] for y in data]
-	y2 = [y[1][1] for y in data]
-
-	plt.bar(x, y1, label='Y1')
-	#plt.bar(x, y2, label='Y2', bottom=y1)
-
-	plt.xlabel('X')
-	plt.ylabel('Y')
-	plt.legend()
-	plt.show()
-	'''
 
 def view_real_arrival_times(event_number=None):#cluster_data_path=None, submission_data_path=None):
 	costs = {}
@@ -657,9 +565,10 @@ def view_real_arrival_times(event_number=None):#cluster_data_path=None, submissi
 		file_count = 0 
 		for i in range(len(files)):
 			file = files[i]
+			print("FILE NAME " + file)
 			cluster_log_path = cluster_data_path + file
 			submission_log_path = submission_data_path + file
-
+			print("CLUSTER LOG PATH")
 			print(cluster_log_path)
 			cluster_event_data = read_cluster_event_data(cluster_log_path=cluster_log_path)
 			submission_data = read_submission_data(submission_log_path=submission_log_path)
@@ -691,8 +600,9 @@ def view_real_arrival_times(event_number=None):#cluster_data_path=None, submissi
 
 	return 
 
+def analyze_sweep(event_number=None):#path=None):
+	"""Takes each batch job file and computes values (e.g. cloud cost, system utilization)"""
 
-def benchmark_hyperparamter_search(event_number=None):#path=None):
 	'''
 	0.1 -> 0.01137
 	0.2 -> 0.00931
@@ -700,12 +610,14 @@ def benchmark_hyperparamter_search(event_number=None):#path=None):
 	0.4 -> 0.00862
 	0.5 -> 0.01500
 	'''
-	costs = {}
+	#costs = {}
+	metrics = {}
 	if event_number: #path: 
 		cluster_data_path = "../logs/archive/" + str(event_number) + '/events/'
 		submission_data_path = "../logs/archive/" + str(event_number) + '/jobs/'
 		files = os.listdir(cluster_data_path)#path)
 		#exempt_files = []
+		files = sorted(files)
 
 		# Iterate over the files and check if they have the ".json" extension
 		for i in range(len(files)):
@@ -715,6 +627,7 @@ def benchmark_hyperparamter_search(event_number=None):#path=None):
 			#data = read_cluster_event_data(cluster_log_path=log_path)
 			#jobs, num_nodes = parse_event_logs(data)
 			file = files[i]
+			print("FILENAME: " + file)
 			cluster_log_path = cluster_data_path + file
 			submission_log_path = submission_data_path + file
 
@@ -724,8 +637,8 @@ def benchmark_hyperparamter_search(event_number=None):#path=None):
 			jobs, num_nodes = parse_event_logs(cluster_event_data=cluster_event_data, submission_data=submission_data)
 			hyperparameters = submission_data['hyperparameters']
 
-			cost, cost_density = cloud_cost(jobs=jobs, num_nodes=num_nodes)
-			costs[i] = {"cost": cost, "cost_density": cost_density, "hyperparameters": hyperparameters}
+			cost, cost_density, system_utilization = compute_metrics(jobs=jobs, num_nodes=num_nodes)
+			metrics[i] = {"cost": cost, "cost_density": cost_density, "system_utilization": system_utilization, "hyperparameters": hyperparameters}
 			#costs[file] = cost
 			
 			#job_logs.plot_job_intervals(jobs, num_nodes)
@@ -733,8 +646,290 @@ def benchmark_hyperparamter_search(event_number=None):#path=None):
 			#if file.endswith(".json"):
 			#	log_path = log_path + str(file)
 			#	break 
-	graph_benchmark(costs)#, hyperparameters)
-	return costs
+	# TODO: Compute baseline cost and cost savings
+	#print(metrics)
+	#time.sleep(1000)
+	graph_metrics(metrics)#, hyperparameters)
+	return metrics
+
+def compute_metrics(jobs, num_nodes):
+	# TODO: Compute steady state value i.e. remove cloud cost from first X and last X jobs
+	# TODO: Compute total value i.e. beg to end simulation cost --> compute start and end time for each node
+
+	# TODO: Only consider jobs with start=None, because they are run on the cloud
+	'''
+	arrivals = jobs['arrival']
+	runtimes = jobs['runtime']
+	terminations = arrivals + runtimes
+	start_time = min(arrivals)
+	end_time = max(terminations)
+	total_time = end_time - start_time
+	cost = AWS_PRICES['vCPU'] * total_time/60
+	'''
+
+	cloud_cost = 0 
+	onprem_cost = 0 
+	instance_types = jobs['instance_type']
+	runtimes = jobs['runtime']
+	start = jobs['start']
+	max_arrival = max(jobs['arrival'])
+	min_arrival = min(jobs['arrival'])
+	total_time = 0 
+
+	for i in range(len(runtimes)):
+		print(start[i])
+		runtime = runtimes[i] / (60 * 60)
+		#total_time += runtime
+		instance_type = instance_types[i]
+		instance_cost_per_hour = GCP_PRICES[instance_type]
+		total_time += runtimes[i]
+		if start[i] == None: 
+			cloud_cost += runtime * instance_cost_per_hour
+		else: 
+			onprem_cost += runtime * instance_cost_per_hour
+
+	# TODO: Ensure accurate system utilization values		
+	job_makespan = (4 * 8 * (max_arrival - min_arrival)) # 4 nodes per cluster w/ 8 CPU's each
+	total_job_volume = total_time
+	norm_system_utilization = job_makespan/total_job_volume
+
+	return (cloud_cost, onprem_cost), (cloud_cost/total_time, onprem_cost/total_time), norm_system_utilization
+
+
+def graph_metrics(metrics):
+	# TODO: Specify the axes along which to graph the costs 
+	# TODO: Specify the variables that are varied in generate_sweep(), pass that data into this function 
+	#print(costs)
+	#graph = {}
+	
+	'''
+	Example 1:
+	Sweep: 
+		1 - arrival rates
+		2 - waiting times
+		3 - policy
+		4 - cpu_dist
+
+		- order
+		- cpu dist [row] 
+			- waiting time [column]
+				- arrival rate [data]
+	'''
+
+	'''
+	sweep1 = ("cpu_dist", 2)
+	sweep2 = ("waiting_time", 11)
+	sweep3 = ("arrival_rate", 6)
+
+	index = 0 
+	for i in range(sweep1[1]): 
+		for j in range(sweep2[1]):
+			for k in range(sweep3[1]):
+				index += 1 
+				data[i][j][k] = 0
+	'''
+
+	data = []
+	for i in metrics: 
+		m = metrics[i]
+		#cost = m['cost']
+		#cost_value = cost['cost_density'] # dollars/seconds
+		#hyperparameters = m['hyperparameters']
+		
+	#for cost in costs: 
+		#cost_int = float(cost[:3])
+		#cost_int = float(cost[5:8])
+		#arrival_rate = hyperparameters['arrival_rate']
+		#wait_time = hyperparameters['wait_time']
+		#cpu_dist = hyperparameters['cpu_dist']
+		#cpu_dist = str(cpu_dist)
+		#policy = hyperparameters['policy']
+		#params = (i, str(wait_time), cpu_dist, policy)
+		#params = (str(wait_time), cpu_dist, policy, arrival_rate, cost)
+		params = {
+			"wait_time": m['hyperparameters']['wait_time'], #str(wait_time), 
+			"cpu_dist": m['hyperparameters']['cpu_dist'], #cpu_dist, 
+			"policy": m['hyperparameters']['policy'], #policy, 
+			"arrival_rate": m['hyperparameters']['arrival_rate'], #arrival_rate, 
+			"cloud_cost": m['cost'][0],
+			"onprem_cost": m['cost'][1],
+			"system_utilization": m['system_utilization']
+		}
+
+		# TODO: Efficiently group job data by hyperparameter sweep
+		# TODO: Group all arrival_rates that have the same policy and waiting time
+
+		# Generate plot format when creating sweep data 
+		#group = (params["policy"], params["cpu)"])
+		data.append(params)
+		'''
+		if params in graph: 
+			#graph[params].append((arrival_rate, cost_value,))
+			#graph[i].append((arrival_rate, cost_value,))
+			graph.append(params)
+		else: 
+			#graph[params] = []
+			graph = []
+			#graph[params].append((arrival_rate, cost_value,))
+			graph.append(params)
+			#raph[i] = []
+			#graph[i].append((arrival_rate, cost_value,))
+		'''
+
+		'''
+		if cpu_dist in graph: 
+			graph[cpu_dist].append((arrival_rate, cost_value,))
+		else: 
+			graph[cpu_dist] = []
+			graph[cpu_dist].append((arrival_rate, cost_value,))
+		'''
+		'''
+		#graph.append((cost_int, costs[cost]))
+		if wait_time in graph: 
+			graph[wait_time].append((arrival_rate, cost_value,))
+		else: 
+			graph[wait_time] = []
+			graph[wait_time].append((arrival_rate, cost_value,))
+		'''
+	'''
+	data = graph
+	x = [x[0] for x in data]
+	y1 = [y[1][0] for y in data]
+	y2 = [y[1][1] for y in data]
+	y3 = [y[2] for y in data]
+	print(data)
+	print(x)
+	print(y1)
+	print(y2)
+	plt.bar(x, y1, width=0.025, label="cloud_cost")
+	plt.bar([i + 0.025 for i in x], y2, width=0.025, label="onprem_cost")
+	plt.xlabel('Arrival Rate')
+	plt.ylabel('Cost ($)')
+	plt.title('Wait Time ' + str(y3[0]))
+	plt.show()
+	'''
+
+	#fig, axs = plt.subplots(nrows=len(graph) + 1, ncols=1)
+	fig, axs = plt.subplots(nrows=3, ncols=6)
+
+	#plt_index = 0 
+	#row = 2
+	#for wait in graph:
+	#for i in range(len(costs)):
+	row = 0 
+	plots = []
+	#for hp in graph:
+
+	#params = (str(wait_time), cpu_dist, policy, arrival_rate, cost)
+	#params = (str(wait_time), cpu_dist, policy, arrival_rate, cost)
+	#hps = []
+	#for i in range(len(graph)):
+	from collections import defaultdict
+	#default_dict
+	graphs = defaultdict()#{}
+	for i in range(len(data)):
+		#hp = graph[i]
+		#hps.append(hp)
+		trial = data[i]
+		#i = hp[0]
+		#m = metrics[i]
+		#wait = graph[cost['hyperparameters']]
+		#params = (str(wait_time), cpu_dist, policy, arrival_rate, cost)
+		#wait_time, cpu_dist, policy, arrival_rate, cost = hp
+		'''
+		wait_time = hp["wait_time"]
+		cpu_dist = hp["cpu_dist"]
+		policy = hp["policy"]
+		arrival_rate = hp["arrival_rate"]
+		onprem_cost = hp["onprem_cost"]
+		cloud_cost = hp["cloud_cost"]
+		system_utilization = hp["system_utilization"]
+		'''
+		#cost = hp["cost"]
+
+		if trial['policy'] == "fifo_wait" and trial['cpu_dist'] == "[0.2, 0.4, 0.4]":
+			row = 0
+		elif trial['policy'] == "fifo_wait" and trial['cpu_dist'] == "[0, 0.5, 0.5]": 
+			row = 1
+		elif trial['policy'] == "fifo_onprem_only":
+			row = 2 
+
+		#data = graph[hp]
+		
+		#arrival_rate = [x["arrival_rate"] for x in hp]
+		#onprem_cost = [x["onprem_cost"] for x in hp]
+		#cloud_cost = [x["cloud_cost"] for x in hp]
+		#system_utilization = [x["system_utilization"] for x in hp]
+		
+		#y1 = [y[1][0] for y in data]
+		#y2 = [y[1][1] for y in data]
+
+		#axs[plt_index].bar(x, y1, width=0.025, label="cloud_cost")
+		#axs[plt_index].bar([i + 0.025 for i in x], y2, width=0.025, label="onprem_cost")
+		plots.append((row, i%6))
+		graph = (row, i%6)
+		if graph not in graphs: 
+			graphs[(row, i%6)] = {
+				'arrial_rate': [],
+				'cloud_cost': [],
+				'onprem_cost': [],
+				'system_utilization': []
+			}#['arrival_rate'].append(0)
+		graphs[(row, i%6)]['arrival_rate'].append(trial['arrival_rate'])
+		graphs[(row, i%6)]['cloud_cost'].append(trial['cloud_cost'])
+		graphs[(row, i%6)]['onprem_cost'].append(trial['onprem_cost'])  
+		graphs[(row, i%6)]['system_utilization'].append(trial['system_utilization'])
+
+	for i in graphs: 
+		axs[i[0]][i[1]].plot(arrival_rate, cloud_cost, label="cloud_cost")
+		axs[i[0]][i[1]].plot(arrival_rate, onprem_cost, label="onprem_cost")
+		axs[i[0]][i[1]].plot(arrival_rate, system_utilization, label="system_utilization")
+		axs[i[0]][i[1]].set_xlabel('Arrival Rate (1/lambda)', fontsize=5)
+		axs[i[0]][i[0]].set_ylabel('Cost ($)', fontsize=5)
+		title =  "Wait time:  " + hp["wait_time"] + " CPU Dist [1, 2, 4] " + hp["cpu_dist"] + " Policy " + hp["policy"]
+		axs[row][i % 6].set_title(title, fontsize=5)
+	#plt_index += 1
+	#print(hp)
+	#print(plots)
+	#print
+
+	#fig.tight_layout(pad=20.0)#, h_pad=50.0, w_pad=50.0)
+	plt.subplots_adjust(hspace=1)
+	plt.show()
+		
+
+		
+	'''
+	x = [x[0] for x in data]
+	y1 = [y[1][0] for y in data]
+	y2 = [y[1][1] for y in data]
+
+	plt.bar(x, y1, label='Y1')
+	#plt.bar(x, y2, label='Y2', bottom=y1)
+
+	plt.xlabel('X')
+	plt.ylabel('Y')
+	plt.legend()
+	plt.show()
+	'''
+
+def cost_multiplier(row):
+	baseline_cost = row['total_cloud_cost_y']
+	cost = row['total_cloud_cost_x']
+	if baseline_cost == 0 and cost==0:
+		return 0
+	elif baseline_cost <=10000:
+		# Small cloud cost for No wait
+		# Savings over small cloud cost is negligible for organizations.
+		return 0
+	elif baseline_cost == 0 and cost>0:
+		return 100
+	return 100* (1 - (cost/baseline_cost))
+
+def cost_difference(row):
+	baseline_cost = row['total_cloud_cost_y']
+	cost = row['total_cloud_cost_x']
+	return baseline_cost - cost
 
 def read_cluster_event_data(cluster_log_path=None):#, submission_log_path=None):
 	if not cluster_log_path: 
