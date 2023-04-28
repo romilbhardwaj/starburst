@@ -2,3 +2,7 @@ kubernetes
 grpcio
 grpcio-tools
 asyncio
+numpy
+matplotlib
+jinja2
+prometheus-api-client
