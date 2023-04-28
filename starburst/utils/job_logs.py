@@ -870,7 +870,8 @@ def graph_metrics(metrics):
 		graph = (row, i%6)
 		if graph not in graphs: 
 			graphs[(row, i%6)] = {
-				'arrial_rate': [],
+				'title': [],
+				'arrival_rate': [],
 				'cloud_cost': [],
 				'onprem_cost': [],
 				'system_utilization': []
@@ -881,9 +882,9 @@ def graph_metrics(metrics):
 		graphs[(row, i%6)]['system_utilization'].append(trial['system_utilization'])
 
 	for i in graphs: 
-		axs[i[0]][i[1]].plot(arrival_rate, cloud_cost, label="cloud_cost")
-		axs[i[0]][i[1]].plot(arrival_rate, onprem_cost, label="onprem_cost")
-		axs[i[0]][i[1]].plot(arrival_rate, system_utilization, label="system_utilization")
+		axs[i[0]][i[1]].plot(graph[i]['arrival_rate'], graph[i]['cloud_cost'], label="cloud_cost")
+		axs[i[0]][i[1]].plot(graph[i]['arrival_rate'], graph[i]['onprem_cost'], label="onprem_cost")
+		axs[i[0]][i[1]].plot(graph[i]['arrival_rate'], graph[i]['system_utilization'], label="system_utilization")
 		axs[i[0]][i[1]].set_xlabel('Arrival Rate (1/lambda)', fontsize=5)
 		axs[i[0]][i[0]].set_ylabel('Cost ($)', fontsize=5)
 		title =  "Wait time:  " + hp["wait_time"] + " CPU Dist [1, 2, 4] " + hp["cpu_dist"] + " Policy " + hp["policy"]
