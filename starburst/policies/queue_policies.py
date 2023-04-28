@@ -124,7 +124,7 @@ class TimeEstimatorPolicy(BasePolicy):
                 heapq.heappop(self.running_jobs)
             
             job = job_queue[0]
-            job_index = int(job.job_name)
+            job_index = int(job.job_name[6:])
             job_runtime = self.job_data[job_index]['job_duration']
             # TODO: Determine how to job_start_time to replace job_submit_time
             job_end_time = job.job_submit_time + job_runtime
