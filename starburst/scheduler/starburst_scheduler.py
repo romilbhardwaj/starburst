@@ -92,7 +92,8 @@ class StarburstScheduler:
             #while not queue.empty():
             #    print("Clearing Process Queue...")
             #    queue.get()
-            conn.send(self.job_queue)
+            if conn: 
+                conn.send(self.job_queue)
             #conn.close()
             '''
             if not queue.empty():
