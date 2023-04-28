@@ -101,7 +101,7 @@ def generate_jobs(hyperparameters):
 	jobs['hyperparameters'] = hyperparameters
 	arrivals = []
 	np.random.seed(hp.random_seed)
-	job_index = 0
+	job_index = 1# 0
 	submit_time = 0
 	while True:
 		if hp.time_constrained and submit_time > hp.batch_time:
@@ -419,7 +419,7 @@ def empty_cluster():
 	for api in cluster_apis:
 		pods = api.list_namespaced_pod(namespace)
 		running_pods = [pod for pod in pods.items if pod.status.phase == "Running"]
-		if running_pods: 
+		if running_pods:
 			return False 
 	
 	return True 
@@ -429,6 +429,13 @@ def submit_sweep():
 	run_sweep(sweep)
 
 def generate_sweep(): 
+	# TODO: Specify grid search values, then plot them
+	"""
+	Sweep 
+
+	generate_sweep(generate_sweep(arrival_time x waiting_time), something_else)	
+	"""
+
 	# Default Hyperparameters
 	hyperparameters = {
 		"policy": "fifo_onprem_only",
@@ -449,6 +456,20 @@ def generate_sweep():
 	}
 	
 	# TODO: Integrate hpo tool (e.g. optuna)
+	# TODO: Specify the sweep axes and values 
+	'''
+	Example 1:
+	Sweep: 
+		1 - arrival rates
+		2 - waiting times
+		3 - policy
+		4 - cpu_dist
+
+		- order
+		- cpu dist [row] 
+			- waiting time [column]
+				- arrival rate [data]
+	'''
 
 	index = 0
 	sweep = {}
@@ -458,10 +479,11 @@ def generate_sweep():
 	arrival_rates = np.linspace(0, 5, num=arrival_intervals+1).tolist()[1:]
 	wait_times = np.linspace(0, 30, num=waiting_intervals+1).tolist()
 
-	hyperparameters["policy"] = "time_estimator" #"fifo_wait"
+	hyperparameters["policy"] = "fifo_wait" #"time_estimator" #"fifo_wait"
 	hyperparameters["cpu_sizes"] = [1, 2, 4]
 	hyperparameters["cpu_dist"] = [0.2, 0.4, 0.4]
 
+	#for cpu_dist in ...
 	for w in wait_times:
 		for a in arrival_rates:
 			hyperparameters["arrival_rate"] = a
