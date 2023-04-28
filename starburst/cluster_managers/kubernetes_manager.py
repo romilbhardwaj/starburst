@@ -145,7 +145,7 @@ class KubernetesManager(object):
             # Create a Kubernetes job object from the dictionary
             k8s_job = models.V1Job()
             # Append random string to job name to avoid name collision
-            k8s_job.metadata = models.V1ObjectMeta(name=str(job_dict['metadata']['name']))# + '-' + job.job_id)
+            k8s_job.metadata = models.V1ObjectMeta(name=job_dict['metadata']['name'] + '-' + job.job_id)
             k8s_job.spec = models.V1JobSpec(template=job_dict['spec']['template'])
 
             self.batch_v1.create_namespaced_job(namespace="default", body=k8s_job)

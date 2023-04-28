@@ -12,6 +12,8 @@ from kubernetes import client, config
 import job_logs
 import multiprocessing as mp
 import starburst.drivers.main_driver as driver 
+import subprocess
+import copy 
 
 '''
 Design Layout
@@ -50,7 +52,10 @@ Option 1:
 	- space betwen two events follows exponential 
 '''
 def start_scheduler(policy="fifo_onprem_only", onprem_cluster="gke_sky-burst_us-central1-c_starburst", cloud_cluster="gke_sky-burst_us-central1-c_starburst-cloud"):
-	os.system('python3 -m starburst.drivers.main_driver --policy {} --onprem_k8s_cluster_name {} --cloud_k8s_cluster_name {}'.format(policy, onprem_cluster, cloud_cluster))	
+	os.system('python3 -m starburst.drivers.main_driver --policy {} --onprem_k8s_cluster_name {} --cloud_k8s_cluster_name {}'.format(policy, onprem_cluster, cloud_cluster))
+	#subprocess.run(['python3', '-m', 'starburst.drivers.main_driver' '--policy', policy, '--onprem_k8s_cluster_name', onprem_cluster,'--cloud_k8s_cluster_name', cloud_cluster])
+	#subprocess.run(['python3', '-m', 'starburst.drivers.main_driver' '--policy', 'fifo_onprem_only', '--onprem_k8s_cluster_name', 'gke_sky-burst_us-central1-c_starburst','--cloud_k8s_cluster_name', 'gke_sky-burst_us-central1-c_starburst-cloud'])
+	#python3 -m starburst.drivers.main_driver --policy fifo_onprem_only --onprem_k8s_cluster_name gke_sky-burst_us-central1-c_starburst --cloud_k8s_cluster_name gke_sky-burst_us-central1-c_starburst-cloud
 	#starburst, driver.custom_start(onprem_k8s_cluster_name=onprem_cluster, cloud_k8s_cluster_name=cloud_cluster, policy=policy)
 	return 
 
@@ -78,30 +83,16 @@ class Config:
 
 def generate_jobs(hyperparameters): 
 	jobs = {}
-	'''
-	hyperparameters = {
-		"time_constrained": True,
-		"random_seed": 42,
-		"num_jobs": 100,
-		"batch_time": 300,
-		"wait_time": 0,
-		"time_out": 5,
-		"mean_sleep": 40,
-		"arrival_rate": 1,
-		"cpu_sizes": [1,2,4,8,16,32],
-		"cpu_dist": [0, 0.2, 0.2, 0.2, 0.2],
-		"gpu_sizes": [1,2,4,8,16,32],
-		"gpu_dist": [0, 0.2, 0.2, 0.2, 0.2],
-		"memory_sizes": [100, 500, 1000, 50000],
-		"memory_dict": [0.25, 0.25, 0.25, 0.25],
-	}
-	'''
 	hp = Config(hyperparameters)
 	jobs = {}
 	jobs['hyperparameters'] = hyperparameters
 	arrivals = []
 	np.random.seed(hp.random_seed)
+<<<<<<< HEAD
 	job_index = 1# 0
+=======
+	job_index = 1 #0
+>>>>>>> 85677a3fdc902032fdea4fea64f02d350266397a
 	submit_time = 0
 	while True:
 		if hp.time_constrained and submit_time > hp.batch_time:
@@ -109,15 +100,15 @@ def generate_jobs(hyperparameters):
 		elif job_index >= hp.num_jobs:
 			break
 		job = {}
-		np.random.seed(hp.random_seed)
+		#np.random.seed(hp.random_seed)
 		submit_time += np.random.exponential(scale=hp.arrival_rate)
-		np.random.seed(hp.random_seed)
+		#np.random.seed(hp.random_seed)
 		job_duration = np.random.exponential(scale=hp.mean_duration)#sleep_mean)
-		np.random.seed(hp.random_seed)
+		#np.random.seed(hp.random_seed)
 		cpus = int(np.random.choice(hp.cpu_sizes, p=hp.cpu_dist))
-		np.random.seed(hp.random_seed)
+		#np.random.seed(hp.random_seed)
 		gpus = min(0, int(np.random.exponential(scale=2)))
-		np.random.seed(hp.random_seed)
+		#np.random.seed(hp.random_seed)
 		memory = min(0, int(np.random.exponential(scale=50)))
 		job['submit_time'] = submit_time
 		job['job_duration'] = job_duration
@@ -148,8 +139,8 @@ def save_jobs(jobs, repo, tag):
 def submit(jobs, arrivals):
 	start_time = time.time()
 	curr_time = time.time()
-	job_index = 0
-	total_jobs = len(jobs) - 1
+	job_index = 1 #0
+	total_jobs = len(jobs) #- 1
 	while True:
 		curr_time = time.time()
 		#print(str(job_index) + " " + str(total_jobs) +  " " + str(curr_time) + " " + str(arrivals[job_index]) + " " + str(start_time))
@@ -157,11 +148,17 @@ def submit(jobs, arrivals):
 			job = jobs[job_index]
 			job_index += 1
 			generate_sampled_job_yaml(job_id=job_index, sleep_time=job["job_duration"], workload=job['workload'])
-			os.system('python3 -m starburst.drivers.submit_job --job-yaml ../../examples/sampled/sampled_job.yaml')
+			#os.system('python3 -m starburst.drivers.submit_job --job-yaml ../../examples/sampled/sampled_job.yaml')
+			subprocess.run(['python3', '-m', 'starburst.drivers.submit_job', '--job-yaml', '../../examples/sampled/sampled_job.yaml'])
 		#TODO: Improve stop condition -- wait until last job completes
+		
+		if job_index >= total_jobs: 
+			break 
+		'''
 		elif (arrivals != []) and (curr_time >= start_time + arrivals[-1][1] + jobs["hyperparameters"]["time_out"]): 
 			print("Job Connection Time Out...")
 			break
+		'''
 	return 
 
 def execute(hyperparameters, repo, tag): 
@@ -474,12 +471,18 @@ def generate_sweep():
 	index = 0
 	sweep = {}
 
+	'''
 	arrival_intervals = 5
 	waiting_intervals = 3
 	arrival_rates = np.linspace(0, 5, num=arrival_intervals+1).tolist()[1:]
 	wait_times = np.linspace(0, 30, num=waiting_intervals+1).tolist()
 
+<<<<<<< HEAD
 	hyperparameters["policy"] = "fifo_wait" #"time_estimator" #"fifo_wait"
+=======
+
+	hyperparameters["policy"] = "fifo_wait"#"time_estimator" #"fifo_wait"
+>>>>>>> 85677a3fdc902032fdea4fea64f02d350266397a
 	hyperparameters["cpu_sizes"] = [1, 2, 4]
 	hyperparameters["cpu_dist"] = [0.2, 0.4, 0.4]
 
@@ -490,6 +493,64 @@ def generate_sweep():
 			hyperparameters["wait_time"] = w
 			sweep[index] = hyperparameters
 			index += 1
+
+	hyperparameters["policy"] = "time_estimator"
+	for a in arrival_rates:
+		hyperparameters["arrival_rate"] = a
+		hyperparameters["wait_time"] = 0
+		sweep[index] = hyperparameters
+		index += 1
+	'''
+
+	arrival_intervals = 10
+	waiting_intervals = 5
+	arrival_rates = np.linspace(0, 10, num=arrival_intervals+1).tolist()[1:]
+	wait_times = np.linspace(0, 20, num=waiting_intervals+1).tolist()
+	cpu_dists = [[0.2, 0.4, 0.4], [0, 0.5, 0.5]]
+
+	
+	hyperparameters["cpu_sizes"] = [1, 2, 4]
+	hyperparameters["batch_time"] = 300 
+
+	'''
+	for cpu_dist in cpu_dists: 
+		hyperparameters["cpu_dist"] = cpu_dist
+		hyperparameters["arrival_rate"] = 1
+		hyperparameters["wait_time"] = 0
+		sweep[index] = copy.deepcopy(hyperparameters)
+		index += 1
+	'''
+
+	hyperparameters["policy"] = "fifo_wait" #"time_estimator" #"fifo_wait"
+
+	for cpu_dist in cpu_dists: 
+		for w in wait_times:
+			for a in arrival_rates:
+				hyperparameters["cpu_dist"] = cpu_dist
+				hyperparameters["arrival_rate"] = a
+				hyperparameters["wait_time"] = w
+				sweep[index] = copy.deepcopy(hyperparameters)
+				index += 1
+
+	hyperparameters["policy"] = "fifo_onprem_only" #"time_estimator" #"fifo_wait"
+
+	for cpu_dist in cpu_dists: 
+		for a in arrival_rates:
+			hyperparameters["cpu_dist"] = cpu_dist
+			hyperparameters["arrival_rate"] = a
+			sweep[index] = copy.deepcopy(hyperparameters)
+			index += 1			
+
+	'''
+	hyperparameters["policy"] = "time_estimator"
+
+	for cpu_dist in cpu_dists: 
+		for a in arrival_rates:
+			hyperparameters["arrival_rate"] = a
+			hyperparameters["wait_time"] = w
+			sweep[index] = hyperparameters
+			index += 1
+	'''
 
 	return sweep
 
@@ -505,7 +566,24 @@ def run(hyperparameters, batch_repo, index):
 	jobs, arrivals = generate_jobs(hyperparameters=hyperparameters)
 	save_jobs(jobs=jobs, repo=batch_repo, tag=index)
 	c1, c2 = mp.Pipe()
-	p0 = mp.Process(target=driver.custom_start, args=(None, c2, 10000, 1, "gke_sky-burst_us-central1-c_starburst","gke_sky-burst_us-central1-c_starburst-cloud",hp.policy, hp.wait_time, jobs))
+	'''
+	mp.set_start_method('spawn')
+    mp.set_sharing_strategy('file_system')
+    ctx = mp.get_context()
+    ctx.set_start_method('spawn')
+    ctx.set_sharing_strategy('file_system')
+    ctx.init_process_group()
+	
+    # create the child process
+    #p = ctx.Process(target=run_process)
+
+    # set the initializer for the child process
+    p.daemon = True
+    p._initializer = init_process
+	'''
+
+	#p0 = mp.Process(target=driver.custom_start, args=(None, None, 10000, 1, "gke_sky-burst_us-central1-c_starburst","gke_sky-burst_us-central1-c_starburst-cloud","fifo_wait", 10, {}))
+	p0 = mp.Process(target=driver.custom_start, args=(None, c2, 50051, 1, "gke_sky-burst_us-central1-c_starburst","gke_sky-burst_us-central1-c_starburst-cloud",hp.policy, hp.wait_time, jobs))
 	p0.start()
 	
 	while (c1.poll() == False) or (not (len(c1.recv()) == 0 and empty_cluster())):

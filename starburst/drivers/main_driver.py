@@ -70,7 +70,7 @@ def main():
     for s in event_sources:
         event_loop.create_task(s.event_generator())
     try:
-        event_loop.run_until_complete(starburst.scheduler_loop())
+        event_loop.run_until_complete(starburst.scheduler_loop(None, None))
     finally:
         event_loop.close()
 
@@ -80,7 +80,7 @@ if __name__ == '__main__':
 
 
 def custom_start(queue, conn, grpc_port=GRPC_PORT, sched_tick_time=SCHED_TICK_TIME, onprem_k8s_cluster_name=ONPREM_K8S_CLUSTER_NAME, cloud_k8s_cluster_name=CLOUD_K8S_CLUSTER_NAME, policy=POLICY_STR, wait_time=0, job_data={}):
-    global startburst_scheduler
+    #global startburst_scheduler
     '''
     # Parse command line arguments =================================================================
     parser.add_argument('--grpc_port', type=int, default=GRPC_PORT,
@@ -114,6 +114,10 @@ def custom_start(queue, conn, grpc_port=GRPC_PORT, sched_tick_time=SCHED_TICK_TI
                                     wait_time=wait_time,
                                     job_data=job_data)
     
+    if 'hyperparameters' in job_data: 
+        logger.debug(f"Hyperparameters: {str(job_data['hyperparameters'])}")
+        #print(job_data['hyperparameters'])
+
     #starburst_scheduler = starburst
     for s in event_sources:
         event_loop.create_task(s.event_generator())
