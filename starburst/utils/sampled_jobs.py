@@ -57,6 +57,32 @@ Option 1:
 	- space betwen two events follows exponential 
 '''
 
+DEFAULT_PARAMS = {
+	"policy": "fifo_onprem_only",
+	"time_constrained": True,
+	"random_seed": 0,
+	"num_jobs": 100,
+	"batch_time": 300,
+	"wait_time": 0,
+	"time_out": 5,
+	"mean_duration": 30,
+	"arrival_rate": 1,
+	"cpu_sizes": [1,2,4,8,16,32],
+	"cpu_dist": [0, 0.2, 0.2, 0.2, 0.2, 0.2], 
+	"gpu_sizes": [1,2,4,8,16,32],
+	"gpu_dist": [0, 0.2, 0.2, 0.2, 0.2, 0.2],
+	"memory_sizes": [100, 500, 1000, 50000],
+	"memory_dict": [0.25, 0.25, 0.25, 0.25],
+}
+
+def start_scheduler(policy="fifo_onprem_only", onprem_cluster="gke_sky-burst_us-central1-c_starburst", cloud_cluster="gke_sky-burst_us-central1-c_starburst-cloud"):
+	os.system('python3 -m starburst.drivers.main_driver --policy {} --onprem_k8s_cluster_name {} --cloud_k8s_cluster_name {}'.format(policy, onprem_cluster, cloud_cluster))
+	#subprocess.run(['python3', '-m', 'starburst.drivers.main_driver' '--policy', policy, '--onprem_k8s_cluster_name', onprem_cluster,'--cloud_k8s_cluster_name', cloud_cluster])
+	#subprocess.run(['python3', '-m', 'starburst.drivers.main_driver' '--policy', 'fifo_onprem_only', '--onprem_k8s_cluster_name', 'gke_sky-burst_us-central1-c_starburst','--cloud_k8s_cluster_name', 'gke_sky-burst_us-central1-c_starburst-cloud'])
+	#python3 -m starburst.drivers.main_driver --policy fifo_onprem_only --onprem_k8s_cluster_name gke_sky-burst_us-central1-c_starburst --cloud_k8s_cluster_name gke_sky-burst_us-central1-c_starburst-cloud
+	#starburst, driver.custom_start(onprem_k8s_cluster_name=onprem_cluster, cloud_k8s_cluster_name=cloud_cluster, policy=policy)
+	return 
+
 """
 Core Dictionaries
 - Job Dictionary
@@ -80,8 +106,8 @@ def generate_jobs(hyperparameters):
 	jobs['hyperparameters'] = hyperparameters
 	arrivals = []
 	np.random.seed(hp.random_seed)
-	job_index = 1
 
+	job_index = 1
 	submit_time = 0
 	while True:
 		if hp.time_constrained and submit_time > hp.batch_time:
@@ -286,13 +312,28 @@ def submit_sweep():
 	sweep = generate_sweep()
 	run_sweep(sweep)
 
-def generate_sweep(): 
-	# TODO: Specify grid search values, then plot them
-	"""
-	Sweep 
 
-	generate_sweep(generate_sweep(arrival_time x waiting_time), something_else)	
+def generate_sweep(fixed_values=None, varying_values=None): 
 	"""
+	Sweep - generate_sweep(generate_sweep(arrival_time x waiting_time), something_else)	
+	"""
+	# TODO: Integrate hpo tool (e.g. optuna)
+	# TODO: Specify grid search values, then plot them
+
+	'''
+	Example 1:
+	Sweep: 
+		1 - arrival rates
+		2 - waiting times
+		3 - policy
+		4 - cpu_dist
+
+		- order
+		- cpu dist [row] 
+			- waiting time [column]
+				- arrival rate [data]
+	'''
+	sweep={}
 
 	# Default Hyperparameters
 	hyperparameters = {
@@ -313,72 +354,38 @@ def generate_sweep():
 		"memory_dict": [0.25, 0.25, 0.25, 0.25],
 	}
 	
-	# TODO: Integrate hpo tool (e.g. optuna)
-	# TODO: Specify the sweep axes and values 
-	'''
-	Example 1:
-	Sweep: 
-		1 - arrival rates
-		2 - waiting times
-		3 - policy
-		4 - cpu_dist
-
-		- order
-		- cpu dist [row] 
-			- waiting time [column]
-				- arrival rate [data]
-	'''
-
 	index = 0
-	sweep = {}
 
-	'''
-	arrival_intervals = 5
-	waiting_intervals = 3
-	arrival_rates = np.linspace(0, 5, num=arrival_intervals+1).tolist()[1:]
-	wait_times = np.linspace(0, 30, num=waiting_intervals+1).tolist()
+	cluster_nodes = 4
+	cpu_per_node = 8 
 
-	hyperparameters["policy"] = "fifo_wait"#"time_estimator" #"fifo_wait"
+	# DEFAULT VALUES
+	hyperparameters = copy.deepcopy(DEFAULT_PARAMS)
+	
+	# FIXED VALUES	
+	hyperparameters["batch_time"] = 300 
+	hyperparameters["mean_duration"] = 30
+	hyperparameters["policy"] = "fifo_wait"
 
 	hyperparameters["cpu_sizes"] = [1, 2, 4]
 	hyperparameters["cpu_dist"] = [0.2, 0.4, 0.4]
 
-	#for cpu_dist in ...
-	for w in wait_times:
-		for a in arrival_rates:
-			hyperparameters["arrival_rate"] = a
-			hyperparameters["wait_time"] = w
-			sweep[index] = hyperparameters
-			index += 1
+	# VARYING VALUES
+	MIN = 0 
+	MAX = hyperparameters["mean_duration"] * (1 / (cluster_nodes * cpu_per_node)) * 4
+	INTERVALS = 10
+	arrival_rates = np.linspace(MIN, MAX, num=INTERVALS+1).tolist()[1:]
 
-	hyperparameters["policy"] = "time_estimator"
-	for a in arrival_rates:
-		hyperparameters["arrival_rate"] = a
-		hyperparameters["wait_time"] = 0
-		sweep[index] = hyperparameters
-		index += 1
-	'''
+	MIN = 0 
+	MAX = 10
+	INTERVALS = 10
+	wait_times = np.linspace(MIN, MAX, num=INTERVALS+1).tolist()
 
-	arrival_intervals = 10
-	waiting_intervals = 5
-	arrival_rates = np.linspace(0, 10, num=arrival_intervals+1).tolist()[1:]
-	wait_times = np.linspace(0, 20, num=waiting_intervals+1).tolist()
-	cpu_dists = [[0.2, 0.4, 0.4], [0, 0.5, 0.5]]
+	cpu_dists = [[0.2, 0.4, 0.4], [0, 0.5, 0.5], [0, 0, 1]]
 
-	
-	hyperparameters["cpu_sizes"] = [1, 2, 4]
-	hyperparameters["batch_time"] = 300 
+	# SWEEP 1
 
-	'''
-	for cpu_dist in cpu_dists: 
-		hyperparameters["cpu_dist"] = cpu_dist
-		hyperparameters["arrival_rate"] = 1
-		hyperparameters["wait_time"] = 0
-		sweep[index] = copy.deepcopy(hyperparameters)
-		index += 1
-	'''
-
-	hyperparameters["policy"] = "fifo_wait" #"time_estimator" #"fifo_wait"
+	hyperparameters["policy"] = "fifo_wait"
 
 	for cpu_dist in cpu_dists: 
 		for w in wait_times:
@@ -389,7 +396,10 @@ def generate_sweep():
 				sweep[index] = copy.deepcopy(hyperparameters)
 				index += 1
 
-	hyperparameters["policy"] = "fifo_onprem_only" #"time_estimator" #"fifo_wait"
+	'''
+	# SWEEP 2
+
+	hyperparameters["policy"] = "fifo_onprem_only"
 
 	for cpu_dist in cpu_dists: 
 		for a in arrival_rates:
@@ -397,8 +407,11 @@ def generate_sweep():
 			hyperparameters["arrival_rate"] = a
 			sweep[index] = copy.deepcopy(hyperparameters)
 			index += 1			
+	'''
 
 	'''
+	# SWEEP 3
+
 	hyperparameters["policy"] = "time_estimator"
 
 	for cpu_dist in cpu_dists: 
