@@ -107,7 +107,8 @@ def generate_jobs(hyperparameters):
 	jobs['hyperparameters'] = hyperparameters
 	arrivals = []
 	np.random.seed(hp.random_seed)
-	job_index = 1 #0
+
+	job_index = 1
 	submit_time = 0
 	while True:
 		if hp.time_constrained and submit_time > hp.batch_time:
@@ -431,7 +432,7 @@ def empty_cluster():
 	for api in cluster_apis:
 		pods = api.list_namespaced_pod(namespace)
 		running_pods = [pod for pod in pods.items if pod.status.phase == "Running"]
-		if running_pods: 
+		if running_pods:
 			return False 
 	
 	return True 
@@ -440,9 +441,48 @@ def submit_sweep():
 	sweep = generate_sweep()
 	run_sweep(sweep)
 
+
 def generate_sweep(fixed_values=None, varying_values=None): 
+	"""
+	Sweep - generate_sweep(generate_sweep(arrival_time x waiting_time), something_else)	
+	"""
 	# TODO: Integrate hpo tool (e.g. optuna)
+	# TODO: Specify grid search values, then plot them
+
+	'''
+	Example 1:
+	Sweep: 
+		1 - arrival rates
+		2 - waiting times
+		3 - policy
+		4 - cpu_dist
+
+		- order
+		- cpu dist [row] 
+			- waiting time [column]
+				- arrival rate [data]
+	'''
 	sweep={}
+
+	# Default Hyperparameters
+	hyperparameters = {
+		"policy": "fifo_onprem_only",
+		"time_constrained": True,
+		"random_seed": 0,
+		"num_jobs": 100,
+		"batch_time": 300,
+		"wait_time": 0,
+		"time_out": 5,
+		"mean_duration": 30,
+		"arrival_rate": 1,
+		"cpu_sizes": [1,2,4,8,16,32],
+		"cpu_dist": [0, 0.2, 0.2, 0.2, 0.2, 0.2], 
+		"gpu_sizes": [1,2,4,8,16,32],
+		"gpu_dist": [0, 0.2, 0.2, 0.2, 0.2, 0.2],
+		"memory_sizes": [100, 500, 1000, 50000],
+		"memory_dict": [0.25, 0.25, 0.25, 0.25],
+	}
+	
 	index = 0
 
 	cluster_nodes = 4
@@ -452,9 +492,11 @@ def generate_sweep(fixed_values=None, varying_values=None):
 	hyperparameters = copy.deepcopy(DEFAULT_PARAMS)
 	
 	# FIXED VALUES	
-	hyperparameters["cpu_sizes"] = [1, 2, 4]
 	hyperparameters["batch_time"] = 300 
 	hyperparameters["mean_duration"] = 30
+	hyperparameters["policy"] = "fifo_wait"
+	hyperparameters["cpu_sizes"] = [1, 2, 4]
+	hyperparameters["cpu_dist"] = [0.2, 0.4, 0.4]
 
 	# VARYING VALUES
 	MIN = 0 
