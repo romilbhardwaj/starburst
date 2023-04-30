@@ -9,6 +9,10 @@ import json
 import re
 import copy
 import os 
+from collections import defaultdict
+from collections import OrderedDict
+import itertools
+import sampled_jobs
 
 # TODO: Integrate kubecost or GCP calculator
 # TODO: Include accurate cloud specific costs (e.g. network, disk, instance type)
@@ -54,6 +58,7 @@ event_data = {
 	'node_instances': node_instances
 }
 
+# Global event data - updated when functions executed
 cluster_event_data = {
 	'onprem': copy.deepcopy(event_data),
 	'cloud': copy.deepcopy(event_data)
@@ -343,7 +348,7 @@ def parse_prometheus_logs(onprem=onprem, cloud=cloud):
 	jobs['start'] = [i - min_arrival if i is not None else None for i in jobs['start']]
 	return jobs, len(all_nodes)
 
-def parse_event_logs(cluster_event_data=None, submission_data=None):#onprem_event_logs = None, cloud_event_logs = None):
+def parse_event_logs(cluster_event_data=None, submission_data=None, event_time=None):#onprem_event_logs = None, cloud_event_logs = None):
 	# TODO: Plot cloud and onprem cluster jobs together
 
 	hyperparameters = None
@@ -351,7 +356,7 @@ def parse_event_logs(cluster_event_data=None, submission_data=None):#onprem_even
 		hyperparameters = submission_data['hyperparameters']
 
 	job_names = {}
-	jobs = {'idx':[], 'runtime':[], 'arrival':[], 'num_gpus':[], 'allocated_gpus':[], 'start':[], 'instance_type':[], 'node_index': [], 'node': [], 'cpus': [], 'submission_time': []}
+	jobs = {'idx':[], 'runtime':[], 'arrival':[], 'num_gpus':[], 'allocated_gpus':[], 'start':[], 'instance_type':[], 'node_index': [], 'node': [], 'cpus': [], 'submission_time': [], 'wait_time':[]}
 
 	all_nodes = set()
 	nodes = {}
@@ -375,6 +380,7 @@ def parse_event_logs(cluster_event_data=None, submission_data=None):#onprem_even
 			pod_nodes = cluster['scheduled_nodes']
 			job_pods = cluster['job_pods']
 			node_instances = cluster['node_instances']
+			print("START TIMES " + str(start_times))
 
 			pod_start_times = {}
 			pod_end_times = {}
@@ -444,7 +450,16 @@ def parse_event_logs(cluster_event_data=None, submission_data=None):#onprem_even
 
 				#if job_id in submission_data: 
 				jobs['cpus'].append(submission_data[job_id]['workload']['cpu'])
-				jobs['submission_time'].append(submission_data[job_id]['submit_time'])
+				submit_time = submission_data[job_id]['scheduler_submit_time']
+				#if submit_time: 
+				jobs['submission_time'].append(submit_time)#submission_data[job_id]['scheduler_submit_time'])
+
+				if not submit_time: 
+					jobs['wait_time'].append(0)
+				else: 
+					jobs['wait_time'].append(value[0] - submit_time)
+					#jobs['wait_time'].append(0)
+
 
 				#if key in job_pods:
 				if job_pods[key] in pod_nodes:
@@ -469,7 +484,19 @@ def parse_event_logs(cluster_event_data=None, submission_data=None):#onprem_even
 					jobs['instance_type'].append("unknown")
 		
 	# TODO: Determine if logs should be initialized to submission_time or arrival_time
-	min_arrival = min(jobs['arrival']) #min(jobs['submission_time']) #min(jobs['arrival'])
+	print(jobs['arrival'])
+
+	if not jobs['arrival']:
+		print("No job arrival times logged!")
+
+	print(jobs)
+	#min_arrival = min(jobs['arrival']) #min(jobs['submission_time']) #min(jobs['arrival'])
+	print(jobs['arrival'])
+	print(jobs['submission_time'])
+	print(jobs['wait_time'])
+	#time.sleep(10000)
+
+	min_arrival = min(jobs['submission_time']) #min(jobs['arrival'])
 	jobs['arrival'] = [i - min_arrival for i in jobs['arrival']]
 	jobs['submission_time'] = [i - min_arrival for i in jobs['submission_time']]
 	jobs['start'] = [i - min_arrival if i is not None else None for i in jobs['start']]
@@ -572,7 +599,7 @@ def view_real_arrival_times(event_number=None):#cluster_data_path=None, submissi
 			print(cluster_log_path)
 			cluster_event_data = read_cluster_event_data(cluster_log_path=cluster_log_path)
 			submission_data = read_submission_data(submission_log_path=submission_log_path)
-			jobs, num_nodes = parse_event_logs(cluster_event_data=cluster_event_data, submission_data=submission_data)#data)
+			jobs, num_nodes = parse_event_logs(cluster_event_data=cluster_event_data, submission_data=submission_data, time_stamp=event_number)
 			
 			#cost = job_logs.cloud_cost(jobs=jobs, num_nodes=num_nodes)
 			#costs[file] = cost
@@ -600,33 +627,24 @@ def view_real_arrival_times(event_number=None):#cluster_data_path=None, submissi
 
 	return 
 
-def analyze_sweep(event_number=None):#path=None):
+def analyze_sweep(event_number=None):#, fixed_values=OrderedDict(), varying_values=OrderedDict()):#path=None):
 	"""Takes each batch job file and computes values (e.g. cloud cost, system utilization)"""
 
-	'''
-	0.1 -> 0.01137
-	0.2 -> 0.00931
-	0.3 -> 0.01448
-	0.4 -> 0.00862
-	0.5 -> 0.01500
-	'''
-	#costs = {}
 	metrics = {}
-	if event_number: #path: 
+	if event_number:
 		cluster_data_path = "../logs/archive/" + str(event_number) + '/events/'
 		submission_data_path = "../logs/archive/" + str(event_number) + '/jobs/'
-		files = os.listdir(cluster_data_path)#path)
+		sweep_data_path = "../logs/archive/" + str(event_number) + "/sweep.json"
+		with open(sweep_data_path, "r") as f: #"../logs/event_data.json", "r") as f:
+			sweep = json.load(f)
+
 		#exempt_files = []
-		files = sorted(files)
+		files = os.listdir(cluster_data_path)
+		#files = sorted(files)
 
 		# Iterate over the files and check if they have the ".json" extension
 		for i in range(len(files)):
-		#for file in files:
-			#log_path = path + file
-			#print(log_path)
-			#data = read_cluster_event_data(cluster_log_path=log_path)
-			#jobs, num_nodes = parse_event_logs(data)
-			file = files[i]
+			file = str(i) + ".json" #files[i]
 			print("FILENAME: " + file)
 			cluster_log_path = cluster_data_path + file
 			submission_log_path = submission_data_path + file
@@ -637,19 +655,26 @@ def analyze_sweep(event_number=None):#path=None):
 			jobs, num_nodes = parse_event_logs(cluster_event_data=cluster_event_data, submission_data=submission_data)
 			hyperparameters = submission_data['hyperparameters']
 
-			cost, cost_density, system_utilization = compute_metrics(jobs=jobs, num_nodes=num_nodes)
-			metrics[i] = {"cost": cost, "cost_density": cost_density, "system_utilization": system_utilization, "hyperparameters": hyperparameters}
-			#costs[file] = cost
+			# TODO: Compute baseline cost and cost savings
+			#cost, cost_density, system_utilization = compute_metrics(jobs=jobs, num_nodes=num_nodes)
+			#metrics[i] = {"cost": cost, "cost_density": cost_density, "system_utilization": system_utilization, "hyperparameters": hyperparameters}
 			
-			#job_logs.plot_job_intervals(jobs, num_nodes)
+			job_metrics = compute_metrics(jobs=jobs, num_nodes=num_nodes)
+			job_metrics["hyperparameters"] = hyperparameters
+			metrics[i] = job_metrics
 			
 			#if file.endswith(".json"):
 			#	log_path = log_path + str(file)
 			#	break 
-	# TODO: Compute baseline cost and cost savings
+
 	#print(metrics)
 	#time.sleep(1000)
-	graph_metrics(metrics)#, hyperparameters)
+	fixed_values = OrderedDict(sweep['fixed_values'])
+	varying_values = OrderedDict(sweep['varying_values'])
+	print(fixed_values)
+	print(varying_values)
+
+	graph_metrics(metrics=metrics, fixed_values=fixed_values, varying_values=varying_values)
 	return metrics
 
 def compute_metrics(jobs, num_nodes):
@@ -671,10 +696,24 @@ def compute_metrics(jobs, num_nodes):
 	onprem_cost = 0 
 	instance_types = jobs['instance_type']
 	runtimes = jobs['runtime']
+	submission_times = jobs['submission_time']
+	wait_times = jobs['wait_time']
 	start = jobs['start']
+
+	# NOTE: Job runtime has integer precisions due to granularity of kuberentes event logs
+	print(runtimes)
+	print(wait_times)
+	print(submission_times)
+
+	#time.sleep(1000)
 	max_arrival = max(jobs['arrival'])
 	min_arrival = min(jobs['arrival'])
 	total_time = 0 
+	cloud_time = 0 
+	onprem_time = 0
+	# TODO: Compute JCT = Waitime + Runtime
+	job_completion_times = [runtimes[i] + wait_times[i] for i in range(len(runtimes))]
+	jct = sum(job_completion_times)/len(job_completion_times)
 
 	for i in range(len(runtimes)):
 		print(start[i])
@@ -685,23 +724,58 @@ def compute_metrics(jobs, num_nodes):
 		total_time += runtimes[i]
 		if start[i] == None: 
 			cloud_cost += runtime * instance_cost_per_hour
+			cloud_time += runtime 
 		else: 
 			onprem_cost += runtime * instance_cost_per_hour
+			onprem_time += runtime
 
 	# TODO: Ensure accurate system utilization values		
 	job_makespan = (4 * 8 * (max_arrival - min_arrival)) # 4 nodes per cluster w/ 8 CPU's each
 	total_job_volume = total_time
 	norm_system_utilization = job_makespan/total_job_volume
 
-	return (cloud_cost, onprem_cost), (cloud_cost/total_time, onprem_cost/total_time), norm_system_utilization
+	# TODO: Compute the accurate values
+	# Sum_local_space = onprem make span
+	# Sum_cloud_space = cloud make span 
+
+	cluster_size = 4
+	gpus_per_node = 8 
+	end_time = max_arrival
+	start_time = min_arrival
+
+	# TODO: Change the on
+
+	sum_local_space = onprem_time
+	sum_cloud_space = cloud_time
+	cluster_utilization = sum_local_space / (cluster_size * gpus_per_node * (end_time - start_time))
+	system_utilization = (sum_local_space + sum_cloud_space) / (cluster_size * gpus_per_node * (end_time - start_time))
+
+	'''
+	result_dict['stats']['cluster_utilization'] = sum_local_space / (
+        simulator_spec['cluster_size'] * simulator_spec['gpus_per_node'] *
+        (end_time - start_time))
+    result_dict['stats']['system_utilization'] = (
+        sum_local_space + sum_cloud_space) / (simulator_spec['cluster_size'] *
+                                              simulator_spec['gpus_per_node'] *
+                                              (end_time - start_time))
+	'''
+
+	metrics = {
+		"cloud_cost": cloud_cost,
+		"onprem_cost": onprem_cost,
+		"system_utilization": system_utilization,
+		"cluster_utilization": cluster_utilization,
+		"norm_system_utilization": norm_system_utilization,
+		'job_completion_time': jct
+	}
+
+	#return (cloud_cost, onprem_cost), (cloud_cost/total_time, onprem_cost/total_time), norm_system_utilization
+	return metrics
 
 
-def graph_metrics(metrics):
+def graph_metrics(metrics=None, fixed_values=OrderedDict(), varying_values=OrderedDict(), x_axis=['arrival_rate', 'system_utilization'], y_axis=['cloud_cost', 'onprem_cost']):
 	# TODO: Specify the axes along which to graph the costs 
 	# TODO: Specify the variables that are varied in generate_sweep(), pass that data into this function 
-	#print(costs)
-	#graph = {}
-	
 	'''
 	Example 1:
 	Sweep: 
@@ -717,6 +791,7 @@ def graph_metrics(metrics):
 	'''
 
 	'''
+	TODO: Goal Format
 	sweep1 = ("cpu_dist", 2)
 	sweep2 = ("waiting_time", 11)
 	sweep3 = ("arrival_rate", 6)
@@ -732,156 +807,171 @@ def graph_metrics(metrics):
 	data = []
 	for i in metrics: 
 		m = metrics[i]
-		#cost = m['cost']
-		#cost_value = cost['cost_density'] # dollars/seconds
-		#hyperparameters = m['hyperparameters']
-		
-	#for cost in costs: 
-		#cost_int = float(cost[:3])
-		#cost_int = float(cost[5:8])
-		#arrival_rate = hyperparameters['arrival_rate']
-		#wait_time = hyperparameters['wait_time']
-		#cpu_dist = hyperparameters['cpu_dist']
-		#cpu_dist = str(cpu_dist)
-		#policy = hyperparameters['policy']
-		#params = (i, str(wait_time), cpu_dist, policy)
-		#params = (str(wait_time), cpu_dist, policy, arrival_rate, cost)
+		params = {}
+
+		# TODO: Remove preset params values, fill it in only based on fixed_values and varying_values
 		params = {
-			"wait_time": m['hyperparameters']['wait_time'], #str(wait_time), 
-			"cpu_dist": m['hyperparameters']['cpu_dist'], #cpu_dist, 
-			"policy": m['hyperparameters']['policy'], #policy, 
-			"arrival_rate": m['hyperparameters']['arrival_rate'], #arrival_rate, 
-			"cloud_cost": m['cost'][0],
-			"onprem_cost": m['cost'][1],
-			"system_utilization": m['system_utilization']
+			"wait_time": m['hyperparameters']['wait_time'],
+			"cpu_dist": m['hyperparameters']['cpu_dist'],
+			"policy": m['hyperparameters']['policy'],
+			"arrival_rate": m['hyperparameters']['arrival_rate'],
+			"cloud_cost": m['cloud_cost'],#['cost'][0],
+			"onprem_cost": m['onprem_cost'],#['cost'][1],
+			"system_utilization": m['system_utilization'],
+			"cluster_utilization": m['cluster_utilization'],
+			"job_completion_time": m['job_completion_time']
 		}
+
+		for key, value in fixed_values.items():
+			params[key] = m['hyperparameters'][key]
+
+		for key, value in varying_values.items():
+			params[key] = m['hyperparameters'][key]
 
 		# TODO: Efficiently group job data by hyperparameter sweep
 		# TODO: Group all arrival_rates that have the same policy and waiting time
+		# TODO: Generate plot format when creating sweep data 
 
-		# Generate plot format when creating sweep data 
-		#group = (params["policy"], params["cpu)"])
 		data.append(params)
-		'''
-		if params in graph: 
-			#graph[params].append((arrival_rate, cost_value,))
-			#graph[i].append((arrival_rate, cost_value,))
-			graph.append(params)
-		else: 
-			#graph[params] = []
-			graph = []
-			#graph[params].append((arrival_rate, cost_value,))
-			graph.append(params)
-			#raph[i] = []
-			#graph[i].append((arrival_rate, cost_value,))
-		'''
 
-		'''
-		if cpu_dist in graph: 
-			graph[cpu_dist].append((arrival_rate, cost_value,))
-		else: 
-			graph[cpu_dist] = []
-			graph[cpu_dist].append((arrival_rate, cost_value,))
-		'''
-		'''
-		#graph.append((cost_int, costs[cost]))
-		if wait_time in graph: 
-			graph[wait_time].append((arrival_rate, cost_value,))
-		else: 
-			graph[wait_time] = []
-			graph[wait_time].append((arrival_rate, cost_value,))
-		'''
-	'''
-	data = graph
-	x = [x[0] for x in data]
-	y1 = [y[1][0] for y in data]
-	y2 = [y[1][1] for y in data]
-	y3 = [y[2] for y in data]
-	print(data)
-	print(x)
-	print(y1)
-	print(y2)
-	plt.bar(x, y1, width=0.025, label="cloud_cost")
-	plt.bar([i + 0.025 for i in x], y2, width=0.025, label="onprem_cost")
-	plt.xlabel('Arrival Rate')
-	plt.ylabel('Cost ($)')
-	plt.title('Wait Time ' + str(y3[0]))
-	plt.show()
-	'''
+	# TODO: Specify subplots dimensions based on number of varying_values 
+	varying_values = list(varying_values.items())
+	fixed_values = list(fixed_values.items())
 
-	#fig, axs = plt.subplots(nrows=len(graph) + 1, ncols=1)
-	fig, axs = plt.subplots(nrows=3, ncols=6)
+	print(varying_values)
+	print(fixed_values)
+	rows, cols = 1, 1
+	if len(varying_values) > 1: 
+		key, value = varying_values[-2]
+		rows = len(value)
+	if len(varying_values) > 2: 
+		key, value = varying_values[-3]
+		cols = len(value)
+	fig, axs = plt.subplots(nrows=rows, ncols=cols)
 
-	#plt_index = 0 
-	#row = 2
-	#for wait in graph:
-	#for i in range(len(costs)):
-	row = 0 
-	plots = []
-	#for hp in graph:
+	#graph_grid = []
+	#row = 0 
+	#plots = []
+	graphs = OrderedDict()
+	
+	print(varying_values)
+	sweep_dimensions = [len(varying_values[i][1]) for i in range(len(varying_values))]
+	print(sweep_dimensions)
+	plot_dimensions = [[j for j in range(i)] for i in sweep_dimensions[:-1]]
+	print(plot_dimensions)
 
-	#params = (str(wait_time), cpu_dist, policy, arrival_rate, cost)
-	#params = (str(wait_time), cpu_dist, policy, arrival_rate, cost)
-	#hps = []
-	#for i in range(len(graph)):
-	from collections import defaultdict
-	#default_dict
-	graphs = defaultdict()#{}
+	if plot_dimensions: 
+		plot_dimensions = itertools.product(*plot_dimensions)
+		for dim in plot_dimensions:
+			#graph = graphs
+			#test = graphs#[0][0]
+			#for d in dim: 
+			#	test = test[d]
+			#graph = test
+			graphs[dim] = OrderedDict()
+			graphs[dim]['arrival_rate'] = [] #.append(trial['arrival_rate'])
+			graphs[dim]['cloud_cost'] = [] #.append(trial['cloud_cost'])
+			graphs[dim]['onprem_cost'] = [] #.append(trial['onprem_cost'])  
+			graphs[dim]['system_utilization'] = [] #.append(trial['system_utilization'])
+			graphs[dim]['cluster_utilization'] = []
+			graphs[dim]['job_completion_time'] = []
+	else:
+		dim = 0
+		graphs[dim]['arrival_rate'] = [] #.append(trial['arrival_rate'])
+		graphs[dim]['cloud_cost'] = [] #.append(trial['cloud_cost'])
+		graphs[dim]['onprem_cost'] = [] #.append(trial['onprem_cost'])  
+		graphs[dim]['system_utilization'] = [] #.append(trial['system_utilization'])
+		graphs[dim]['cluster_utilization'] = []
+		graphs[dim]['job_completion_time'] = []
+
+	print("GRAPH")
+	print(graphs)
+
+
+	maps = {}
 	for i in range(len(data)):
-		#hp = graph[i]
-		#hps.append(hp)
 		trial = data[i]
-		#i = hp[0]
-		#m = metrics[i]
-		#wait = graph[cost['hyperparameters']]
-		#params = (str(wait_time), cpu_dist, policy, arrival_rate, cost)
-		#wait_time, cpu_dist, policy, arrival_rate, cost = hp
-		'''
-		wait_time = hp["wait_time"]
-		cpu_dist = hp["cpu_dist"]
-		policy = hp["policy"]
-		arrival_rate = hp["arrival_rate"]
-		onprem_cost = hp["onprem_cost"]
-		cloud_cost = hp["cloud_cost"]
-		system_utilization = hp["system_utilization"]
-		'''
-		#cost = hp["cost"]
+		# TODO: Specify the row to plot the data based on the varying_values dictionary 
+		# TODO: Group the values of the same 1d sweep together (e.g. if first dimesion is arrival_rate, then one graph varies the arrival_rate)
+		# TODO: Solve 1d, then 2d, then 3d
+		# TODO: Use mod to group values
+		#d1 = i % len(varying_values[0][1])
+		d1 = (i // len(varying_values[-1][1])) % len(varying_values[-2][1])
+		d2 = (i // (len(varying_values[-1][1]) * len(varying_values[-2][1]))) % len(varying_values[-3][1])
+		dim = (d1, d2)
 
-		if trial['policy'] == "fifo_wait" and trial['cpu_dist'] == "[0.2, 0.4, 0.4]":
-			row = 0
-		elif trial['policy'] == "fifo_wait" and trial['cpu_dist'] == "[0, 0.5, 0.5]": 
-			row = 1
-		elif trial['policy'] == "fifo_onprem_only":
-			row = 2 
+		maps[dim] = trial['arrival_rate']
+		graphs[dim]['arrival_rate'].append(trial['arrival_rate'])
+		graphs[dim]['cloud_cost'].append(trial['cloud_cost'])
+		graphs[dim]['onprem_cost'].append(trial['onprem_cost'])  
+		graphs[dim]['system_utilization'].append(trial['system_utilization'])
+		graphs[dim]['cluster_utilization'].append(trial['cluster_utilization'])
+		graphs[dim]['job_completion_time'].append(trial['job_completion_time'])
 
-		#data = graph[hp]
+	print("MAP")
+	print(maps)
+	print("GRAPH")
+	print(graphs)
+	#time.sleep(1000)
+
+	'''
+	# Arrival Time vs. Cloud Cost [NOT STARTED]
+	for dim in graphs: 
+		#vals = varying_values[1][0] + " " + str(dim[0]) + " " + varying_values[2][0] + " " + str(dim[1])
+		#vals = varying_values[1][0] + " " + str(varying_values[1][1][dim[0]]) + " " + varying_values[2][0] + " " + str(varying_values[2][1][dim[1]])
+		#print(vals)
 		
-		#arrival_rate = [x["arrival_rate"] for x in hp]
-		#onprem_cost = [x["onprem_cost"] for x in hp]
-		#cloud_cost = [x["cloud_cost"] for x in hp]
-		#system_utilization = [x["system_utilization"] for x in hp]
+		axs[dim].plot(graphs[dim]['arrival_rate'], graphs[dim]['onprem_cost'], label="cloud_cost")
+		axs[dim].set_xlabel('arrival_rate', fontsize=5)
+		#axs[dim].set_xlabel('Arrival Rate (1/lambda)', fontsize=5)
+		axs[dim].set_ylabel('Cost ($)', fontsize=5)
+		#title =  "Wait time:  " + hp["wait_time"] + " CPU Dist [1, 2, 4] " + hp["cpu_dist"] + " Policy " + hp["policy"]
+		#print(varying_values[1][0] + " ")
+		#title = varying_values[1][0] + " " + str(varying_values[1][1][dim[0]]) + " " + varying_values[2][0] + " " + str(varying_values[2][1][dim[1]])
+		title = "test"
+		#title = varying_values[1][0] + " " + varying_values[1][1][dim[1]] + " " + varying_values[2][0] + " " + varying_values[1][1][dim[2]]
+		axs[dim].set_title(title, fontsize=5)
+	'''
+	
+	'''
+	# TODO: Cluster Utilization [NOT STARTED]
+	for dim in graphs: 
+		axs[dim].plot(graphs[dim]['system_utilization'], graphs[dim]['cluster_utilization'], label="cloud_cost")
+		axs[dim].set_xlabel('system_utilization', fontsize=5)
+		axs[dim].set_ylabel('cluster_utilization', fontsize=5)
+		title = "test"
+		axs[dim].set_title(title, fontsize=5)
+	'''
+
+	xmin = math.inf 
+	xmax = -1 * math.inf
+	ymin = math.inf
+	ymax = -1 * math.inf
+	
+	
+	# TODO: JCT [NOT STARTED]
+	# TODO: Incorporate realtime submission time logging for the future
+	for dim in graphs: 
+		axs[dim].plot(graphs[dim]['system_utilization'], graphs[dim]['job_completion_time'], label="job_completion_time")
+		axs[dim].set_xlabel('system_utilization', fontsize=5)
+		axs[dim].set_ylabel('job_completion_time', fontsize=5)
+		title = varying_values[0][0] + " " + str(varying_values[0][1][dim[0]]) + " " + varying_values[1][0] + " " + str(varying_values[1][1][dim[1]])
+		#title = "test"
+		axs[dim].set_title(title, fontsize=5)
 		
-		#y1 = [y[1][0] for y in data]
-		#y2 = [y[1][1] for y in data]
+		curr_xmin, curr_xmax = axs[dim].get_xlim()
+		curr_ymin, curr_ymax = axs[dim].get_ylim()
+		xmin = min(curr_xmin, xmin)
+		xmax = max(curr_xmax, xmax)
+		ymin = min(curr_ymin, ymin)
+		ymax = max(curr_ymax, ymax)
 
-		#axs[plt_index].bar(x, y1, width=0.025, label="cloud_cost")
-		#axs[plt_index].bar([i + 0.025 for i in x], y2, width=0.025, label="onprem_cost")
-		plots.append((row, i%6))
-		graph = (row, i%6)
-		if graph not in graphs: 
-			graphs[(row, i%6)] = {
-				'title': [],
-				'arrival_rate': [],
-				'cloud_cost': [],
-				'onprem_cost': [],
-				'system_utilization': []
-			}#['arrival_rate'].append(0)
-		graphs[(row, i%6)]['arrival_rate'].append(trial['arrival_rate'])
-		graphs[(row, i%6)]['cloud_cost'].append(trial['cloud_cost'])
-		graphs[(row, i%6)]['onprem_cost'].append(trial['onprem_cost'])  
-		graphs[(row, i%6)]['system_utilization'].append(trial['system_utilization'])
 
-	for i in graphs: 
+	# TODO: Absolute Saving [NOT STARTED]
+	# TODO: Relative Cost saving [NOT STARTED]
+
+	'''
+	for i in graphs:
 		axs[i[0]][i[1]].plot(graph[i]['arrival_rate'], graph[i]['cloud_cost'], label="cloud_cost")
 		axs[i[0]][i[1]].plot(graph[i]['arrival_rate'], graph[i]['onprem_cost'], label="onprem_cost")
 		axs[i[0]][i[1]].plot(graph[i]['arrival_rate'], graph[i]['system_utilization'], label="system_utilization")
@@ -889,30 +979,19 @@ def graph_metrics(metrics):
 		axs[i[0]][i[0]].set_ylabel('Cost ($)', fontsize=5)
 		title =  "Wait time:  " + hp["wait_time"] + " CPU Dist [1, 2, 4] " + hp["cpu_dist"] + " Policy " + hp["policy"]
 		axs[row][i % 6].set_title(title, fontsize=5)
-	#plt_index += 1
-	#print(hp)
-	#print(plots)
-	#print
+	'''
 
-	#fig.tight_layout(pad=20.0)#, h_pad=50.0, w_pad=50.0)
+	#print(graphs)
+	
+	xlim = (xmin, xmax)
+	ylim = (ymin, ymax)
+
+	for ax in axs.flat:
+		ax.set_xlim(xlim)
+		ax.set_ylim(ylim)
+
 	plt.subplots_adjust(hspace=1)
 	plt.show()
-		
-
-		
-	'''
-	x = [x[0] for x in data]
-	y1 = [y[1][0] for y in data]
-	y2 = [y[1][1] for y in data]
-
-	plt.bar(x, y1, label='Y1')
-	#plt.bar(x, y2, label='Y2', bottom=y1)
-
-	plt.xlabel('X')
-	plt.ylabel('Y')
-	plt.legend()
-	plt.show()
-	'''
 
 def cost_multiplier(row):
 	baseline_cost = row['total_cloud_cost_y']
@@ -956,7 +1035,8 @@ def read_submission_data(submission_log_path=None):
 	return {}
 
 
-def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None):
+def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None, loop=False):
+	global cluster_event_data
 	'''
 	Outputs: 
 	(1) Store relevant event data in a dictionary continously to disk
@@ -984,6 +1064,8 @@ def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None):
 	Normal  Created    52m   kubelet            Created container sleep
 	Normal  Started    52m   kubelet            Started container sleep
 	'''
+
+	log_frequency = 1
 	# TODO: Write experiment metadata to job events metadata
 
 	#existing_log_path = "../logs/event_data.json"
@@ -1040,11 +1122,12 @@ def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None):
 		event_data = cluster_event_data[type]
 		event_data['node_instances'] = instances
 	'''
+	if not loop: 
+		with open(current_log_path, 'r') as f:
+			cluster_event_data = json.load(f)
 
 	# Get a list of all pods in the default namespace
 	while True: 
-		# Retrieve data each minute 
-		time.sleep(5)
 		clusters = {"onprem": onprem_api, "cloud": cloud_api}
 		for type in clusters: 
 			api = clusters[type]
@@ -1121,5 +1204,11 @@ def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None):
 		# TODO: Save job hyperparameters directly into job events metadata	
 		with open(current_log_path, "w") as f: #"../logs/event_data.json", "w") as f:
 			json.dump(cluster_event_data, f)
+
+		if not loop: 
+			break 
+
+		# Retrieve data each minute 
+		time.sleep(log_frequency)
 	
 	return 0
