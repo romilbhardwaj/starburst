@@ -13,13 +13,17 @@ import job_logs
 import multiprocessing as mp
 import starburst.drivers.main_driver as driver 
 import subprocess
-import copy 
+import copy
+import itertools
+from collections import defaultdict
+from collections import OrderedDict
+import atexit 
 
 '''
 Design Layout [DRAFT 2]
-- Sweep Requirements -> Cluster -> Add Logs -> Parse Logs -> Analyze Sweep Requirements -> Plot
-- Input Requirementsc
 
+- Sweep Requirements -> Cluster -> Add Logs -> Parse Logs -> Analyze Sweep Requirements -> Plot
+- Input Requirements -> Grid Search Values 
 
 Design Layout [DRAFT 1]
 
@@ -60,6 +64,10 @@ Option 1:
 DEFAULT_PARAMS = {
 	"policy": "fifo_onprem_only",
 	"time_constrained": True,
+	"onprem_cluster_nodes": 4,
+	"onprem_cpu_per_node": 8,
+	"cloud_cluster_nodes": 4, 
+	"cloud_cpu_per_node": 8,  
 	"random_seed": 0,
 	"num_jobs": 100,
 	"batch_time": 300,
@@ -75,22 +83,12 @@ DEFAULT_PARAMS = {
 	"memory_dict": [0.25, 0.25, 0.25, 0.25],
 }
 
-def start_scheduler(policy="fifo_onprem_only", onprem_cluster="gke_sky-burst_us-central1-c_starburst", cloud_cluster="gke_sky-burst_us-central1-c_starburst-cloud"):
-	os.system('python3 -m starburst.drivers.main_driver --policy {} --onprem_k8s_cluster_name {} --cloud_k8s_cluster_name {}'.format(policy, onprem_cluster, cloud_cluster))
-	#subprocess.run(['python3', '-m', 'starburst.drivers.main_driver' '--policy', policy, '--onprem_k8s_cluster_name', onprem_cluster,'--cloud_k8s_cluster_name', cloud_cluster])
-	#subprocess.run(['python3', '-m', 'starburst.drivers.main_driver' '--policy', 'fifo_onprem_only', '--onprem_k8s_cluster_name', 'gke_sky-burst_us-central1-c_starburst','--cloud_k8s_cluster_name', 'gke_sky-burst_us-central1-c_starburst-cloud'])
-	#python3 -m starburst.drivers.main_driver --policy fifo_onprem_only --onprem_k8s_cluster_name gke_sky-burst_us-central1-c_starburst --cloud_k8s_cluster_name gke_sky-burst_us-central1-c_starburst-cloud
-	#starburst, driver.custom_start(onprem_k8s_cluster_name=onprem_cluster, cloud_k8s_cluster_name=cloud_cluster, policy=policy)
-	return 
-
 """
 Core Dictionaries
 - Job Dictionary
 - TODO: Sweep Dictionary 
 
-
 Core Functions
-
 - Sweep 
 	- Generate_Sweep()
 """
@@ -107,7 +105,7 @@ def generate_jobs(hyperparameters):
 	arrivals = []
 	np.random.seed(hp.random_seed)
 
-	job_index = 1
+	job_index = 0#1
 	submit_time = 0
 	while True:
 		if hp.time_constrained and submit_time > hp.batch_time:
@@ -121,6 +119,7 @@ def generate_jobs(hyperparameters):
 		gpus = min(0, int(np.random.exponential(scale=2)))
 		memory = min(0, int(np.random.exponential(scale=50)))
 		job['submit_time'] = submit_time
+		job['scheduler_submit_time'] = None
 		job['job_duration'] = job_duration
 		workload = {"gpu": gpus, "cpu":cpus, "memory":memory}
 		job['workload'] = workload
@@ -146,29 +145,55 @@ def save_jobs(jobs, repo, tag):
 	with open(current_log_path, "w") as f:
 		json.dump(jobs, f)
 
-def submit(jobs, arrivals):
+def submit(jobs={}, arrivals=[], timestamp=None, index=None):
 	start_time = time.time()
 	curr_time = time.time()
-	job_index = 1 #0
-	total_jobs = len(jobs) #- 1
+	job_index = 0 #1
+	total_jobs = len(arrivals) #len(jobs)
+	submit_times = {}
+	
 	while True:
 		curr_time = time.time()
 		#print(str(job_index) + " " + str(total_jobs) +  " " + str(curr_time) + " " + str(arrivals[job_index]) + " " + str(start_time))
+		#print(arrivals)
+		#print(job_index)
 		if job_index < total_jobs and curr_time > arrivals[job_index][1] + start_time:
 			job = jobs[job_index]
-			job_index += 1
 			generate_sampled_job_yaml(job_id=job_index, sleep_time=job["job_duration"], workload=job['workload'])
 			#os.system('python3 -m starburst.drivers.submit_job --job-yaml ../../examples/sampled/sampled_job.yaml')
 			subprocess.run(['python3', '-m', 'starburst.drivers.submit_job', '--job-yaml', '../../examples/sampled/sampled_job.yaml'])
+			submit_time = time.time()
+
+			#if job_index not in submit_times: 
+			#	submit_times[job_index] = []
+			submit_times[job_index] = submit_time
+
+			job_index += 1
 		#TODO: Improve stop condition -- wait until last job completes
 		
 		if job_index >= total_jobs: 
-			break 
+			break
+
 		'''
 		elif (arrivals != []) and (curr_time >= start_time + arrivals[-1][1] + jobs["hyperparameters"]["time_out"]): 
 			print("Job Connection Time Out...")
 			break
 		'''
+	
+	trial_data_path = "../logs/archive/" + str(timestamp) + "/jobs/" + str(index) + ".json"
+	job_data = {}
+	with open(trial_data_path, "r") as f: #"../logs/event_data.json", "r") as f:
+		job_data = json.load(f)
+
+	for i in range(len(arrivals)):
+		#job_data[str(i)]['submit_time'] = submit_times[i]
+		# TODO: add scheduler_submit_time value in addition to submit_time 
+		job_data[str(i)]['scheduler_submit_time'] = submit_times[i] 
+
+	with open(trial_data_path, "w") as f: #"../logs/event_data.json", "r") as f:
+		#job_data = json.dump(f)
+		json.dump(job_data, f)
+
 	return 
 
 def execute(hyperparameters, repo, tag): 
@@ -247,11 +272,12 @@ def clear_logs():
 	
 	print("Completed Clearing Logs...")
 
-def start_logs(tag=None, batch_repo=None):
+def log(tag=None, batch_repo=None, loop=True):
 	event_data = job_logs.event_data_dict()
-	job_logs.write_cluster_event_data(batch_repo=batch_repo, event_data=event_data, tag=tag)
+	job_logs.write_cluster_event_data(batch_repo=batch_repo, event_data=event_data, tag=tag, loop=loop)
 
 def empty_cluster():
+	'''
 	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst")
 	onprem_api = client.CoreV1Api()
 
@@ -260,13 +286,67 @@ def empty_cluster():
 
 	cluster_apis = [onprem_api, cloud_api]
 	namespace = "default"
+	'''
+	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst")
+	onprem_api = client.CoreV1Api()
+	onprem_api_batch = client.BatchV1Api()
 
+	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst-cloud")
+	cloud_api = client.CoreV1Api()
+	cloud_api_batch = client.BatchV1Api()
+
+	cluster_apis = [(onprem_api, onprem_api_batch), (cloud_api, cloud_api_batch)]
+	namespace="default"
+
+	for apis in cluster_apis:
+		api, api_batch = apis
+		pods = api.list_namespaced_pod(namespace)
+		running_pods = [pod for pod in pods.items if pod.status.phase == "Running"]
+		if running_pods:
+			return False
+
+		jobs = api_batch.list_job_for_all_namespaces()
+		running_jobs = [job.status.succeeded for job in jobs.items if job.status.succeeded != 1] # if pod.status.phase == "Running"]
+		#print(running_jobs)
+		#time.sleep(1000)
+		if running_jobs:
+			return False 
+
+		"""
+		'status': {'active': None,
+		'completed_indexes': None,
+		'completion_time': datetime.datetime(2023, 4, 30, 7, 3, 35, tzinfo=tzutc()),
+		'conditions': [{'last_probe_time': datetime.datetime(2023, 4, 30, 7, 3, 35, tzinfo=tzutc()),
+						'last_transition_time': datetime.datetime(2023, 4, 30, 7, 3, 35, tzinfo=tzutc()),
+						'message': None,
+						'reason': None,
+						'status': 'True',
+						'type': 'Complete'}],
+		'failed': None,
+		'ready': 0,
+		'start_time': datetime.datetime(2023, 4, 30, 7, 3, 29, tzinfo=tzutc()),
+		'succeeded': 1,
+		'uncounted_terminated_pods': {'failed': None, 'succeeded': None}}}
+		"""
+
+	'''
 	for api in cluster_apis:
 		pods = api.list_namespaced_pod(namespace)
 		running_pods = [pod for pod in pods.items if pod.status.phase == "Running"]
 		if running_pods:
-			return False 
+			return False
+	'''
 	
+	'''
+	for api in cluster_apis:
+		jobs = api.list_job_for_all_namespaces()
+		running_jobs = [job.status for job in jobs.items]# if pod.status.phase == "Running"]
+		print(running_jobs)
+		time.sleep(1000)
+		if running_jobs:
+			return False
+	'''
+
 	return True 
 
 def run(hyperparameters, batch_repo, index):
@@ -274,18 +354,20 @@ def run(hyperparameters, batch_repo, index):
 	jobs, arrivals = generate_jobs(hyperparameters=hyperparameters)
 	save_jobs(jobs=jobs, repo=batch_repo, tag=index)
 	c1, c2 = mp.Pipe()
-
-	p0 = mp.Process(target=driver.custom_start, args=(None, c2, 50051, 1, "gke_sky-burst_us-central1-c_starburst","gke_sky-burst_us-central1-c_starburst-cloud",hp.policy, hp.wait_time, jobs))
+	grpc_port = 10000 #50051
+	p0 = mp.Process(target=driver.custom_start, args=(None, c2, grpc_port, 1, "gke_sky-burst_us-central1-c_starburst","gke_sky-burst_us-central1-c_starburst-cloud",hp.policy, hp.wait_time, jobs))
 	p0.start()
 	
+	clear_logs()
 	while (c1.poll() == False) or (not (len(c1.recv()) == 0 and empty_cluster())):
 		print("Cleaning Logs and Cluster....")
+		print("Connected: " + str(c1.poll()) + " - Empty Job Queue: " + str(len(c1.recv()) == 0) + " - Empty Cluster: " + str(empty_cluster()) )
 		time.sleep(1)
 	clear_logs()
 	
 	tag = str(index)
-	p1 = mp.Process(target=start_logs, args=(tag, batch_repo,))
-	p2 = mp.Process(target=submit, args=(jobs, arrivals))
+	p1 = mp.Process(target=log, args=(tag, batch_repo, True))
+	p2 = mp.Process(target=submit, args=(jobs, arrivals, batch_repo, index))
 	p1.start()
 	p2.start()
 
@@ -294,28 +376,55 @@ def run(hyperparameters, batch_repo, index):
 		print("p2 alive status: " + str(p2.is_alive()))
 		print("Job Queue: " + str(c1.recv()))
 		time.sleep(1)
-	
+
+	#atexit.register(func=log, args=(tag, batch_repo, False)
 	# TODO: Ensure p2 dies only after all submitted jobs have completed
+	# TODO: Ensure p1 only dies after all p2 jobs have been properly logged -- force it to log one last time before closing 
+
 	p1.terminate()
+
+	p1 = mp.Process(target=log, args=(tag, batch_repo, False))
+	p1.start()
+	while (p1.is_alive()):
+		print("Saving last logs....")
+		print("p1 alive status: " + str(p1.is_alive()))
+		time.sleep(1)
+
 	p0.terminate()
 	
 	return 0 
 
-def run_sweep(sweep):
+def run_sweep(sweep={}):#, fixed_values=OrderedDict(), varying_values=OrderedDict()):
 	sweep_timestamp =  str(int(datetime.now().timestamp()))
-	for i in range(len(sweep)):
+	sweep_dir = "../logs/archive/" + sweep_timestamp + "/"
+	if not os.path.exists(sweep_dir):
+		os.mkdir(sweep_dir)
+	sweep_path = sweep_dir + "sweep.json"
+
+	with open(sweep_path, "w") as f:
+		json.dump(sweep, f)
+
+	for i in range(len(sweep) - 2):
 		hp = sweep[i]
 		run(hp, sweep_timestamp, str(i))
-	return 0
 
-def submit_sweep():
-	sweep = generate_sweep()
-	run_sweep(sweep)
+	return sweep_timestamp
 
+def submit_sweep(fixed_values=OrderedDict(), varying_values=OrderedDict()):
+	sweep = generate_sweep(fixed_values=fixed_values, varying_values=varying_values)
+	#save_sweep(sweep=sweep, fixed_values=fixed_values, varying_values=varying_values)
+	time_stamp = run_sweep(sweep)
+	return time_stamp
 
-def generate_sweep(fixed_values=None, varying_values=None): 
+def plot_sweep(sweep_timestamp=0, fixed_values=OrderedDict(), varying_values=OrderedDict()):
+	print("Analyzing and plotting data...")
+	job_logs.analyze_sweep(event_number=sweep_timestamp)#, fixed_values=fixed_values, varying_values=varying_values)
+	print("Plotting complete...")
+	return 
+
+def generate_sweep(fixed_values=OrderedDict(), varying_values=OrderedDict()): 
 	"""
-	Sweep - generate_sweep(generate_sweep(arrival_time x waiting_time), something_else)	
+	Takes specified fixed values and generates grid of hyperparameters based on varying values 
 	"""
 	# TODO: Integrate hpo tool (e.g. optuna)
 	# TODO: Specify grid search values, then plot them
@@ -334,57 +443,35 @@ def generate_sweep(fixed_values=None, varying_values=None):
 				- arrival rate [data]
 	'''
 	sweep={}
-
-	# Default Hyperparameters
-	hyperparameters = {
-		"policy": "fifo_onprem_only",
-		"time_constrained": True,
-		"random_seed": 0,
-		"num_jobs": 100,
-		"batch_time": 300,
-		"wait_time": 0,
-		"time_out": 5,
-		"mean_duration": 30,
-		"arrival_rate": 1,
-		"cpu_sizes": [1,2,4,8,16,32],
-		"cpu_dist": [0, 0.2, 0.2, 0.2, 0.2, 0.2], 
-		"gpu_sizes": [1,2,4,8,16,32],
-		"gpu_dist": [0, 0.2, 0.2, 0.2, 0.2, 0.2],
-		"memory_sizes": [100, 500, 1000, 50000],
-		"memory_dict": [0.25, 0.25, 0.25, 0.25],
-	}
-	
-	index = 0
-
-	cluster_nodes = 4
-	cpu_per_node = 8 
-
+	sweep["fixed_values"] = fixed_values
+	sweep["varying_values"] = varying_values
 	# DEFAULT VALUES
 	hyperparameters = copy.deepcopy(DEFAULT_PARAMS)
 	
-	# FIXED VALUES	
-	hyperparameters["batch_time"] = 300 
-	hyperparameters["mean_duration"] = 30
-	hyperparameters["policy"] = "fifo_wait"
-
-	hyperparameters["cpu_sizes"] = [1, 2, 4]
-	hyperparameters["cpu_dist"] = [0.2, 0.4, 0.4]
+	# FIXED VALUES
+	for key, value in fixed_values.items(): 
+		hyperparameters[key] = value
 
 	# VARYING VALUES
-	MIN = 0 
-	MAX = hyperparameters["mean_duration"] * (1 / (cluster_nodes * cpu_per_node)) * 4
-	INTERVALS = 10
-	arrival_rates = np.linspace(MIN, MAX, num=INTERVALS+1).tolist()[1:]
+	# TODO: Create cartesian product of values then iterate through the values and map them to a job index
 
-	MIN = 0 
-	MAX = 10
-	INTERVALS = 10
-	wait_times = np.linspace(MIN, MAX, num=INTERVALS+1).tolist()
+	keys = []
+	values = []
+	for key, value in varying_values.items():
+		keys.append(key)
+		values.append(value)
 
-	cpu_dists = [[0.2, 0.4, 0.4], [0, 0.5, 0.5], [0, 0, 1]]
+	#values = values[::-1]
 
+	grid_search = itertools.product(*values)
+	
+	for trial_index, trial in enumerate(grid_search):
+		for key_index, key in enumerate(keys):
+			hyperparameters[key] = trial[key_index]
+		sweep[trial_index] = copy.deepcopy(hyperparameters)
+
+	'''
 	# SWEEP 1
-
 	hyperparameters["policy"] = "fifo_wait"
 
 	for cpu_dist in cpu_dists: 
@@ -395,10 +482,10 @@ def generate_sweep(fixed_values=None, varying_values=None):
 				hyperparameters["wait_time"] = w
 				sweep[index] = copy.deepcopy(hyperparameters)
 				index += 1
+	'''
 
 	'''
 	# SWEEP 2
-
 	hyperparameters["policy"] = "fifo_onprem_only"
 
 	for cpu_dist in cpu_dists: 
@@ -411,7 +498,6 @@ def generate_sweep(fixed_values=None, varying_values=None):
 
 	'''
 	# SWEEP 3
-
 	hyperparameters["policy"] = "time_estimator"
 
 	for cpu_dist in cpu_dists: 
@@ -421,15 +507,39 @@ def generate_sweep(fixed_values=None, varying_values=None):
 			sweep[index] = hyperparameters
 			index += 1
 	'''
-
+	
 	return sweep
+
+def generate_interval(min=0, max=10, intervals=10):
+	return np.linspace(min, max, num=intervals+1).tolist()[1:]
 
 def main():
 	"""
 	Note: Only execute sweep through the main function, since mp package fails otherwise
 	"""
+	hyperparameters = copy.deepcopy(DEFAULT_PARAMS)
 	
-	submit_sweep()
+	fixed_values = {
+		"num_jobs": 5,
+		"batch_time": 5, 
+		"mean_duration": 1,
+		"policy": "fifo_wait",
+		"cpu_sizes":[1, 2, 4],
+		"cpu_dist": [0.2, 0.4, 0.4]
+	}
+
+	fixed_values = OrderedDict(fixed_values)
+	
+	"""Varying values from outer most to inner most loop"""
+	varying_values = {	
+		"cpu_dist": [[0.2, 0.4, 0.4], [0, 0.5, 0.5], [0, 0, 1]],	
+		"wait_time": generate_interval(0, 10, 3),
+		"arrival_rate": generate_interval(0, hyperparameters["mean_duration"] * (1 / (hyperparameters["onprem_cluster_nodes"] * hyperparameters["onprem_cpu_per_node"])) * 4, 3)[1:],
+	}
+	varying_values = OrderedDict(varying_values)
+	submit_sweep(fixed_values=fixed_values, varying_values=varying_values)
+	#sweep = generate_sweep(fixed_values=fixed_values, varying_values=varying_values)
+	#print(sweep)
 	return 
 
 if __name__ == '__main__':
