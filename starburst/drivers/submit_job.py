@@ -5,7 +5,7 @@ import logging
 from starburst.event_sources.grpc.protogen import job_submit_pb2_grpc, job_submit_pb2
 
 DEFAULT_IP = 'localhost'
-DEFAULT_PORT = 50051 #10000
+DEFAULT_PORT = 10000 #50051 #10000
 JOB_YAML_PATH = 'examples/default/example_job.yaml'
 
 def parseargs():
