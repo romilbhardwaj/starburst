@@ -61,15 +61,62 @@ Option 1:
 	- space betwen two events follows exponential 
 '''
 
-DEFAULT_PARAMS = {
-	"policy": "fifo_onprem_only",
+'''
+result_dict = {
+	'idx': np.array([j.idx for j in finished_jobs]),
+	'arrival': np.array([j.arrival for j in finished_jobs]),
+	'start': np.array([j.start for j in finished_jobs]),
+	'runtime': np.array([j.runtime for j in finished_jobs]),
+	'deadline': np.array([j.deadline for j in finished_jobs]),
+	'num_gpus': np.array([j.num_gpus for j in finished_jobs]),
+	'state': np.array([j.state for j in finished_jobs]),
+	'allocated_gpus': np.array([j.allocated_gpus for j in finished_jobs]),
+	'simulator_spec': simulator_spec,
+	'stats': {}
+}
+'''
+
+'''
+run_config = {
+	# Cluster config
+	'cluster_size': args.cluster_size,
+	'gpus_per_node': args.gpus_per_node,
+	'cpus_per_node': args.cpus_per_node,
+	# Policy config
+	'sched_alg': args.sched_alg,
+	'binpack_alg': args.binpack_alg,
+	'waiting_policy': args.waiting_policy,
+	'backfill': args.backfill,
+	'loop': args.loop,
+	'predict_wait': args.predict_wait,
+	# Simulator config
+	'verbose': args.verbose,
+	'debug': args.debug,
+	'warmup_jobs': args.warmup_jobs,
+	'jobgen_spec': {
+		'dataset': args.dataset,
+		'arrival_rate': args.arrival_rate,
+		'cv_factor': args.cv_factor,
+		'total_jobs': args.total_jobs,
+		'job_runtime': args.job_runtime,
+		'seed': args.seed
+	}
+}
+'''
+
+DEFAULT_HYPERPARAMETERS = {
+	#"policy": "fifo_onprem_only",
+	"waiting_policy": "fifo_onprem_only",
 	"time_constrained": True,
-	"onprem_cluster_nodes": 4,
-	"onprem_cpu_per_node": 8,
+	#"onprem_cluster_nodes": 4,
+	"cluster_size": 4,
+	#"onprem_cpu_per_node": 8,
+	"cpus_per_node": 8, 
 	"cloud_cluster_nodes": 4, 
 	"cloud_cpu_per_node": 8,  
 	"random_seed": 0,
-	"num_jobs": 100,
+	'total_jobs': 100,#args.total_jobs,
+	#"num_jobs": 100,
 	"batch_time": 300,
 	"wait_time": 0,
 	"time_out": 5,
@@ -110,7 +157,7 @@ def generate_jobs(hyperparameters):
 	while True:
 		if hp.time_constrained and submit_time > hp.batch_time:
 			break
-		elif job_index >= hp.num_jobs:
+		elif job_index >= hp.total_jobs: #num_jobs:
 			break
 		job = {}
 		submit_time += np.random.exponential(scale=hp.arrival_rate)
@@ -355,7 +402,7 @@ def run(hyperparameters, batch_repo, index):
 	save_jobs(jobs=jobs, repo=batch_repo, tag=index)
 	c1, c2 = mp.Pipe()
 	grpc_port = 10000 #50051
-	p0 = mp.Process(target=driver.custom_start, args=(None, c2, grpc_port, 1, "gke_sky-burst_us-central1-c_starburst","gke_sky-burst_us-central1-c_starburst-cloud",hp.policy, hp.wait_time, jobs))
+	p0 = mp.Process(target=driver.custom_start, args=(None, c2, grpc_port, 1, "gke_sky-burst_us-central1-c_starburst","gke_sky-burst_us-central1-c_starburst-cloud",hp.waiting_policy, hp.wait_time, jobs))
 	p0.start()
 	
 	clear_logs()
@@ -418,7 +465,7 @@ def submit_sweep(fixed_values=OrderedDict(), varying_values=OrderedDict()):
 
 def plot_sweep(sweep_timestamp=0, fixed_values=OrderedDict(), varying_values=OrderedDict()):
 	print("Analyzing and plotting data...")
-	job_logs.analyze_sweep(event_number=sweep_timestamp)#, fixed_values=fixed_values, varying_values=varying_values)
+	job_logs.analyze_sweep(event_number=sweep_timestamp, graph=True)#, fixed_values=fixed_values, varying_values=varying_values)
 	print("Plotting complete...")
 	return 
 
@@ -446,7 +493,7 @@ def generate_sweep(fixed_values=OrderedDict(), varying_values=OrderedDict()):
 	sweep["fixed_values"] = fixed_values
 	sweep["varying_values"] = varying_values
 	# DEFAULT VALUES
-	hyperparameters = copy.deepcopy(DEFAULT_PARAMS)
+	hyperparameters = copy.deepcopy(DEFAULT_HYPERPARAMETERS)
 	
 	# FIXED VALUES
 	for key, value in fixed_values.items(): 
@@ -517,13 +564,15 @@ def main():
 	"""
 	Note: Only execute sweep through the main function, since mp package fails otherwise
 	"""
-	hyperparameters = copy.deepcopy(DEFAULT_PARAMS)
+	hyperparameters = copy.deepcopy(DEFAULT_HYPERPARAMETERS)
 	
 	fixed_values = {
-		"num_jobs": 5,
+		#"num_jobs": 5,
+		"total_jobs": 5, 
 		"batch_time": 5, 
-		"mean_duration": 1,
-		"policy": "fifo_wait",
+		"mean_duration": 1,#5, 
+		#"policy": "fifo_wait",
+		"waiting_policy": "fifo_wait",
 		"cpu_sizes":[1, 2, 4],
 		"cpu_dist": [0.2, 0.4, 0.4]
 	}
@@ -534,7 +583,7 @@ def main():
 	varying_values = {	
 		"cpu_dist": [[0.2, 0.4, 0.4], [0, 0.5, 0.5], [0, 0, 1]],	
 		"wait_time": generate_interval(0, 10, 3),
-		"arrival_rate": generate_interval(0, hyperparameters["mean_duration"] * (1 / (hyperparameters["onprem_cluster_nodes"] * hyperparameters["onprem_cpu_per_node"])) * 4, 3)[1:],
+		"arrival_rate": generate_interval(0, hyperparameters["mean_duration"] * (1 / (hyperparameters["cluster_size"] * hyperparameters["cpus_per_node"])) * 4, 3)[1:],
 	}
 	varying_values = OrderedDict(varying_values)
 	submit_sweep(fixed_values=fixed_values, varying_values=varying_values)
@@ -547,7 +596,7 @@ if __name__ == '__main__':
 	#pass
 
 """
-MISC FUNCTIONS
+UTIL + MISC FUNCTIONS
 """
 
 def start_scheduler(policy="fifo_onprem_only", onprem_cluster="gke_sky-burst_us-central1-c_starburst", cloud_cluster="gke_sky-burst_us-central1-c_starburst-cloud"):
@@ -573,186 +622,3 @@ def view_submitted_arrival_times(num_jobs = 100, batch_time=100):
 		axs[i].set_yticks([])
 
 	plt.show()
-
-def hyperparameter_sweep(batch_time=500, num_jobs=100, sleep_mean=30, timeout=10, policy="fifo_wait"):
-	# TODO: Vary and log jobs with different arrival rates
-	arrival_intervals = 5
-	waiting_intervals = 3
-	arrival_rates = np.linspace(0, 5, num=arrival_intervals+1).tolist()[1:]
-	waiting_times = np.linspace(0, 30, num=waiting_intervals+1).tolist()
-
-	#job_data = {}
-	batch_repo = str(int(datetime.now().timestamp()))
-
-	for wait in waiting_times:  
-		q = mp.Queue()
-		c1, c2 = mp.Pipe()
-		p0 = mp.Process(target=driver.custom_start, args=(q, c2, 10000, 1, "gke_sky-burst_us-central1-c_starburst","gke_sky-burst_us-central1-c_starburst-cloud",policy, wait,))
-
-		p0.start()
-		# TODO: Vary wait_time (i.e. time_out for each arrival_rate) 
-		# TODO: Save the same job resource requirements when regenerating them for each wait_time value
-		# TODO: Determine better design than restarting scheduler for each new wait_time value
-		# TODO: Save job submission data as an array -- [[time, JobObject], ..., [time, JobObject]]
-		for ar in arrival_rates:
-			#batch_job
-			while (c1.poll() == False) or (not (len(c1.recv()) == 0 and empty_cluster())):
-				print("Cleaning Logs and Cluster....")
-				# TODO: Figure out why the function pauses after this print statement
-				# TODO: manually delete any remaining jobs 
-				print("Connection Value: " + str(c1.recv()))
-				time.sleep(1)
-			clear_logs()
-			
-			tag = str(wait) + "_" + str(ar)
-			p1 = mp.Process(target=start_logs, args=(tag, batch_repo,))
-			p2 = mp.Process(target=submit_jobs, args=(True, batch_time, num_jobs, ar, sleep_mean, timeout, False, True, batch_repo, {}, 42, tag, wait))
-			p1.start()
-			p2.start()
-
-			while (p2.is_alive()) or (c1.poll() == False) or (not (len(c1.recv()) == 0 and empty_cluster())):
-				print("Wait for Job to Cxomplete....")
-				print("p2 alive status: " + str(p2.is_alive()))
-				print("Job Queue: " + str(c1.recv()))
-				# TODO: manually delete any remaining jobs 
-				time.sleep(1)
-
-			p1.terminate()
-			# TODO: only start next arrival rate one the queue is empty again
-			# TODO: check how to find if starburst queue is empty
-			# TODO: check when not more jobs being processed in the cluster
- 
-		p0.terminate()
-	return 0
-
-def submit_jobs(time_constrained = True, batch_time=10, num_jobs=10, arrival_rate=0.5, sleep_mean=10, timeout=5, plot_arrival_times=False, submit=True, batch_repo=None, hyperparameters={}, random_seed=0, tag="job", wait_time=0): #arrival_times, 
-	""" Submits a a default job for each time stamp of the inputed arrival times """
-	hyperparameters = {
-		"random_seed": 42,
-		"num_jobs": num_jobs, #0,
-		"batch_time": batch_time,
-		"wait_time": wait_time,
-		"time_out": timeout, #0,
-		"mean_sleep": sleep_mean, #0,
-		"arrival_rate": arrival_rate, #0, 
-		"cpu_sizes": [1,2,4,8,16,32],
-		"cpu_dist": [0, 0.2, 0.2, 0.2, 0.2], 
-		"gpu_sizes": [1,2,4,8,16,32],
-		"gpu_dist": [0, 0.2, 0.2, 0.2, 0.2],
-		"memory_sizes": [100, 500, 1000, 50000],
-		"memory_dict": [0.25, 0.25, 0.25, 0.25],
-	}
-	# TODO: Set random seed, to allow same values given the variables
-	np.random.seed(random_seed)
-
-	#batch_times = []
-	total_jobs = num_jobs #len(arrival_times)
-	job = 0
-
-	cpu_size = [1, 2, 4]
-	cpu_dist = [0.2, 0.4, 0.4]
-	hyperparameters['cpu_sizes'] = cpu_size
-	hyperparameters['cpu_dist'] = cpu_dist
-
-	'''
-	submit_time = 0
-	arrival_times = []
-	print(arrival_rate)
-	for i in range(num_jobs):
-		submit_time += np.random.exponential(scale=arrival_rate)#0.5)
-		arrival_times.append(submit_time)
-	'''
-	if time_constrained: 
-		submit_time = 0
-		submitted_jobs = 0
-		arrival_times = []
-		while submit_time <= batch_time: 
-			# TODO: Reset seed before each call to np.random.x()
-			np.random.seed(random_seed) 
-			submit_time += np.random.exponential(scale=arrival_rate)#0.5)
-			arrival_times.append(submit_time)
-			submitted_jobs += 1 
-	else: 
-		submit_time = 0
-		arrival_times = []
-		#print(arrival_rate)
-		for i in range(num_jobs):
-			submit_time += np.random.exponential(scale=arrival_rate)#0.5)
-			arrival_times.append(submit_time)
-	
-	if not submit: 
-		return arrival_times	
-
-	if plot_arrival_times: 
-		plt.eventplot(arrival_times)
-		plt.savefig('../plots/arrival_times.png')
-
-	job_cpu_size = {}
-	job_sleep_time = {}
-	#job_data = {}
-	# TODO: Verify hyperparamters gets parsed successfully by read_submission_data()
-	job_data = {'hyperparameters': hyperparameters}
-
-	log_path = "../logs/"
-	if not os.path.exists(log_path):
-		os.mkdir(log_path)
-	log_path = "../logs/archive/"
-	if not os.path.exists(log_path):
-		os.mkdir(log_path)
-	log_path += batch_repo + "/"
-	if not os.path.exists(log_path):
-		os.mkdir(log_path)
-	log_path += "jobs/"
-	if not os.path.exists(log_path):
-		os.mkdir(log_path)
-	
-	#current_log_path = log_path + str(arrival_rate) + ".json"
-	current_log_path = log_path + tag + ".json"
-
-
-	start_time = time.time()
-	curr_time = time.time()
-	submitted_jobs = 0
-	while True:
-	#while curr_time <= start_time + batch_time:  
-		curr_time = time.time()
-		#print("job submissions: " + str(start_time) + " " + str(curr_time) + " " + str(timeout))
-		if job < total_jobs and curr_time > arrival_times[job] + start_time:
-			job_values = {}
-			
-
-			job += 1
-			#job_values["id"] = job
-			#print(job)
-			job_duration = np.random.exponential(scale=sleep_mean)#60) #np.random.normal(10, 3) 
-			job_values["duration"] = job_duration
-			#cpu_index = int(np.random.uniform(low=0, high=3)) #0.2 #min(0, int(np.random.exponential(scale=3)))
-			#cpu_index = np.random.choice(cpu_size, p=cpu_dist)
-			
-			cpus = int(np.random.choice(cpu_size, p=cpu_dist)) #cpu_size[cpu_index]
-			job_values['cpus'] = cpus
-			gpus = min(0, int(np.random.exponential(scale=2)))
-			job_values['gpus'] = gpus
-			memory = min(0, int(np.random.exponential(scale=50)))
-			job_values['memory'] = memory
-			job_cpu_size[job] = cpus
-			job_sleep_time[job] = job_duration
-			job_workload = {"gpu": gpus, "cpu":cpus, "memory":memory}
-			generate_sampled_job_yaml(job_id=job, sleep_time=job_duration, workload=job_workload)#10)
-			submit_time = int(datetime.now().timestamp())
-			job_values['submit_time'] = submit_time
-
-			job_data[job] = job_values
-			os.system('python3 -m starburst.drivers.submit_job --job-yaml ../../examples/sampled/sampled_job.yaml')	
-		elif (arrival_times != []) and (curr_time >= start_time + arrival_times[-1] + timeout): 
-			print("Time Out...")
-			break
-		'''
-		elif curr_time >= start_time + timeout:
-			print("Time Out...")
-			break
-		'''
-
-		# TODO: Save job hyperparameters directly into job events metadata	
-		with open(current_log_path, "w") as f:
-			json.dump(job_data, f)
