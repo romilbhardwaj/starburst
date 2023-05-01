@@ -13,6 +13,7 @@ from collections import defaultdict
 from collections import OrderedDict
 import itertools
 import sampled_jobs
+import pandas as pd
 
 # TODO: Integrate kubecost or GCP calculator
 # TODO: Include accurate cloud specific costs (e.g. network, disk, instance type)
@@ -627,7 +628,7 @@ def view_real_arrival_times(event_number=None):#cluster_data_path=None, submissi
 
 	return 
 
-def analyze_sweep(event_number=None):#, fixed_values=OrderedDict(), varying_values=OrderedDict()):#path=None):
+def analyze_sweep(event_number=None, graph=False):#, fixed_values=OrderedDict(), varying_values=OrderedDict()):#path=None):
 	"""Takes each batch job file and computes values (e.g. cloud cost, system utilization)"""
 
 	metrics = {}
@@ -653,14 +654,23 @@ def analyze_sweep(event_number=None):#, fixed_values=OrderedDict(), varying_valu
 			cluster_event_data = read_cluster_event_data(cluster_log_path=cluster_log_path)
 			submission_data = read_submission_data(submission_log_path=submission_log_path)
 			jobs, num_nodes = parse_event_logs(cluster_event_data=cluster_event_data, submission_data=submission_data)
-			hyperparameters = submission_data['hyperparameters']
+			
 
 			# TODO: Compute baseline cost and cost savings
 			#cost, cost_density, system_utilization = compute_metrics(jobs=jobs, num_nodes=num_nodes)
 			#metrics[i] = {"cost": cost, "cost_density": cost_density, "system_utilization": system_utilization, "hyperparameters": hyperparameters}
 			
+			hyperparameters = submission_data['hyperparameters']
 			job_metrics = compute_metrics(jobs=jobs, num_nodes=num_nodes)
-			job_metrics["hyperparameters"] = hyperparameters
+			#job_metrics["hyperparameters"] = hyperparameters
+
+			for k, v in hyperparameters.items(): 
+				job_metrics[k] = v
+
+			sweep_metrics = sweep[str(i)]
+			for k, v in sweep_metrics.items(): 
+				job_metrics[k] = v
+
 			metrics[i] = job_metrics
 			
 			#if file.endswith(".json"):
@@ -674,7 +684,9 @@ def analyze_sweep(event_number=None):#, fixed_values=OrderedDict(), varying_valu
 	print(fixed_values)
 	print(varying_values)
 
-	graph_metrics(metrics=metrics, fixed_values=fixed_values, varying_values=varying_values)
+	if graph: 
+		graph_metrics(metrics=metrics, fixed_values=fixed_values, varying_values=varying_values)
+
 	return metrics
 
 def compute_metrics(jobs, num_nodes):
@@ -766,14 +778,37 @@ def compute_metrics(jobs, num_nodes):
 		"system_utilization": system_utilization,
 		"cluster_utilization": cluster_utilization,
 		"norm_system_utilization": norm_system_utilization,
-		'job_completion_time': jct
+		#'job_completion_time': jct
+		'avg_jct': jct
 	}
+
+
 
 	#return (cloud_cost, onprem_cost), (cloud_cost/total_time, onprem_cost/total_time), norm_system_utilization
 	return metrics
 
+label_dict = {
+    'avg_jct': 'Avg. JCT (hr)',
+    'cost_mult': '% Cost Savings\nover No Wait',
+    'cost_diff': 'Cost Savings\nover No Wait',
+    'cluster_size': 'Cluster Size (# Nodes)',
+    'norm_system_utilization': 'System Utilization',
+    'system_utilization': 'System Utilization',
+    'cluster_utilization': 'Cluster Utilization',
+    'total_cloud_cost': 'Cloud Cost',
+    'arrival_rate': 'Arrival Rate',
+}
+
+legend_dict = {
+    'constant': 'Constant',
+    'linear_runtime': 'Runtime',
+    'linear_cost': 'Cost',
+    'zero': 'No Wait',
+    'linear_runtime_filter_cpu': 'Runtime-Preempt-CPU'
+}
 
 def graph_metrics(metrics=None, fixed_values=OrderedDict(), varying_values=OrderedDict(), x_axis=['arrival_rate', 'system_utilization'], y_axis=['cloud_cost', 'onprem_cost']):
+	# TODO: Use metrics as if sim_df
 	# TODO: Specify the axes along which to graph the costs 
 	# TODO: Specify the variables that are varied in generate_sweep(), pass that data into this function 
 	'''
@@ -804,6 +839,7 @@ def graph_metrics(metrics=None, fixed_values=OrderedDict(), varying_values=Order
 				data[i][j][k] = 0
 	'''
 
+	'''
 	data = []
 	for i in metrics: 
 		m = metrics[i]
@@ -833,6 +869,7 @@ def graph_metrics(metrics=None, fixed_values=OrderedDict(), varying_values=Order
 		# TODO: Generate plot format when creating sweep data 
 
 		data.append(params)
+	'''
 
 	# TODO: Specify subplots dimensions based on number of varying_values 
 	varying_values = list(varying_values.items())
@@ -889,8 +926,9 @@ def graph_metrics(metrics=None, fixed_values=OrderedDict(), varying_values=Order
 
 
 	maps = {}
-	for i in range(len(data)):
-		trial = data[i]
+	for i in range(len(metrics)):
+	#for i in range(len(data)):
+		trial = metrics[i]#data[i]
 		# TODO: Specify the row to plot the data based on the varying_values dictionary 
 		# TODO: Group the values of the same 1d sweep together (e.g. if first dimesion is arrival_rate, then one graph varies the arrival_rate)
 		# TODO: Solve 1d, then 2d, then 3d
@@ -966,10 +1004,80 @@ def graph_metrics(metrics=None, fixed_values=OrderedDict(), varying_values=Order
 		ymin = min(curr_ymin, ymin)
 		ymax = max(curr_ymax, ymax)
 
+	'''
+	def cost_difference(row):
+        baseline_cost = row['total_cloud_cost_y']
+        cost = row['total_cloud_cost_x']
+        return baseline_cost - cost
+	'''
+	
 
-	# TODO: Absolute Saving [NOT STARTED]
-	# TODO: Relative Cost saving [NOT STARTED]
+	# TODO: Reimplement cost_difference without using pandas df [NOT STARTED]
+	# TODO: Specify baseline based on dimension -- specify a baseline and a range to normalize
+	# TODO: Create a function that finds dimension of all baseline functions
+	# TODO: Create a function that finds set of dimensions that need to transformed according to baseline
+	'''
+	def load_dict_as_dataframe(metrics): 
+		df = pd.DataFrame.from_dict(metrics)
+		return df 
+	'''
 
+	metrics_dt = pd.DataFrame.from_dict(metrics)
+
+	def find_baselines(graph):
+		baselines = []
+		return baselines
+
+	def find_baseline_range(graph): 
+		baseline_range = {}
+		return baseline_range
+	
+	def cost_difference(graphs, baseline_range):
+		# TODO: Get cloud costs for 0 wait time 
+		baseline_cost = row['total_cloud_cost_y']
+		# TODO: Get cloud costs for current wait time 
+		cost = row['total_cloud_cost_x']
+
+		return baseline_cost - cost
+	
+
+	#graphs = cost_difference(graphs)
+
+	# TODO: Absolute Saving [NOT STARTED] 'cost_diff'
+	# TODO: Add a conditional that only allows cost_diff to be applied if data with waiting time 0 can be found
+	
+	'''
+	for dim in graphs: 
+		axs[dim].plot(graphs[dim]['system_utilization'], graphs[dim]['absolute_saving'], label="absolute_saving")
+		axs[dim].set_xlabel('system_utilization', fontsize=5)
+		axs[dim].set_ylabel('absolute_saving', fontsize=5)
+		title = varying_values[0][0] + " " + str(varying_values[0][1][dim[0]]) + " " + varying_values[1][0] + " " + str(varying_values[1][1][dim[1]])
+		#title = "test"
+		axs[dim].set_title(title, fontsize=5)
+		
+		curr_xmin, curr_xmax = axs[dim].get_xlim()
+		curr_ymin, curr_ymax = axs[dim].get_ylim()
+		xmin = min(curr_xmin, xmin)
+		xmax = max(curr_xmax, xmax)
+		ymin = min(curr_ymin, ymin)
+		ymax = max(curr_ymax, ymax)
+
+	# TODO: Reimplement cost_multiplier without using pandas df [NOT STARTED]
+	def cost_multiplier(row):
+		baseline_cost = row['total_cloud_cost_y']
+		cost = row['total_cloud_cost_x']
+		if baseline_cost == 0 and cost==0:
+			return 0
+		elif baseline_cost <=10000:
+			# Small cloud cost for No wait
+			# Savings over small cloud cost is negligible for organizations.
+			return 0
+		elif baseline_cost == 0 and cost>0:
+			return 100
+		return 100* (1 - (cost/baseline_cost))
+
+	# TODO: Relative Cost saving [NOT STARTED] 'cost_mult'
+	'''
 	'''
 	for i in graphs:
 		axs[i[0]][i[1]].plot(graph[i]['arrival_rate'], graph[i]['cloud_cost'], label="cloud_cost")
@@ -993,23 +1101,7 @@ def graph_metrics(metrics=None, fixed_values=OrderedDict(), varying_values=Order
 	plt.subplots_adjust(hspace=1)
 	plt.show()
 
-def cost_multiplier(row):
-	baseline_cost = row['total_cloud_cost_y']
-	cost = row['total_cloud_cost_x']
-	if baseline_cost == 0 and cost==0:
-		return 0
-	elif baseline_cost <=10000:
-		# Small cloud cost for No wait
-		# Savings over small cloud cost is negligible for organizations.
-		return 0
-	elif baseline_cost == 0 and cost>0:
-		return 100
-	return 100* (1 - (cost/baseline_cost))
 
-def cost_difference(row):
-	baseline_cost = row['total_cloud_cost_y']
-	cost = row['total_cloud_cost_x']
-	return baseline_cost - cost
 
 def read_cluster_event_data(cluster_log_path=None):#, submission_log_path=None):
 	if not cluster_log_path: 
