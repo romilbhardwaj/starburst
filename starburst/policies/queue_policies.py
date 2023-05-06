@@ -76,8 +76,23 @@ class FIFOWaitPolicy(BasePolicy):
         """ Process in FIFO order. Iterates over all jobs (no HoL blocking).
         If job has been waiting longer than a threshold, submit to cloud. """
         # Check if the onprem cluster can fit the job
+        import time
+        start_time = time.perf_counter()
+        curr_time = time.perf_counter()
+        logger.debug("Started process_queue()" + str(curr_time-start_time))
+
+        retry = 0 
         if job_queue:
+            curr_time = time.perf_counter()
+            logger.debug("Retry(" + retry + ") " + "Started queue loop" + str(curr_time-start_time))
+            retry += 1
+            
+            job_id = 0 
             for job in job_queue:
+                curr_time = time.perf_counter()
+                logger.debug("Job(" + job_id + ") " + "Started queue loop" + str(curr_time-start_time))
+                job_id += 1 
+
                 if self.onprem_manager.can_fit(job):
                     # Remove from queue
                     job_queue.remove(job)
@@ -101,7 +116,14 @@ class FIFOWaitPolicy(BasePolicy):
 
         else:
             logger.info("Job queue is empty.")
+            curr_time = time.perf_counter()
+            logger.debug("Completed process_queue()" + str(curr_time-start_time))
             return
+
+# TODO: Implement Linear Wait Policy
+'''
+
+'''
 
 class TimeEstimatorPolicy(BasePolicy):
     def __init__(self,
