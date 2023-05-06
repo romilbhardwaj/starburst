@@ -14,14 +14,19 @@ from collections import OrderedDict
 import itertools
 import sampled_jobs
 import pandas as pd
+import subprocess
+import numpy as np 
+#import ..skyburst
 
 # TODO: Integrate kubecost or GCP calculator
 # TODO: Include accurate cloud specific costs (e.g. network, disk, instance type)
 # TODO: Submit cloud quotas requests
 
+# TODO: Change unkown value from default cost of e2-standard-8 to better value
 GCP_PRICES = {
 	"e2-medium": 0.038795,
-	"e2-standard-8": 0.31036
+	"e2-standard-8": 0.31036,
+	"unknown": 0.038795,
 }
 
 AWS_PRICES = {
@@ -138,8 +143,8 @@ def plot_docker_pull_time(event_data=None):
 			'''
 			image_pull_start_times = cluster['image_pull_start_times']
 			image_pull_end_times = cluster['image_pull_end_times']
-			print(image_pull_start_times)
-			print(image_pull_end_times)
+			#print(image_pull_start_times)
+			#print(image_pull_end_times)
 			
 			for pod in image_pull_start_times: 
 				image_pull_time = image_pull_end_times[pod] - image_pull_start_times[pod]
@@ -197,14 +202,14 @@ def average_job_running_time(jobs):
 def average_jct():
 	return average_job_running_time() + average_waiting_time()
 
-
 #total_job_volume = 1155998.77277777
 #job_makespan = 2559.3205555555555
 #diff_df['norm_system_utilization'] = total_job_volume/(job_makespan*diff_df['cluster_size']*sim_df['gpus_per_node'].iloc[0])
 #x_axis = 'norm_system_utilization'
 
-def plot_job_intervals(jobs, num_nodes, save=False, path=None, subplt=None, plt_index=None, tag=None):
-	plot_jobs.plot_trace_spacetime_and_spillover(jobs, num_nodes, save=save, path=path, subplt=subplt, plt_index=plt_index, tag=tag)
+def plot_job_intervals(jobs, num_nodes, save=False, path=None, subplt=None, plt_index=None, tag=None, scale=1, plot_sweep=False, dim=(-100, 100, 0, 100)):
+	axs = plot_jobs.plot_trace_spacetime_and_spillover(jobs, num_nodes, save=save, path=path, subplt=subplt, plt_index=plt_index, tag=tag, scale=scale, plot_sweep=False, dim=dim)
+	return axs
 
 def parse_prometheus_logs(onprem=onprem, cloud=cloud):
 	# TODO: Plot cloud and onprem cluster jobs together
@@ -381,7 +386,7 @@ def parse_event_logs(cluster_event_data=None, submission_data=None, event_time=N
 			pod_nodes = cluster['scheduled_nodes']
 			job_pods = cluster['job_pods']
 			node_instances = cluster['node_instances']
-			print("START TIMES " + str(start_times))
+			#print("START TIMES " + str(start_times))
 
 			pod_start_times = {}
 			pod_end_times = {}
@@ -422,22 +427,22 @@ def parse_event_logs(cluster_event_data=None, submission_data=None, event_time=N
 				nodes[n] = node_id
 				node_id += 1
 
-			print(all_nodes)
-			print(pod_nodes)
-			print(nodes)
-			print(len(intervals))
-			print(intervals)
-			print(len(submission_data))
+			#print(all_nodes)
+			#print(pod_nodes)
+			#print(nodes)
+			#print(len(intervals))
+			#print(intervals)
+			#print(len(submission_data))
 			for i, (key, value) in enumerate(intervals.items()):
 				#print(len(intervals))
-				print("index " + str(i))
+				#print("index " + str(i))
 				#print(key)
 				
 				#job_id 
 				#s = "sleep-26-100444"
 				# TODO: Note that event_job_id = job_data + 1
 				job_id = re.findall(r'\d+', key)[0]
-				print("job_id" + str(job_id))
+				#print("job_id" + str(job_id))
 				# sleep-26-100444 - format
 				job_names[i] = key
 				jobs['idx'].append(int(job_id) - 1)#i)
@@ -475,37 +480,49 @@ def parse_event_logs(cluster_event_data=None, submission_data=None, event_time=N
 					jobs['start'].append(None)
 				else:
 					jobs['start'].append(value[0])
+				
 				if job_pods[key] in pod_nodes:
 					jobs['node'].append(pod_nodes[job_pods[key]])
 				else: 
 					jobs['node'].append("unknown")
+					
 				if job_pods[key] in pod_nodes:
 					jobs['instance_type'].append(node_instances[pod_nodes[job_pods[key]]])
 				else: 
 					jobs['instance_type'].append("unknown")
 		
 	# TODO: Determine if logs should be initialized to submission_time or arrival_time
-	print(jobs['arrival'])
+	#print(jobs['arrival'])
 
 	if not jobs['arrival']:
 		print("No job arrival times logged!")
 
-	print(jobs)
+	#print(jobs)
 	#min_arrival = min(jobs['arrival']) #min(jobs['submission_time']) #min(jobs['arrival'])
-	print(jobs['arrival'])
-	print(jobs['submission_time'])
-	print(jobs['wait_time'])
+	#print(jobs['arrival'])
+	#print(jobs['submission_time'])
+	#print(jobs['wait_time'])
 	#time.sleep(10000)
 
+	#Normalize times based on minimum submission time 
 	min_arrival = min(jobs['submission_time']) #min(jobs['arrival'])
 	jobs['arrival'] = [i - min_arrival for i in jobs['arrival']]
 	jobs['submission_time'] = [i - min_arrival for i in jobs['submission_time']]
 	jobs['start'] = [i - min_arrival if i is not None else None for i in jobs['start']]
 
-	print("NODE NAMES: ")
-	print(all_nodes)
-	print(len(all_nodes))
-	return jobs, len(all_nodes)
+
+	#jobs = {'idx':[], 'runtime':[], 'arrival':[], 'num_gpus':[], 'allocated_gpus':[], 'start':[], 'instance_type':[], 'node_index': [], 'node': [], 'cpus': [], 'submission_time': [], 'wait_time':[]}
+
+	jobs['arrival'] = np.array(jobs['arrival'])
+	jobs['num_gpus'] =  np.array(jobs['num_gpus'])
+	#'cluster_size'
+    #'gpus_per_node'
+
+	#print("NODE NAMES: ")
+	#print(all_nodes)
+	#print(len(all_nodes))
+	
+	return jobs, len(all_nodes), hyperparameters
 
 def increase_ttl():
 	# TODO: Determine feasible design before implementation
@@ -579,29 +596,33 @@ def retrieve_raw_events():
 	text_file.close()
 
 
-def view_real_arrival_times(event_number=None):#cluster_data_path=None, submission_data_path=None):
+def view_real_arrival_times(event_number=None, scale=1, plot_sweep=False, get_data=False, dim=(-100, 100, 0, 100)):#cluster_data_path=None, submission_data_path=None):
 	costs = {}
 	if event_number: #cluster_data_path and submission_data_path: 
 		cluster_data_path = "../logs/archive/" + str(event_number) + "/events/"
 		submission_data_path = "../logs/archive/" + str(event_number) + "/jobs/"
 		files = os.listdir(cluster_data_path)
 		num_graphs = len(files) #-2#+ 1 #2
-		fig, axs = plt.subplots(nrows=num_graphs, ncols=1)
+		fig, axs = plt.subplots(nrows=num_graphs, ncols=1, figsize=(5*scale, 30*scale))
 		#fig, axs = plt.subplots(nrows=2, ncols=1)
 		# Iterate over the files and check if they have the ".json" extension
 		#for file in files:
 		file_count = 0 
 		for i in range(len(files)):
 			file = files[i]
-			print("FILE NAME " + file)
+			#print("FILE NAME " + file)
 			cluster_log_path = cluster_data_path + file
 			submission_log_path = submission_data_path + file
-			print("CLUSTER LOG PATH")
-			print(cluster_log_path)
+			#print("CLUSTER LOG PATH")
+			#print(cluster_log_path)
 			cluster_event_data = read_cluster_event_data(cluster_log_path=cluster_log_path)
 			submission_data = read_submission_data(submission_log_path=submission_log_path)
-			jobs, num_nodes = parse_event_logs(cluster_event_data=cluster_event_data, submission_data=submission_data, time_stamp=event_number)
+			jobs, num_nodes, hps = parse_event_logs(cluster_event_data=cluster_event_data, submission_data=submission_data, event_time=event_number)#time_stamp=event_number)
 			
+			events = cluster_event_data
+			submissions = submission_data
+			if get_data: 
+				return jobs, events, submissions
 			#cost = job_logs.cloud_cost(jobs=jobs, num_nodes=num_nodes)
 			#costs[file] = cost
 			plot_dir = "../logs/archive/plots/"
@@ -610,9 +631,13 @@ def view_real_arrival_times(event_number=None):#cluster_data_path=None, submissi
 				os.mkdir(plot_dir)
 
 			plot_path = "../logs/archive/plots/" + file[:-5] + ".png"
-			print(plot_path)
-			plot_job_intervals(jobs, num_nodes, save=True, path=plot_path, subplt=axs, plt_index=i, tag=str(file))
-			
+			#print(plot_path)
+		
+			#if plot_sweep: 
+			axs = plot_job_intervals(jobs, num_nodes, save=True, path=plot_path, subplt=axs, plt_index=i, tag=str(file), scale=scale, plot_sweep=plot_sweep, dim=dim)
+			#else:
+			#	plot_job_intervals(jobs, num_nodes, save=False, path=plot_path, subplt=axs, plt_index=i, tag=str(file), scale=scale, plot_sweep=plot_sweep)
+	
 			#job_logs.plot_job_intervals(jobs, num_nodes)
 			
 			#if file.endswith(".json"):
@@ -624,6 +649,8 @@ def view_real_arrival_times(event_number=None):#cluster_data_path=None, submissi
 				break 
 			
 	#return costs
+	#plt.tight_layout()
+
 	plt.show()
 
 	return 
@@ -632,6 +659,7 @@ def analyze_sweep(event_number=None, graph=False):#, fixed_values=OrderedDict(),
 	"""Takes each batch job file and computes values (e.g. cloud cost, system utilization)"""
 
 	metrics = {}
+	all_jobs = {}
 	if event_number:
 		cluster_data_path = "../logs/archive/" + str(event_number) + '/events/'
 		submission_data_path = "../logs/archive/" + str(event_number) + '/jobs/'
@@ -653,7 +681,7 @@ def analyze_sweep(event_number=None, graph=False):#, fixed_values=OrderedDict(),
 			print(cluster_log_path)
 			cluster_event_data = read_cluster_event_data(cluster_log_path=cluster_log_path)
 			submission_data = read_submission_data(submission_log_path=submission_log_path)
-			jobs, num_nodes = parse_event_logs(cluster_event_data=cluster_event_data, submission_data=submission_data)
+			jobs, num_nodes, hps = parse_event_logs(cluster_event_data=cluster_event_data, submission_data=submission_data)
 			
 
 			# TODO: Compute baseline cost and cost savings
@@ -666,12 +694,20 @@ def analyze_sweep(event_number=None, graph=False):#, fixed_values=OrderedDict(),
 
 			for k, v in hyperparameters.items(): 
 				job_metrics[k] = v
+				jobs[k] = v
 
 			sweep_metrics = sweep[str(i)]
 			for k, v in sweep_metrics.items(): 
 				job_metrics[k] = v
-
+				
+			for k, v in job_metrics.items(): 
+				if k == 'cloud_cost':
+					jobs['total_cloud_cost'] = v
+				elif k == 'avg_jct': 
+					jobs[k] = v
+		
 			metrics[i] = job_metrics
+			all_jobs[i] = jobs
 			
 			#if file.endswith(".json"):
 			#	log_path = log_path + str(file)
@@ -687,12 +723,11 @@ def analyze_sweep(event_number=None, graph=False):#, fixed_values=OrderedDict(),
 	if graph: 
 		graph_metrics(metrics=metrics, fixed_values=fixed_values, varying_values=varying_values)
 
-	return metrics
+	return metrics, all_jobs
 
 def compute_metrics(jobs, num_nodes):
 	# TODO: Compute steady state value i.e. remove cloud cost from first X and last X jobs
 	# TODO: Compute total value i.e. beg to end simulation cost --> compute start and end time for each node
-
 	# TODO: Only consider jobs with start=None, because they are run on the cloud
 	'''
 	arrivals = jobs['arrival']
@@ -726,11 +761,17 @@ def compute_metrics(jobs, num_nodes):
 	# TODO: Compute JCT = Waitime + Runtime
 	job_completion_times = [runtimes[i] + wait_times[i] for i in range(len(runtimes))]
 	jct = sum(job_completion_times)/len(job_completion_times)
-
+	'''
+	result_dict['stats']['avg_jct'] = (total_waiting_time + total_running_time) / num_jobs
+	'''
+	print(instance_types)
+	#time.sleep(100)
 	for i in range(len(runtimes)):
 		print(start[i])
 		runtime = runtimes[i] / (60 * 60)
 		#total_time += runtime
+		print(i)
+		print(instance_types[i])
 		instance_type = instance_types[i]
 		instance_cost_per_hour = GCP_PRICES[instance_type]
 		total_time += runtimes[i]
@@ -773,6 +814,7 @@ def compute_metrics(jobs, num_nodes):
 	'''
 
 	metrics = {
+		"runtime": sum_cloud_space + sum_local_space,
 		"cloud_cost": cloud_cost,
 		"onprem_cost": onprem_cost,
 		"system_utilization": system_utilization,
@@ -874,6 +916,7 @@ def graph_metrics(metrics=None, fixed_values=OrderedDict(), varying_values=Order
 	# TODO: Specify subplots dimensions based on number of varying_values 
 	varying_values = list(varying_values.items())
 	fixed_values = list(fixed_values.items())
+	metrics_df = pd.DataFrame.from_dict(metrics)
 
 	print(varying_values)
 	print(fixed_values)
@@ -895,6 +938,7 @@ def graph_metrics(metrics=None, fixed_values=OrderedDict(), varying_values=Order
 	sweep_dimensions = [len(varying_values[i][1]) for i in range(len(varying_values))]
 	print(sweep_dimensions)
 	plot_dimensions = [[j for j in range(i)] for i in sweep_dimensions[:-1]]
+	print("Plot Dimensions ")
 	print(plot_dimensions)
 
 	if plot_dimensions: 
@@ -911,7 +955,8 @@ def graph_metrics(metrics=None, fixed_values=OrderedDict(), varying_values=Order
 			graphs[dim]['onprem_cost'] = [] #.append(trial['onprem_cost'])  
 			graphs[dim]['system_utilization'] = [] #.append(trial['system_utilization'])
 			graphs[dim]['cluster_utilization'] = []
-			graphs[dim]['job_completion_time'] = []
+			#graphs[dim]['job_completion_time'] = []
+			graphs[dim]['avg_jct'] = []
 	else:
 		dim = 0
 		graphs[dim]['arrival_rate'] = [] #.append(trial['arrival_rate'])
@@ -919,7 +964,8 @@ def graph_metrics(metrics=None, fixed_values=OrderedDict(), varying_values=Order
 		graphs[dim]['onprem_cost'] = [] #.append(trial['onprem_cost'])  
 		graphs[dim]['system_utilization'] = [] #.append(trial['system_utilization'])
 		graphs[dim]['cluster_utilization'] = []
-		graphs[dim]['job_completion_time'] = []
+		#graphs[dim]['job_completion_time'] = []
+		graphs[dim]['avg_jct'] = []
 
 	print("GRAPH")
 	print(graphs)
@@ -934,8 +980,13 @@ def graph_metrics(metrics=None, fixed_values=OrderedDict(), varying_values=Order
 		# TODO: Solve 1d, then 2d, then 3d
 		# TODO: Use mod to group values
 		#d1 = i % len(varying_values[0][1])
-		d1 = (i // len(varying_values[-1][1])) % len(varying_values[-2][1])
-		d2 = (i // (len(varying_values[-1][1]) * len(varying_values[-2][1]))) % len(varying_values[-3][1])
+		#d1 = (i // len(varying_values[-1][1])) % len(varying_values[-2][1])
+		#d2 = (i // (len(varying_values[-1][1]) * len(varying_values[-2][1]))) % len(varying_values[-3][1])
+
+		# TODO: Clean up plotting using pandas dataframe
+		# TODO: Remove indexing methods 
+		d2 = (i // len(varying_values[-1][1])) % len(varying_values[-2][1])
+		d1 = (i // (len(varying_values[-1][1]) * len(varying_values[-2][1]))) % len(varying_values[-3][1])
 		dim = (d1, d2)
 
 		maps[dim] = trial['arrival_rate']
@@ -944,7 +995,8 @@ def graph_metrics(metrics=None, fixed_values=OrderedDict(), varying_values=Order
 		graphs[dim]['onprem_cost'].append(trial['onprem_cost'])  
 		graphs[dim]['system_utilization'].append(trial['system_utilization'])
 		graphs[dim]['cluster_utilization'].append(trial['cluster_utilization'])
-		graphs[dim]['job_completion_time'].append(trial['job_completion_time'])
+		#graphs[dim]['job_completion_time'].append(trial['job_completion_time'])
+		graphs[dim]['avg_jct'].append(trial['avg_jct'])
 
 	print("MAP")
 	print(maps)
@@ -990,7 +1042,8 @@ def graph_metrics(metrics=None, fixed_values=OrderedDict(), varying_values=Order
 	# TODO: JCT [NOT STARTED]
 	# TODO: Incorporate realtime submission time logging for the future
 	for dim in graphs: 
-		axs[dim].plot(graphs[dim]['system_utilization'], graphs[dim]['job_completion_time'], label="job_completion_time")
+		#axs[dim].plot(graphs[dim]['system_utilization'], graphs[dim]['job_completion_time'], label="job_completion_time")
+		axs[dim].plot(graphs[dim]['system_utilization'], graphs[dim]['avg_jct'], label="avg_jct")
 		axs[dim].set_xlabel('system_utilization', fontsize=5)
 		axs[dim].set_ylabel('job_completion_time', fontsize=5)
 		title = varying_values[0][0] + " " + str(varying_values[0][1][dim[0]]) + " " + varying_values[1][0] + " " + str(varying_values[1][1][dim[1]])
@@ -1304,3 +1357,10 @@ def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None, l
 		time.sleep(log_frequency)
 	
 	return 0
+
+"""Misc Utils"""
+EVENT_SWEEP = 1682925843
+EVENT_SWEEP_05_03_2023 = 1683099273
+def pull_vm_scheduler_logs(event_number=1682573549):
+	subprocess.run(['gcloud', 'compute', 'scp', '--recurse', 'suryaven@sky-scheduler:/home/suryaven/test/starburst/starburst/logs/archive/{}/'.format(event_number), '/Users/suryaven/Documents/personal/sky/starburst/starburst/logs/archive/'])
+
