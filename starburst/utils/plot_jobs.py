@@ -36,9 +36,10 @@ class Job(object):
     def __repr__(self):
         return f'Job(idx={self.idx}, resources={self.resources}, arr={self.arrival}, run = {self.runtime}, deadline={self.deadline}, start={self.start})\n'
 
-GPUS_PER_NODE = 128 #32 #16 #12#10#9 #32#16#8#128#1
+#GPUS_PER_NODE = 12#8 #32 #12#128 #32 #16 #12#10#9 #32#16#8#128#1
+# TODO: 
 
-def cpu_index_mapping(jobs):
+def cpu_index_mapping(jobs=None, gpus_per_node=8):
     #TODO: Implemement greedy algorithm to plot cpu indices
     '''
     Add all jobs to queue, then greedily assign indicies 
@@ -50,6 +51,7 @@ def cpu_index_mapping(jobs):
     TODO: Verify allocated_notes
     TODO: Determine how parsing changes between http_info and default values 
     '''
+    GPUS_PER_NODE = gpus_per_node
     #allocated_nodes = jobs['allocated_gpus']#jobs['scheduled_nodes'].values()
     
     allocated_nodes = jobs['node_index']
@@ -74,7 +76,7 @@ def cpu_index_mapping(jobs):
     print(jobs)
 
     # TODO: Create a list of times that include all arrival times and completion times in the same list in numerical order 
-    global_queue = []#heapq.heapify([])
+    global_queue = [] #heapq.heapify([])
     job_id_to_index = {}
 
     for i in range(len(jobs['arrival'])):
@@ -83,6 +85,7 @@ def cpu_index_mapping(jobs):
         job_id_to_index[job_id] = i
         job_node = jobs['node_index'][i]
         job_cpu_size = jobs['cpus'][i]
+        # TODO: Verify arrival value is accurate
         job_arrival = jobs['arrival'][i]
         job_runtime = jobs['runtime'][i]
        
@@ -133,14 +136,16 @@ def cpu_index_mapping(jobs):
 
     return jobs
 
-def plot_trace_spacetime_and_spillover(jobs, num_nodes, save=False, path=None, subplt=None, plt_index=None, tag=None, scale=1, plot_sweep=False, dim=(-100, 100, 0, 100)):
+def plot_trace_spacetime_and_spillover(jobs, num_nodes, save=False, path=None, subplt=None, plt_index=None, tag=None, scale=1, plot_sweep=False, dim=(-100, 100, 0, 100), ratio=(1, 1), gpus_per_node=8):
     # TODO: Modify function to plot CPU jobs --> number of jobs concurrently running may exceed cpu count
     '''
     Create "threads index" that track CPU jobs running together
     '''
+
+    GPUS_PER_NODE = gpus_per_node 
     #print("NUM NODES")
     #print(num_nodes)
-    jobs = cpu_index_mapping(jobs)
+    jobs = cpu_index_mapping(jobs, gpus_per_node)
     #print("DISPLAYED JOBS")
     #print(jobs)
     jobs = jobs.copy()
@@ -158,22 +163,32 @@ def plot_trace_spacetime_and_spillover(jobs, num_nodes, save=False, path=None, s
     
     total_gpus = num_nodes * GPUS_PER_NODE #GPUs equivalent to CPUs
     segment_height_list = {}
+    gpu_indices = {}
+    #node_name = 1
+    node_name = ""
     try: 
         for j_idx in range(len(jobs['idx'])):
             allocated_gpus = jobs['allocated_gpus'][j_idx]
             segment = (jobs['arrival'][j_idx],
                         jobs['arrival'][j_idx] + jobs['runtime'][j_idx], j_idx)
+            #node_name +=1 
+            node_name = jobs['node'][j_idx]
             for node_idx in allocated_gpus.keys():
                 for node_gpu_idx in allocated_gpus[node_idx]:
                     #print("NODE_IDX")
                     #print(node_idx)
                     #print("NODE_GPU_IDX")
                     #print(node_gpu_idx)
+                    
                     gpu_idx = total_gpus - (GPUS_PER_NODE * node_idx +
                                             node_gpu_idx)
+                    gpu_indices[node_name] = [gpu_idx]
+                    
                     #                 print(job.idx)
                     #                 print(len(colors))
                     #if plot_sweep: 
+
+                    # TODO: Label each row of jobs with the name of the node -- not just integers 
                     if subplt is not None:
                         if plt_index is not None: 
                             subplt[plt_index].barh(gpu_idx,
@@ -303,6 +318,22 @@ def plot_trace_spacetime_and_spillover(jobs, num_nodes, save=False, path=None, s
 
     x_lim_max = max_completion
 
+    '''
+    if subplt is not None:
+        if plt_index is not None: 
+            # Set y-axis tick labels
+            #labels = ['node1', 'node2', 'node3']
+            gpu_labels = sorted([(v, k) for k, v in gpu_indices.items()])
+            ticks = [label[0] for label in gpu_labels]
+            ticks = np.array(ticks)
+            ticks = ticks.flatten()
+            labels = [label[1] for label in gpu_labels]
+            labels = np.array(labels)
+            labels = labels.flatten()
+
+            subplt[plt_index].set_yticks(ticks)
+            subplt[plt_index].set_yticklabels(labels)
+    '''
 
     if subplt is not None:
         if plt_index is not None: 
@@ -316,7 +347,25 @@ def plot_trace_spacetime_and_spillover(jobs, num_nodes, save=False, path=None, s
             #subplt[plt_index].set_axvline(x=max_arrival, color='black', linewidth=5)
             #plt.tight_layout()
             subplt[plt_index].set_xlabel('Time')
-            subplt[plt_index].set_ylabel('Nodes ' + str(tag) +  )
+            subplt[plt_index].set_ylabel('Nodes ')# + str(tag) )#+  )
+            subplt[plt_index].set_title(str(tag))
+
+            # TODO: Determine why jobs dissapaear when strings labels are used for nodes
+            gpu_labels = sorted([(v, k) for k, v in gpu_indices.items()])
+            ticks = [label[0] for label in gpu_labels]
+            ticks = np.array(ticks)
+            ticks = ticks.flatten()
+            labels = [label[1] for label in gpu_labels]
+            labels = np.array(labels)
+            labels = labels.flatten()
+            print("TICKS ")
+            print(ticks)
+            print("LABELS ")
+            print(labels)
+
+            subplt[plt_index].set_yticks(ticks)
+            subplt[plt_index].set_yticklabels(labels)
+
             return subplt
     
     if save:
@@ -456,6 +505,9 @@ def simulator_plotting_fn(df,
     lines, labels = ax.get_legend_handles_labels()
     fig.legend(lines, labels, ncol=len(labels), \
                bbox_to_anchor=(0, 0.92, 1, 0.2),loc='upper center')
+
+
+
     plt.tight_layout()
     plt.show()  
 
