@@ -377,6 +377,19 @@ def generate_sampled_job_yaml(job_id=0, arrival_time=0, sleep_time=5, workload={
 			template = env.get_template("{}_resource.yaml.jinja".format(w))
 			output += "\n" + template.render({w: workload[w]})
 
+	for w in workload.values():
+		print(w)
+		if w > 0: 
+			set_limits = True
+			template = env.get_template("resource_request.yaml.jinja")
+			output += "\n" + template.render()
+			break 
+
+	for w in workload: 
+		if workload[w] > 0: 
+			template = env.get_template("{}_resource.yaml.jinja".format(w))
+			output += "\n" + template.render({w: workload[w]})
+
 	template = env.get_template("restart_limit.yaml.jinja")
 	output += "\n" + template.render()
 
