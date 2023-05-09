@@ -262,9 +262,7 @@ def generate_jobs(hyperparameters):
 		job = {}
 
 		#TODO: Handle the inverse -- this is inaccurarte 
-		submit_time += np.random.exponential(scale=hp.arrival_rate)
-
-
+		submit_time += np.random.exponential(scale=1/hp.arrival_rate)
 		job_duration = np.random.exponential(scale=hp.mean_duration)
 		cpus = int(np.random.choice(hp.cpu_sizes, p=hp.cpu_dist))
 		gpus = min(0, int(np.random.exponential(scale=2)))
