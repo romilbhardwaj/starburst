@@ -88,6 +88,7 @@ class StarburstScheduler:
 
     async def scheduler_loop(self, queue, conn):
         """Main loop"""
+        '''
         while True:
             #while not queue.empty():
             #    print("Clearing Process Queue...")
@@ -95,13 +96,11 @@ class StarburstScheduler:
             if conn: 
                 conn.send(self.job_queue)
             #conn.close()
-            '''
-            if not queue.empty():
-                print("Clearing Process Queue...")
-                queue.get()
-            print("Current Job Queue" + str(self.job_queue))
-            queue.put(self.job_queue)
-            '''
+            #if not queue.empty():
+            #    print("Clearing Process Queue...")
+            #    queue.get()
+            #print("Current Job Queue" + str(self.job_queue))
+            #queue.put(self.job_queue)
             logger.debug("Waiting for event.")
 
             # Fetch event
@@ -111,3 +110,55 @@ class StarburstScheduler:
 
             # Parse and handle event
             self.process_event(event)
+        '''
+
+        start_time = time.perf_counter()
+        counter = 0 
+        while True:
+            curr_time = time.perf_counter()
+            logger.debug("Count(" + str(counter) + ") Loop start: ~~~ " + str(curr_time-start_time))
+            counter += 1
+            #while not queue.empty():
+            #    print("Clearing Process Queue...")
+            #    queue.get()
+            # TODO: Remove connection
+            '''
+            if conn: 
+                conn.send(self.job_queue)
+            '''
+            
+            #conn.close()
+
+            curr_time = time.perf_counter()
+            logger.debug("Connection end: ~~~ " + str(curr_time-start_time))
+            '''
+            if not queue.empty():
+                print("Clearing Process Queue...")
+                queue.get()
+            print("Current Job Queue" + str(self.job_queue))
+            queue.put(self.job_queue)
+            '''
+            logger.debug("Waiting for event.")
+
+            curr_time = time.perf_counter()
+            logger.debug("Start event processing: ~~~ " + str(curr_time-start_time))
+
+            # Fetch event
+            event = await self.event_queue.get()
+
+            curr_time = time.perf_counter()
+            logger.debug("Fetched event: ~~~ " + str(curr_time-start_time))
+
+
+            logger.debug(str(event))
+            self.event_logger.log_event(event)
+
+            curr_time = time.perf_counter()
+            logger.debug("Logged event: ~~~ " + str(curr_time-start_time))
+
+
+            # Parse and handle event
+            self.process_event(event)
+
+            curr_time = time.perf_counter()
+            logger.debug("End event processing and loop: ~~~ " + str(curr_time-start_time))
