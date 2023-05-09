@@ -18,6 +18,9 @@ import itertools
 from collections import defaultdict
 from collections import OrderedDict
 import atexit 
+import logging
+
+logger = logging.getLogger(__name__)
 
 '''
 Design Layout [DRAFT 4]
@@ -36,8 +39,6 @@ Design Layout [DRAFT 3]
 		- SCP logs from scheduler VM back to local commputer
 			- No need to scp any files or logs directly from k8s clusters
 		- Then terminate the clusters all in parallel
-
-
 Design Layout [DRAFT 2]
 
 - Sweep Requirements -> Cluster -> Add Logs -> Parse Logs -> Analyze Sweep Requirements -> Plot
@@ -259,10 +260,9 @@ def generate_jobs(hyperparameters):
 		elif hp.time_constrained == False and job_index >= hp.total_jobs: #num_jobs:
 			break
 		job = {}
-		# TODO: This is inaccurarte 
-		submit_time += np.random.exponential(scale=hp.arrival_rate)
 
-
+		#TODO: Handle the inverse -- this is inaccurarte 
+		submit_time += np.random.exponential(scale=1/hp.arrival_rate)
 		job_duration = np.random.exponential(scale=hp.mean_duration)
 		cpus = int(np.random.choice(hp.cpu_sizes, p=hp.cpu_dist))
 		gpus = min(0, int(np.random.exponential(scale=2)))
@@ -275,7 +275,10 @@ def generate_jobs(hyperparameters):
 		jobs[job_index] = job
 		arrivals.append((job_index, submit_time))
 		job_index += 1
-	return jobs, arrivals
+	
+	#last_job = job_index - 1
+
+	return jobs, arrivals#, last_job 
 
 def save_jobs(jobs, repo, tag):
 	log_path = "../logs/"
@@ -413,7 +416,10 @@ def clear_logs():
 
 	cluster_apis = [(onprem_api, onprem_api_batch), (cloud_api, cloud_api_batch)]
 
+	'''
 	for apis in cluster_apis:
+		# TODO: Add a try catch exception in case deletion fails 
+
 		api, api_batch = apis
 		# Delete all event logs in the cluster
 		api.delete_collection_namespaced_event(
@@ -431,7 +437,55 @@ def clear_logs():
 					grace_period_seconds=0
 					)
 			)
-	
+	'''
+
+	while True:
+		try:
+			# code to try executing
+			for apis in cluster_apis:
+				# TODO: Add a try catch exception in case deletion fails 
+
+				api, api_batch = apis
+				# Delete all event logs in the cluster
+				api.delete_collection_namespaced_event(
+					namespace='default',  # Replace with the namespace where you want to delete the events
+					body=client.V1DeleteOptions(),
+				)
+
+				jobs_list = api_batch.list_namespaced_job(namespace='default')
+				for job in jobs_list.items:
+					api_batch.delete_namespaced_job(
+						name=job.metadata.name, 
+						namespace='default', 
+						body=client.V1DeleteOptions(
+							propagation_policy='Foreground', 
+							grace_period_seconds=0
+							)
+					)
+
+				# TODO: Debug code that deletes all pods from previous runs 
+				# List all the pods in the target namespace
+				pods = api.list_namespaced_pod(namespace='default')
+
+				# Iterate through the pods and delete them
+				for pod in pods.items:
+					print(f"Deleting pod {pod.metadata.name} in namespace {pod.metadata.namespace}")
+					api.delete_namespaced_pod(name=pod.metadata.name, namespace=pod.metadata.namespace, body=client.V1DeleteOptions())
+					
+
+			# raise an exception to test
+		except Exception as e:
+			# print the exception message
+			print(f"Caught an exception: {e}")
+			# re-execute the code inside the try block
+			print("Re-executing code...")
+			continue
+		else:
+			# if no exceptions were raised, break out of the loop
+			print("Logs cleared successfully.")
+			break
+
+		
 	print("Completed Clearing Logs...")
 
 def log(tag=None, batch_repo=None, loop=True):
@@ -439,6 +493,9 @@ def log(tag=None, batch_repo=None, loop=True):
 	job_logs.write_cluster_event_data(batch_repo=batch_repo, event_data=event_data, tag=tag, loop=loop)
 
 def empty_cluster():
+	"""Function returns true if there are any running pods in the cluster"""
+
+
 	'''
 	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst")
 	onprem_api = client.CoreV1Api()
@@ -511,19 +568,93 @@ def empty_cluster():
 
 	return True 
 
+def reached_last_job(job_name): 
+	def find_job_with_substring(jobs, substring):
+		for job in jobs:
+			if substring in job.metadata.name:
+				return job
+		return None
+
+
+	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst")
+	onprem_api = client.CoreV1Api()
+	onprem_api_batch = client.BatchV1Api()
+
+	try: 
+		job_list = onprem_api_batch.list_namespaced_job(namespace="default")
+		job = find_job_with_substring(job_list.items, job_name)
+
+		status = job.status
+
+		if job: 
+			logger.debug("Succ")
+			logger.debug(str(job.status.succeeded))
+			#logger.debug("Found job")# + str(job))
+			#logger.debug("Succeeded status " + str(job.status.succeeded) + " " + str(status.succeeded) + " " + str(status['succeeded']))
+			#logger.debug("Found job with status " + str(status))
+			
+		#job = onprem_api_batch.read_namespaced_job(name=job_name, namespace="default")
+		
+
+		#if status.succeeded is not None and status.succeeded > 0:
+		#if status.succeeded == 1:
+		#if job.status.succeeded == 1 or status.succeeded == 1 or status['succeeded'] == 1:
+		if job.status.succeeded == 1:
+			return True 
+	except Exception as e:
+		pass
+
+	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst-cloud")
+	cloud_api = client.CoreV1Api()
+	cloud_api_batch = client.BatchV1Api()
+
+	try: 
+		job_list = cloud_api_batch.list_namespaced_job(namespace="default")
+		job = find_job_with_substring(job_list.items, job_name)
+		status = job.status
+
+		if job: 
+			logger.debug("Succ")
+			logger.debug(str(job.status.succeeded))
+			#logger.debug("Found job")# + str(job))
+			#logger.debug("Succeeded status " + str(job.status.succeeded) + " " + str(status.succeeded) + " " + str(status['succeeded']))
+			#logger.debug("Found job with status " + str(status))
+			
+
+		#if job: 
+		#	logger.debug("Found job " + str(job))
+
+		#job = cloud_api_batch.read_namespaced_job(name=job_name, namespace="default")
+		#status = job.status
+
+		#if status.succeeded is not None and status.succeeded > 0:
+		#if status.succeeded == 1:
+		#if job.status.succeeded == 1 or status.succeeded == 1 or status['succeeded'] == 1:
+		if job.status.succeeded == 1:
+			return True 
+	except Exception as e: 
+		pass 
+
+	return False 
+
+
 def run(hyperparameters, batch_repo, index):
 	hp = Config(hyperparameters)
 	jobs, arrivals = generate_jobs(hyperparameters=hyperparameters)
+	logger.debug("JOBS SUBMITTED " + str(jobs))
 	save_jobs(jobs=jobs, repo=batch_repo, tag=index)
 	c1, c2 = mp.Pipe()
 	grpc_port = 10000 #50051
+
 	p0 = mp.Process(target=driver.custom_start, args=(None, c2, grpc_port, 1, "gke_sky-burst_us-central1-c_starburst","gke_sky-burst_us-central1-c_starburst-cloud", hp.waiting_policy, hp.wait_time, jobs))
+
 	p0.start()
 	
 	clear_logs()
-	while (c1.poll() == False) or (not (len(c1.recv()) == 0 and empty_cluster())):
+	#while (c1.poll() == False) or (not (len(c1.recv()) == 0 and empty_cluster())):
+	while not empty_cluster():
 		print("Cleaning Logs and Cluster....")
-		print("Connected: " + str(c1.poll()) + " - Empty Job Queue: " + str(len(c1.recv()) == 0) + " - Empty Cluster: " + str(empty_cluster()) )
+		#print("Connected: " + str(c1.poll()) + " - Empty Job Queue: " + str(len(c1.recv()) == 0) + " - Empty Cluster: " + str(empty_cluster()) )
 		time.sleep(1)
 	clear_logs()
 	
@@ -533,17 +664,36 @@ def run(hyperparameters, batch_repo, index):
 	p1.start()
 	p2.start()
 
+	'''
+	# Keeps running until the cluster is empty
 	while (p2.is_alive()) or (c1.poll() == False) or (not (len(c1.recv()) == 0 and empty_cluster())):
 		print("Wait for Job to Complete....")
 		print("p2 alive status: " + str(p2.is_alive()))
 		print("Job Queue: " + str(c1.recv()))
 		time.sleep(1)
+	p1.terminate()
+	'''
+
+
+	# Keep running until last job is completd
+	'''
+	Retrieve data of last job to submit
+	'''
+	
+	last_job = len(jobs) - 2
+	while True:
+		#logger.
+		logger.debug("Waiting for last job to complete $$$")
+		if reached_last_job("sleep-" + str(last_job)):
+			p1.terminate()
+			p2.terminate()
+			break 
 
 	#atexit.register(func=log, args=(tag, batch_repo, False)
 	# TODO: Ensure p2 dies only after all submitted jobs have completed
 	# TODO: Ensure p1 only dies after all p2 jobs have been properly logged -- force it to log one last time before closing 
 
-	p1.terminate()
+	
 
 	p1 = mp.Process(target=log, args=(tag, batch_repo, False))
 	p1.start()
@@ -673,32 +823,35 @@ def generate_sweep(fixed_values=OrderedDict(), varying_values=OrderedDict()):
 	return sweep
 
 def generate_interval(min=0, max=10, intervals=10):
-	return np.linspace(min, max, num=intervals+1).tolist()[1:]
+	return np.linspace(min, max, num=intervals+1).tolist()#[1:]
 
 def main():
 	"""
 	Note: Only execute sweep through the main function, since mp package fails otherwise
 	"""
+
 	hyperparameters = copy.deepcopy(DEFAULT_HYPERPARAMETERS)
 	
 	fixed_values = {
 		#"num_jobs": 5,
-		"total_jobs": 5, 
-		"batch_time": 5, 
-		"mean_duration": 1,#5, 
+		#"total_jobs": 5, 
+		"batch_time": 120, #600, #60,#10, #2, #600,#30, 
+		"mean_duration": 10, #60,#2, 
 		#"policy": "fifo_wait",
 		"waiting_policy": "fifo_wait",
 		"cpu_sizes":[1, 2, 4],
-		"cpu_dist": [0.2, 0.4, 0.4]
+		#"cpu_dist": [0, 0.5, 0.5], #[0.2, 0.4, 0.4]
 	}
 
 	fixed_values = OrderedDict(fixed_values)
 	
 	"""Varying values from outer most to inner most loop"""
 	varying_values = {	
-		"cpu_dist": [[0.2, 0.4, 0.4], [0, 0.5, 0.5], [0, 0, 1]],	
-		"wait_time": generate_interval(0, 10, 3),
-		"arrival_rate": generate_interval(0, hyperparameters["mean_duration"] * (1 / (hyperparameters["cluster_size"] * hyperparameters["cpus_per_node"])) * 4, 3)[1:],
+		"cpu_dist": [[0.6, 0.25, 0.15]],# [[0, 0.5, 0.5]], #[[0.2, 0.4, 0.4], [0, 0.5, 0.5], [0, 0, 1]],	
+		"wait_time": [0.1, 2.5, 5, 10], #[0.1, 2.5, 5, 10], #generate_interval(0.1, 10, 3), #2), #3), #generate_interval(0, 10, 10),
+		# TODO: Don't save the inverse in the sweep - 0.35578947
+		# TODO: [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.25] * 0.35578947
+		"arrival_rate":  [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3][::-1]#[1/i for i in generate_interval(0.1, 7, 10)][1:] #[1/(i * 0.35578947) for i in [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25]], #[1/i for i in generate_interval(0.1, 3, 4)],#[1:]], #generate_interval(0, hyperparameters["mean_duration"] * (1 / (hyperparameters["cluster_size"] * hyperparameters["cpus_per_node"])) * 4 * 2, 10)[1:],		
 	}
 	varying_values = OrderedDict(varying_values)
 	submit_sweep(fixed_values=fixed_values, varying_values=varying_values)

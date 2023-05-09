@@ -7,7 +7,7 @@ from starburst.types.job import Job
 class EventTypes(Enum):
     """ Event types. """
     MISC = 0
-    SCHED_TICK = 1
+    SCHED_TICK = 1#0.01
     JOB_ADD = 2
 
 class BaseEvent:

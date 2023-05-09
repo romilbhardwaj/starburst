@@ -68,8 +68,15 @@ class FIFOWaitPolicy(BasePolicy):
     def __init__(self,
                  onprem_manager: KubernetesManager,
                  cloud_manager: KubernetesManager,
-                 wait_threshold: int = 0):
+                 wait_threshold: int = 0,
+                 loop: bool = False,
+                 preempt_cpu: bool = False,
+                 linear_wait_constant: int = 1):
+        
         self.wait_threshold = wait_threshold
+        self.loop = loop
+        self.preemmpt_cpu = preempt_cpu
+        self.linear_wait_constant = linear_wait_constant
         super().__init__(onprem_manager, cloud_manager)
 
     def process_queue(self, job_queue: List[Job]):
@@ -79,21 +86,66 @@ class FIFOWaitPolicy(BasePolicy):
         import time
         start_time = time.perf_counter()
         curr_time = time.perf_counter()
-        logger.debug("Started process_queue()" + str(curr_time-start_time))
+
+        logger.debug("Started process_queue(): ~~~ --- " + str(curr_time-start_time))
 
         retry = 0 
+
+        #TODO: Mark jobs pending on the queue as pending, so they are not used to submit locally 
+        #TODO: Don't run and wait for process queue until empty
+
         if job_queue:
             curr_time = time.perf_counter()
-            logger.debug("Retry(" + retry + ") " + "Started queue loop" + str(curr_time-start_time))
+            logger.debug("Retry(" + str(retry) + ") " + "Started queue loop : ~~~ --- " + str(curr_time-start_time))
             retry += 1
             
-            job_id = 0 
+            # NOTE: Pops off pending jobs before submitting new jobs
+            job_id = 0
+            
+            for job in job_queue:
+                # Check job.submit_time and see if it has been waiting longer than the threshold
+                '''
+                # TODO: Integrate job_data from timeestimator here
+                if self.preempt_cpu and job.resources['gpus'] == 0:
+                    self.cloud_manager.submit_job(job)
+                    logger.debug(
+                    f"Deadline passed, spilling over {job}. Submitting to cloud.")
+                    # Remove from queue
+                    job_queue.remove(job)
+                '''
+                '''
+                # TODO: Move this to timeestimator + linear wait policy 
+                if job.resources['gpus'] * sum(job.resources['runtime']) <= self.linear_wait_constant:
+                    self.cloud_manager.submit_job(job)
+                    logger.debug(
+                    f"Deadline passed, spilling over {job}. Submitting to cloud.")
+                    # Remove from queue
+                    job_queue.remove(job)
+                '''
+                debug_time = time.time()
+                if time.time() - job.job_submit_time > self.wait_threshold:
+                    logger.debug(f"SUBMIT - CLOUD ### Delta {debug_time - job.job_submit_time} Timeout {self.wait_threshold}")
+                    logger.debug(f"SUBMIT - CLOUD ### Currtime {debug_time} Submitime {job.job_submit_time}")
+                    # Submit to cloud
+                    self.cloud_manager.submit_job(job)
+                    logger.debug(
+                        f"Deadline passed, spilling over {job}. Submitting to cloud.")
+                    # Remove from queue
+                    job_queue.remove(job)
+            # TODO: Figure out why the above doesn't work as intended         
             for job in job_queue:
                 curr_time = time.perf_counter()
-                logger.debug("Job(" + job_id + ") " + "Started queue loop" + str(curr_time-start_time))
+                logger.debug("Job(" + str(job_id) + ") " + "Next job on queue : ~~~ --- " + str(curr_time-start_time))
                 job_id += 1 
 
-                if self.onprem_manager.can_fit(job):
+
+                debug_time = time.time()
+                if time.time() - job.job_submit_time <= self.wait_threshold and self.onprem_manager.can_fit(job):
+                #if self.onprem_manager.can_fit(job):
+                    logger.debug(f"SUBMIT - ONPREM ### Currtime {debug_time} Submitime {job.job_submit_time}")
+                    # TODO: Can_fit incorrectly executes here -- print out log of cluster state before and after submit_job
+                    # TODO: Figure out how to properly parse the job data from the cluster event logs
+
                     # Remove from queue
                     job_queue.remove(job)
                     # Submit the job
@@ -101,23 +153,20 @@ class FIFOWaitPolicy(BasePolicy):
                     logger.debug(
                         f"Onprem cluster can fit {job}. Submitting to onprem.")
                 else:
-                    # Check job.submit_time and see if it has been waiting longer than the threshold
-                    if time.time() - job.job_submit_time > self.wait_threshold:
-                        # Submit to cloud
-                        self.cloud_manager.submit_job(job)
-                        logger.debug(
-                            f"Deadline passed, spilling over {job}. Submitting to cloud.")
-                        # Remove from queue
-                        job_queue.remove(job)
-                    else:
-                        waited_time = time.time() - job.job_submit_time
-                        logger.debug(
-                            f"Waiting - Onprem cluster cannot fit {job}. Been waiting for {waited_time} seconds.")
-
+                    logger.debug(f"WAITING - CANNOT FIT ON PREM AND DID NOT TIMEOUT  ### Currtime {debug_time} Submitime {job.job_submit_time}")
+                    waited_time = time.time() - job.job_submit_time
+                    logger.debug(
+                        f"Waiting - Onprem cluster cannot fit {job}. Been waiting for {waited_time} seconds.")
+                    if self.loop: 
+                        pass
+                    else: 
+                        break
         else:
             logger.info("Job queue is empty.")
             curr_time = time.perf_counter()
-            logger.debug("Completed process_queue()" + str(curr_time-start_time))
+
+            logger.debug("Completed process_queue(): ~~~ --- " + str(curr_time-start_time))
+
             return
 
 # TODO: Implement Linear Wait Policy
@@ -141,7 +190,7 @@ class TimeEstimatorPolicy(BasePolicy):
         # TODO: Keep running job end times stored on min heap -- pop values if current time is ever greater than existing job 
         #running_jobs = []
 
-        if job_queue:
+        while job_queue:
             while (len(self.running_jobs) > 0) and self.running_jobs[0][0] < time.time(): 
                 heapq.heappop(self.running_jobs)
             
