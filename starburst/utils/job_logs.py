@@ -57,6 +57,7 @@ event_data = {
 	'job_completion_times': job_completion_times,
 	'job_pods': job_pods, 
 	'node_instances': node_instances
+	#'job_to_pod': 
 }
 
 # Global event data - updated when functions executed
@@ -74,6 +75,7 @@ def event_data_dict():
 	container_start_times = {}
 	image_pull_start_times = {}
 	image_pull_end_times = {}
+	#scheduled_times = {}
 	scheduled_nodes = {}
 	job_creation_times = {}
 	job_completion_times = {}
@@ -85,6 +87,7 @@ def event_data_dict():
 		'container_start_times': container_start_times,
 		'image_pull_start_times': image_pull_start_times,
 		'image_pull_end_times': image_pull_end_times,
+		#'scheduled_times': scheduled_times,
 		'scheduled_nodes': scheduled_nodes,
 		'job_creation_times': job_creation_times,
 		'job_completion_times': job_completion_times,
@@ -196,7 +199,6 @@ def average_job_running_time(jobs):
 
 def average_jct():
 	return average_job_running_time() + average_waiting_time()
-
 
 #total_job_volume = 1155998.77277777
 #job_makespan = 2559.3205555555555
@@ -349,9 +351,8 @@ def parse_prometheus_logs(onprem=onprem, cloud=cloud):
 	jobs['start'] = [i - min_arrival if i is not None else None for i in jobs['start']]
 	return jobs, len(all_nodes)
 
-def parse_event_logs(cluster_event_data=None, submission_data=None, event_time=None):#onprem_event_logs = None, cloud_event_logs = None):
+def parse_event_logs(cluster_event_data=None, submission_data=None, event_time=None): #onprem_event_logs = None, cloud_event_logs = None):
 	# TODO: Plot cloud and onprem cluster jobs together
-
 	hyperparameters = None
 	if 'hyperparamters' in submission_data: 
 		hyperparameters = submission_data['hyperparameters']
@@ -365,6 +366,9 @@ def parse_event_logs(cluster_event_data=None, submission_data=None, event_time=N
 	onprem_event_logs = cluster_event_data['onprem']
 	cloud_event_logs = cluster_event_data['cloud']
 
+	# TODO: Implement mapping from job names to pod names
+	job_to_pod = {}
+
 	#clusters = {"onprem": onprem, "cloud": cloud}
 	clusters = {"onprem": onprem_event_logs, "cloud": cloud_event_logs}
 	for type in clusters: 
@@ -374,33 +378,42 @@ def parse_event_logs(cluster_event_data=None, submission_data=None, event_time=N
 			'''
 			Parse `kube_pod_info` --> if node name is not found, then pod not scheduled onto a node
 			'''
-			#pod_start_times = cluster[]
-			#pod_end_times = cluster[]
-			start_times = cluster['job_creation_times']
-			end_times = cluster['job_completion_times']
+			start_times = cluster['container_start_times']
+			#pod_end_times = cluster['pod_end_times']
+			creation_times = cluster['job_creation_times']
+			completion_times = cluster['job_completion_times']
 			pod_nodes = cluster['scheduled_nodes']
 			job_pods = cluster['job_pods']
-			node_instances = cluster['node_instances']
-			print("START TIMES " + str(start_times))
+			pod_jobs = {value: key for key, value in job_pods.items()}
 
+			node_instances = cluster['node_instances']
+
+			print("START TIMES " + str(creation_times))
+
+			job_start_times = {}
+			job_end_times = {}
 			pod_start_times = {}
-			pod_end_times = {}
-			#pod_nodes = {}
+
+			for pod in start_times: 
+				pod_name = pod
+				pod_start_time = start_times[pod]
+				pod_start_times[pod_name] = pod_start_time
 			
 			min_arrival = math.inf
 
 			# Get start times
-			for pod in start_times: 
-				pod_name = pod #pod['metric']['pod']
-				pod_start_time = start_times[pod] #int(pod['value'][1])
-				pod_start_times[pod_name] = pod_start_time
+			for job in creation_times: 
+				job_name = job #pod['metric']['pod']
+				job_start_time = creation_times[job] #int(pod['value'][1])
+				job_start_times[job_name] = job_start_time
+				#pod_start_times[job] = job
 			
-			for pod in end_times: 
-				pod_name = pod #pod['metric']['pod']
-				pod_end_time = end_times[pod] #int(pod['value'][1])
-				pod_end_times[pod_name] = pod_end_time
+			for job in completion_times: 
+				job_name = job #pod['metric']['pod']
+				job_end_time = completion_times[job] #int(pod['value'][1])
+				job_end_times[job_name] = job_end_time
 
-			for pod in pod_nodes: 
+			for pod in pod_nodes:
 				pod_name = pod #pod['metric']['pod']
 				all_nodes.add(pod_nodes[pod])
 				'''
@@ -410,12 +423,35 @@ def parse_event_logs(cluster_event_data=None, submission_data=None, event_time=N
 					pod_nodes[pod_name] = pod_node
 				'''
 
-			pod_completion_times = {}
+
+			# TODO: Set start times to pod start times
+			# TODO: Set end times to job end times associated with the pod that started
+			#job_completion_times = {}
+			#for job in job_start_times:
+			job_times = {}
+			for job in job_start_times:
+				if job in job_end_times:
+					#job_completion_times[job] = [job_start_times[job], job_end_times[job]]
+					job_times[job] = [job_start_times[pod], job_end_times[job]]
+				
+			print("JOB START, JOB END -- TIMES")
+			print(job_times)
+
+			scheduled_times = {}
 			for pod in pod_start_times:
-				if pod in pod_end_times:
-					pod_completion_times[pod] = [pod_start_times[pod], pod_end_times[pod]]
+				# TODO: Create pod 
+				job = pod_jobs[pod]
+				if job in job_end_times:
+					#job_completion_times[job] = [job_start_times[job], job_end_times[job]]
+					scheduled_times[job] = [pod_start_times[pod], job_end_times[job]]
 			
-			intervals = pod_completion_times
+			print("POD START, JOB END -- TIMES")
+			print(scheduled_times)
+			#intervals = job_completion_times
+
+			# TODO: Pass in a bool to look at JCT when assuming scheduled time vs. sumbission time
+			#intervals = scheduled_times
+			intervals = job_times
 
 			# Job Trace Format
 			for n in all_nodes: 
@@ -601,7 +637,8 @@ def view_real_arrival_times(event_number=None):#cluster_data_path=None, submissi
 			cluster_event_data = read_cluster_event_data(cluster_log_path=cluster_log_path)
 			submission_data = read_submission_data(submission_log_path=submission_log_path)
 			jobs, num_nodes = parse_event_logs(cluster_event_data=cluster_event_data, submission_data=submission_data, time_stamp=event_number)
-			
+			print("JOB DATA")
+			print(jobs)
 			#cost = job_logs.cloud_cost(jobs=jobs, num_nodes=num_nodes)
 			#costs[file] = cost
 			plot_dir = "../logs/archive/plots/"
@@ -1127,8 +1164,12 @@ def read_submission_data(submission_log_path=None):
 	return {}
 
 
+
 def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None, loop=False):
 	global cluster_event_data
+	import logging
+	#client.rest.logger.setLevel(logging.WARNING)
+	logger = logging.getLogger(__name__)
 	'''
 	Outputs: 
 	(1) Store relevant event data in a dictionary continously to disk
@@ -1156,6 +1197,7 @@ def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None, l
 	Normal  Created    52m   kubelet            Created container sleep
 	Normal  Started    52m   kubelet            Started container sleep
 	'''
+	
 
 	log_frequency = 1
 	# TODO: Write experiment metadata to job events metadata
@@ -1215,15 +1257,28 @@ def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None, l
 		event_data['node_instances'] = instances
 	'''
 	if not loop: 
-		with open(current_log_path, 'r') as f:
-			cluster_event_data = json.load(f)
+		while True: 
+			try: 
+				with open(current_log_path, 'r') as f:
+					cluster_event_data = json.load(f)
+			except Exception as e: 
+				# print the exception message
+				print(f"Caught an exception: {e}")
+				# re-execute the code inside the try block
+				print("Re-executing code...")
+				continue
+			else:
+				# if no exceptions were raised, break out of the loop
+				print("Logs cleared successfully.")
+				break
 
-	# Get a list of all pods in the default namespace
-	while True: 
+	# Get a list of all pods in the default namespace 
+	while True:
+		#logger
 		clusters = {"onprem": onprem_api, "cloud": cloud_api}
-		for type in clusters: 
+		for type in clusters:
 			api = clusters[type]
-			if api is not None: 
+			if api is not None:
 				events = api.list_event_for_all_namespaces()
 				event_data = cluster_event_data[type]
 
@@ -1235,8 +1290,10 @@ def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None, l
 				
 				for item in events.items:
 					event_reason = item.reason
+					#logger.debug("Event reason: ~~~ --- !!! " + str(event_reason))
+					
 					if event_reason == 'Pulling':
-						involved_object = item.involved_object 
+						involved_object = item.involved_object
 						if involved_object.kind == 'Pod': 
 							pod_name = involved_object.name 
 							pull_start_time = item.first_timestamp 
@@ -1255,6 +1312,7 @@ def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None, l
 							event_data['container_creation_times'][pod_name] = int(container_creation_time.timestamp())
 					elif event_reason == 'Started':
 						#TODO: Determine pod termination and deletion metrics
+						#logger.debug("Event pod started: ~~~ --- !!! " + str(item))
 						involved_object = item.involved_object 
 						if involved_object.kind == 'Pod': 
 							pod_name = involved_object.name 
@@ -1270,6 +1328,8 @@ def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None, l
 							if match:
 								_ = match.group(1)
 								node_name = match.group(2)
+								# TODO: Save pod scheduled time
+								#event_data['']
 								event_data['scheduled_nodes'][pod_name] = node_name
 					elif event_reason == 'SuccessfulCreate':
 						#TODO: Determine difference between job metrics and pod metrics
@@ -1282,6 +1342,7 @@ def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None, l
 							if match:
 								pod_name = match.group(1)
 								event_data['job_pods'][job_name] = pod_name
+
 							job_creation_time = item.first_timestamp 
 							event_data['job_creation_times'][job_name] = int(job_creation_time.timestamp()) #[pod_name] = int(job_creation_time.timestamp())
 					elif event_reason == 'Completed':
@@ -1304,3 +1365,26 @@ def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None, l
 		time.sleep(log_frequency)
 	
 	return 0
+
+def log_parser(log_file, new_file, strings): 
+	'''
+	Parse only lines from a log file such that the selected lines contain a specific substring 
+	'''
+	import re
+
+	parsed_logs = []
+	# Open the log file in read mode
+	with open('./' + log_file, 'r') as f:
+		# Loop over each line in the file
+		for line in f:
+			# Search for the patterns 'error' and 'warning'
+			if re.search(': ~~~ ', line):
+				# If the pattern is found, print the line
+				#print(line.strip())
+				parsed_logs.append(line.strip())
+
+	with open('./' + new_file, 'w') as f:
+		for line in parsed_logs:
+			f.write(line + '\n')
+
+	return parsed_logs
