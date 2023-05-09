@@ -6,3 +6,11 @@ numpy
 matplotlib
 jinja2
 prometheus-api-client
+pandas 
+numpy 
+tabulate
+tqdm
+cvxpy
+seaborn
+kubernetes
+google-cloud-container
