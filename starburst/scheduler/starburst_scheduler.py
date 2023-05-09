@@ -45,7 +45,6 @@ class StarburstScheduler:
         self.cloud_cluster_manager = KubernetesManager(self.cloud_cluster_name)
 
         # Set up policy
-        
         queue_policy_class = queue_policies.get_policy(queue_policy_str)
         if queue_policy_str == "fifo_wait":
             self.queue_policy = queue_policy_class(self.onprem_cluster_manager, self.cloud_cluster_manager, wait_threshold=wait_time)
@@ -63,6 +62,7 @@ class StarburstScheduler:
         :param event:
         :return:
         '''
+        # TODO: Timeout event for job 
         if event.event_type == EventTypes.SCHED_TICK:
             assert isinstance(event, SchedTick)
             self.processor_sched_tick_event(event)
@@ -88,6 +88,7 @@ class StarburstScheduler:
 
     async def scheduler_loop(self, queue, conn):
         """Main loop"""
+
         '''
         while True:
             #while not queue.empty():
@@ -118,6 +119,7 @@ class StarburstScheduler:
             curr_time = time.perf_counter()
             logger.debug("Count(" + str(counter) + ") Loop start: ~~~ " + str(curr_time-start_time))
             counter += 1
+
             #while not queue.empty():
             #    print("Clearing Process Queue...")
             #    queue.get()
@@ -130,7 +132,9 @@ class StarburstScheduler:
             #conn.close()
 
             curr_time = time.perf_counter()
+
             logger.debug("Connection end: ~~~ " + str(curr_time-start_time))
+
             '''
             if not queue.empty():
                 print("Clearing Process Queue...")
@@ -141,7 +145,9 @@ class StarburstScheduler:
             logger.debug("Waiting for event.")
 
             curr_time = time.perf_counter()
+
             logger.debug("Start event processing: ~~~ " + str(curr_time-start_time))
+
 
             # Fetch event
             event = await self.event_queue.get()
@@ -161,4 +167,5 @@ class StarburstScheduler:
             self.process_event(event)
 
             curr_time = time.perf_counter()
+
             logger.debug("End event processing and loop: ~~~ " + str(curr_time-start_time))

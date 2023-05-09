@@ -14,14 +14,21 @@ from collections import OrderedDict
 import itertools
 import sampled_jobs
 import pandas as pd
+import subprocess
+import numpy as np 
+#import ..skyburst
+
+
 
 # TODO: Integrate kubecost or GCP calculator
 # TODO: Include accurate cloud specific costs (e.g. network, disk, instance type)
 # TODO: Submit cloud quotas requests
 
+# TODO: Change unkown value from default cost of e2-standard-8 to better value
 GCP_PRICES = {
 	"e2-medium": 0.038795,
-	"e2-standard-8": 0.31036
+	"e2-standard-8": 0.31036,
+	"unknown": 0.038795,
 }
 
 AWS_PRICES = {
@@ -141,8 +148,8 @@ def plot_docker_pull_time(event_data=None):
 			'''
 			image_pull_start_times = cluster['image_pull_start_times']
 			image_pull_end_times = cluster['image_pull_end_times']
-			print(image_pull_start_times)
-			print(image_pull_end_times)
+			#print(image_pull_start_times)
+			#print(image_pull_end_times)
 			
 			for pod in image_pull_start_times: 
 				image_pull_time = image_pull_end_times[pod] - image_pull_start_times[pod]
@@ -205,8 +212,9 @@ def average_jct():
 #diff_df['norm_system_utilization'] = total_job_volume/(job_makespan*diff_df['cluster_size']*sim_df['gpus_per_node'].iloc[0])
 #x_axis = 'norm_system_utilization'
 
-def plot_job_intervals(jobs, num_nodes, save=False, path=None, subplt=None, plt_index=None, tag=None):
-	plot_jobs.plot_trace_spacetime_and_spillover(jobs, num_nodes, save=save, path=path, subplt=subplt, plt_index=plt_index, tag=tag)
+def plot_job_intervals(jobs, num_nodes, save=False, path=None, subplt=None, plt_index=None, tag=None, scale=1, plot_sweep=False, dim=(-100, 100, 0, 100), ratio=(1, 1), gpus_per_node=8):
+	axs = plot_jobs.plot_trace_spacetime_and_spillover(jobs, num_nodes, save=save, path=path, subplt=subplt, plt_index=plt_index, tag=tag, scale=scale, plot_sweep=False, dim=dim, ratio=ratio, gpus_per_node=gpus_per_node)
+	return axs
 
 def parse_prometheus_logs(onprem=onprem, cloud=cloud):
 	# TODO: Plot cloud and onprem cluster jobs together
@@ -351,7 +359,461 @@ def parse_prometheus_logs(onprem=onprem, cloud=cloud):
 	jobs['start'] = [i - min_arrival if i is not None else None for i in jobs['start']]
 	return jobs, len(all_nodes)
 
-def parse_event_logs(cluster_event_data=None, submission_data=None, event_time=None): #onprem_event_logs = None, cloud_event_logs = None):
+def parse_event_logs(cluster_event_data=None, submission_data=None, event_time=None, avoid_congestion=True):#onprem_event_logs = None, cloud_event_logs = None):
+	# TODO: Plot cloud and onprem cluster jobs together
+
+	hyperparameters = None
+	if 'hyperparamters' in submission_data: 
+		hyperparameters = submission_data['hyperparameters']
+
+	job_names = {}
+	jobs = {'idx':[], 'runtime':[], 'arrival':[], 'num_gpus':[], 'allocated_gpus':[], 'start':[], 'instance_type':[], 'node_index': [], 'node': [], 'cpus': [], 'submission_time': [], 'wait_times':[]}
+
+	all_nodes = set()
+	nodes = {}
+	node_id = 0
+	onprem_event_logs = cluster_event_data['onprem']
+	cloud_event_logs = cluster_event_data['cloud']
+
+	#clusters = {"onprem": onprem, "cloud": cloud}
+	clusters = {"onprem": onprem_event_logs, "cloud": cloud_event_logs}
+	for type in clusters:
+		cluster = clusters[type]
+		if cluster is not None:
+			# TODO: Plot all pods running on the same node together
+			'''
+			Parse `kube_pod_info` --> if node name is not found, then pod not scheduled onto a node
+			'''
+			start_times = cluster['container_start_times']
+			#pod_end_times = cluster['pod_end_times']
+			creation_times = cluster['job_creation_times']
+			completion_times = cluster['job_completion_times']
+			pod_nodes = cluster['scheduled_nodes']
+			job_pods = cluster['job_pods']
+			pod_jobs = {value: key for key, value in job_pods.items()}
+
+			node_instances = cluster['node_instances']
+			print("START TIMES " + str(creation_times))
+
+			job_start_times = {}
+			job_end_times = {}
+			pod_start_times = {}
+
+			for pod in start_times:
+				pod_name = pod
+				pod_start_time = start_times[pod]
+				pod_start_times[pod_name] = pod_start_time
+			
+			min_arrival = math.inf
+
+			# Get start times
+			for job in creation_times:
+				job_name = job #pod['metric']['pod']
+				job_start_time = creation_times[job] #int(pod['value'][1])
+				job_start_times[job_name] = job_start_time
+				#pod_start_times[job] = job
+			
+			for job in completion_times:
+				job_name = job #pod['metric']['pod']
+				job_end_time = completion_times[job] #int(pod['value'][1])
+				job_end_times[job_name] = job_end_time
+
+			for pod in pod_nodes:
+				pod_name = pod #pod['metric']['pod']
+				all_nodes.add(pod_nodes[pod])
+				'''
+				if pod_name in pod_start_times:
+					pod_node = pod['metric']['node']
+					all_nodes.add(pod_node)
+					pod_nodes[pod_name] = pod_node
+				'''
+
+			# TODO: Set start times to pod start times
+			# TODO: Set end times to job end times associated with the pod that started
+			#job_completion_times = {}
+			#for job in job_start_times:
+			job_times = {}
+			for job in job_start_times:
+				if job in job_end_times:
+					#job_completion_times[job] = [job_start_times[job], job_end_times[job]]
+					job_times[job] = [job_start_times[job], job_end_times[job]]
+
+			print("JOB START, JOB END -- TIMES")
+			print(job_times)
+
+			#scheduled_times = {}
+			pod_times = {}
+			for pod in pod_start_times:
+				# TODO: Create pod
+				job = pod_jobs[pod]
+				if job in job_end_times:
+					#job_completion_times[job] = [job_start_times[job], job_end_times[job]]
+					pod_times[job] = [pod_start_times[pod], job_end_times[job]]
+			
+			print("POD START, JOB END -- TIMES")
+			print(pod_times)
+			#intervals = job_completion_times
+			
+			# TODO: Pass in a bool to look at JCT when assuming scheduled time vs. sumbission time
+			#if avoid_congestion:
+			#	intervals = job_times
+			#else:
+			#	intervals = pod_times #scheduled_times
+			#intervals = pod_times
+			#intervals = job_times
+			intervals = pod_times 
+			
+			# TRACKING DIFFERENT TIMES: 
+			# Job Start time, Pod Start Time, Pod Scheduled Time
+			# Note: Pod only starts after pod has been scheduled ~ pod start == pod scheduled 
+			
+			# Delta 1:
+			# Waiting Time: Scheduled Time - Job Start Time
+			# Run Time: Job End Time - Scheduled Time
+
+			# Delta 2: Pod End Time - Job End Time
+			# Waiting Time: Scheduled Time - Pod Start Time
+			# Run Time: Job End Time - Scheduled Time
+			#intervals = job_times
+
+			# Job Trace Format
+			for n in all_nodes:
+				nodes[n] = node_id
+				node_id += 1
+
+			#print(all_nodes)
+			#print(pod_nodes)
+			#print(nodes)
+			#print(len(intervals))
+			#print(intervals)
+			#print(len(submission_data))
+			for i, (key, value) in enumerate(intervals.items()):
+				#print(len(intervals))
+				#print("index " + str(i))
+				#print(key)
+				
+				#job_id
+				#s = "sleep-26-100444"
+				# TODO: Note that event_job_id = job_data + 1
+				job_id = re.findall(r'\d+', key)[0]
+				#print("job_id" + str(job_id))
+				# sleep-26-100444 - format
+				job_names[i] = key
+				jobs['idx'].append(int(job_id) - 1)#i)
+				jobs['runtime'].append(value[1] - value[0])
+				jobs['arrival'].append(value[0])
+				jobs['num_gpus'].append(1)
+
+				#if i >= len(submission_data) - 2:
+				#	print("reached")
+				#	break
+
+				#if job_id in submission_data:
+				jobs['cpus'].append(submission_data[job_id]['workload']['cpu'])
+
+				# TODO: Implement Delta 3 and Delta 4
+
+				# Delta 3: 
+				# Runtime: Job End Time - Pod Start Time
+				# Waiting Time: Pod Start Time - Job Submit Time 
+
+				# Delta 4 
+				# Runtime: Job End Time - Pod Start Time
+				# Waiting Time: Pod Start Time - Job Scheduled Time  
+
+				# JCT = Wait Time + Run Time 
+				#import pdb; pdb.set_trace()
+
+				# Waiting Time: Pod Start Time (Arrival) - Job Submit Time (WITH CONGESTION)   
+				# Waiting Time: Pod Start Time (Arrival) - Job Scheduled Time (AVOID CONGESTION)
+				#import pdb; pdb.set_trace()
+				if avoid_congestion:
+					#intervals = job_times
+					#submit_time = submission_data[job_id]['scheduler_submit_time']
+					#job_int = int(job_id)
+					
+					submit_time = cluster['job_creation_times'][key] # JOB START TIME
+					
+					#job_val = job_pods[key] 
+					#submit_time = cluster['container_start_times'][job_val] # POD START TIME
+
+					#cluster['job_creation_times'][job_id]
+					#cluster['container_start_times'][job_pods[key]]
+				else:
+					#intervals = pod_times 
+					# Set job submit time
+					submit_time = submission_data[job_id]['scheduler_submit_time'] # JOB SUBMISSION TIME
+
+					# SCHEDULER SUBMIT TIME IS TRUE ARRIVAL
+					#NOTE: Scheduler_submit_time == Job submit time
+
+				#submit_time = submission_data[job_id]['scheduler_submit_time']
+				#if submit_time:
+				jobs['submission_time'].append(submit_time)
+				#submission_data[job_id]['scheduler_submit_time'])
+
+				if not submit_time:
+					jobs['wait_times'].append(0)
+				else:
+					#jobs['wait_time'].append(value[0] - submit_time)
+					#import pdb; pdb.set_trace()
+					#jobs['wait_times'].append(submit_time - value[0])
+					jobs['wait_times'].append(value[0] - submit_time)
+
+					#jobs['wait_time'].append(0)
+				#import pdb; pdb.set_trace()
+
+				#if key in job_pods:
+				if job_pods[key] in pod_nodes:
+					#jobs['allocated_gpus'].append({nodes[pod_nodes[job_pods[key]]]: [1]})
+					jobs['allocated_gpus'].append({nodes[pod_nodes[job_pods[key]]]: []})
+					jobs['node_index'].append(nodes[pod_nodes[job_pods[key]]])
+				else:
+					jobs['allocated_gpus'].append({})
+					jobs['node_index'].append(None)
+				
+				if type == "cloud":
+					jobs['start'].append(None)
+				else:
+					jobs['start'].append(value[0])
+				
+				if job_pods[key] in pod_nodes:
+					jobs['node'].append(pod_nodes[job_pods[key]])
+				else:
+					jobs['node'].append("unknown")
+				
+				if job_pods[key] in pod_nodes:
+					jobs['instance_type'].append(node_instances[pod_nodes[job_pods[key]]])
+				else:
+					jobs['instance_type'].append("unknown")
+		#print(jobs['wait_time'])
+		#import pdb; pdb.set_trace()
+		
+	# TODO: Determine if logs should be initialized to submission_time or arrival_time
+	#print(jobs['arrival'])
+
+	if not jobs['arrival']:
+		print("No job arrival times logged!")
+
+	#print(jobs)
+	#min_arrival = min(jobs['arrival']) #min(jobs['submission_time']) #min(jobs['arrival'])
+	#print(jobs['arrival'])
+	#print(jobs['submission_time'])
+	#print(jobs['wait_time'])
+	#time.sleep(10000)
+
+	#Normalize times based on minimum submission time 
+	min_arrival = min(jobs['submission_time']) #min(jobs['arrival'])
+	jobs['arrival'] = [i - min_arrival for i in jobs['arrival']]
+	jobs['submission_time'] = [i - min_arrival for i in jobs['submission_time']]
+	jobs['start'] = [i - min_arrival if i is not None else None for i in jobs['start']]
+
+
+	#jobs = {'idx':[], 'runtime':[], 'arrival':[], 'num_gpus':[], 'allocated_gpus':[], 'start':[], 'instance_type':[], 'node_index': [], 'node': [], 'cpus': [], 'submission_time': [], 'wait_time':[]}
+
+	jobs['arrival'] = np.array(jobs['arrival'])
+	jobs['num_gpus'] =  np.array(jobs['num_gpus'])
+	#'cluster_size'
+    #'gpus_per_node'
+
+	#print("NODE NAMES: ")
+	#print(all_nodes)
+	#print(len(all_nodes))
+	
+	return jobs, len(all_nodes), hyperparameters
+
+def parse_event_logs_REDACTED_2(cluster_event_data=None, submission_data=None, event_time=None): #onprem_event_logs = None, cloud_event_logs = None):
+	# TODO: Plot cloud and onprem cluster jobs together
+	hyperparameters = None
+	if 'hyperparamters' in submission_data: 
+		hyperparameters = submission_data['hyperparameters']
+
+	job_names = {}
+	jobs = {'idx':[], 'runtime':[], 'arrival':[], 'num_gpus':[], 'allocated_gpus':[], 'start':[], 'instance_type':[], 'node_index': [], 'node': [], 'cpus': [], 'submission_time': [], 'wait_time':[]}
+
+	all_nodes = set()
+	nodes = {}
+	node_id = 0
+	onprem_event_logs = cluster_event_data['onprem']
+	cloud_event_logs = cluster_event_data['cloud']
+
+	# TODO: Implement mapping from job names to pod names
+	job_to_pod = {}
+
+	#clusters = {"onprem": onprem, "cloud": cloud}
+	clusters = {"onprem": onprem_event_logs, "cloud": cloud_event_logs}
+	for type in clusters: 
+		cluster = clusters[type]
+		if cluster is not None: 
+			# TODO: Plot all pods running on the same node together
+			'''
+			Parse `kube_pod_info` --> if node name is not found, then pod not scheduled onto a node
+			'''
+			start_times = cluster['container_start_times']
+			#pod_end_times = cluster['pod_end_times']
+			creation_times = cluster['job_creation_times']
+			completion_times = cluster['job_completion_times']
+			pod_nodes = cluster['scheduled_nodes']
+			job_pods = cluster['job_pods']
+			pod_jobs = {value: key for key, value in job_pods.items()}
+
+			node_instances = cluster['node_instances']
+
+			print("START TIMES " + str(creation_times))
+
+			job_start_times = {}
+			job_end_times = {}
+			pod_start_times = {}
+
+			for pod in start_times: 
+				pod_name = pod
+				pod_start_time = start_times[pod]
+				pod_start_times[pod_name] = pod_start_time
+			
+			min_arrival = math.inf
+
+			# Get start times
+			for job in creation_times: 
+				job_name = job #pod['metric']['pod']
+				job_start_time = creation_times[job] #int(pod['value'][1])
+				job_start_times[job_name] = job_start_time
+				#pod_start_times[job] = job
+			
+			for job in completion_times: 
+				job_name = job #pod['metric']['pod']
+				job_end_time = completion_times[job] #int(pod['value'][1])
+				job_end_times[job_name] = job_end_time
+
+			for pod in pod_nodes:
+				pod_name = pod #pod['metric']['pod']
+				all_nodes.add(pod_nodes[pod])
+				'''
+				if pod_name in pod_start_times: 
+					pod_node = pod['metric']['node']
+					all_nodes.add(pod_node)
+					pod_nodes[pod_name] = pod_node
+				'''
+
+
+			# TODO: Set start times to pod start times
+			# TODO: Set end times to job end times associated with the pod that started
+			#job_completion_times = {}
+			#for job in job_start_times:
+			job_times = {}
+			for job in job_start_times:
+				if job in job_end_times:
+					#job_completion_times[job] = [job_start_times[job], job_end_times[job]]
+					job_times[job] = [job_start_times[job], job_end_times[job]]
+				
+			print("JOB START, JOB END -- TIMES")
+			print(job_times)
+
+			scheduled_times = {}
+			for pod in pod_start_times:
+				# TODO: Create pod 
+				job = pod_jobs[pod]
+				if job in job_end_times:
+					#job_completion_times[job] = [job_start_times[job], job_end_times[job]]
+					scheduled_times[job] = [pod_start_times[pod], job_end_times[job]]
+			
+			print("POD START, JOB END -- TIMES")
+			print(scheduled_times)
+			#intervals = job_completion_times
+			intervals = scheduled_times
+
+			# Job Trace Format
+			for n in all_nodes: 
+				nodes[n] = node_id
+				node_id += 1
+
+			print(all_nodes)
+			print(pod_nodes)
+			print(nodes)
+			print(len(intervals))
+			print(intervals)
+			print(len(submission_data))
+			for i, (key, value) in enumerate(intervals.items()):
+				#print(len(intervals))
+				print("index " + str(i))
+				#print(key)
+				
+				#job_id 
+				#s = "sleep-26-100444"
+				# TODO: Note that event_job_id = job_data + 1
+				job_id = re.findall(r'\d+', key)[0]
+				print("job_id" + str(job_id))
+				# sleep-26-100444 - format
+				job_names[i] = key
+				jobs['idx'].append(int(job_id) - 1)#i)
+				jobs['runtime'].append(value[1] - value[0])
+				jobs['arrival'].append(value[0])
+				jobs['num_gpus'].append(1)
+
+				#if i >= len(submission_data) - 2: 
+				#	print("reached")
+				#	break 
+
+				#if job_id in submission_data: 
+				jobs['cpus'].append(submission_data[job_id]['workload']['cpu'])
+				submit_time = submission_data[job_id]['scheduler_submit_time']
+				#if submit_time: 
+				jobs['submission_time'].append(submit_time)#submission_data[job_id]['scheduler_submit_time'])
+
+				if not submit_time: 
+					jobs['wait_time'].append(0)
+				else: 
+					jobs['wait_time'].append(value[0] - submit_time)
+					#jobs['wait_time'].append(0)
+
+
+				#if key in job_pods:
+				if job_pods[key] in pod_nodes:
+					#jobs['allocated_gpus'].append({nodes[pod_nodes[job_pods[key]]]: [1]})
+					jobs['allocated_gpus'].append({nodes[pod_nodes[job_pods[key]]]: []})
+					jobs['node_index'].append(nodes[pod_nodes[job_pods[key]]])
+				else: 
+					jobs['allocated_gpus'].append({})
+					jobs['node_index'].append(None)
+				
+				if type == "cloud":
+					jobs['start'].append(None)
+				else:
+					jobs['start'].append(value[0])
+				if job_pods[key] in pod_nodes:
+					jobs['node'].append(pod_nodes[job_pods[key]])
+				else: 
+					jobs['node'].append("unknown")
+				if job_pods[key] in pod_nodes:
+					jobs['instance_type'].append(node_instances[pod_nodes[job_pods[key]]])
+				else: 
+					jobs['instance_type'].append("unknown")
+		
+	# TODO: Determine if logs should be initialized to submission_time or arrival_time
+	print(jobs['arrival'])
+
+	if not jobs['arrival']:
+		print("No job arrival times logged!")
+
+	print(jobs)
+	#min_arrival = min(jobs['arrival']) #min(jobs['submission_time']) #min(jobs['arrival'])
+	print(jobs['arrival'])
+	print(jobs['submission_time'])
+	print(jobs['wait_time'])
+	#time.sleep(10000)
+
+	min_arrival = min(jobs['submission_time']) #min(jobs['arrival'])
+	jobs['arrival'] = [i - min_arrival for i in jobs['arrival']]
+	jobs['submission_time'] = [i - min_arrival for i in jobs['submission_time']]
+	jobs['start'] = [i - min_arrival if i is not None else None for i in jobs['start']]
+
+	print("NODE NAMES: ")
+	print(all_nodes)
+	print(len(all_nodes))
+	return jobs, len(all_nodes)
+
+
+def parse_event_logs_REDACTED_1(cluster_event_data=None, submission_data=None, event_time=None):#onprem_event_logs = None, cloud_event_logs = None):
+
 	# TODO: Plot cloud and onprem cluster jobs together
 	hyperparameters = None
 	if 'hyperparamters' in submission_data: 
@@ -458,22 +920,22 @@ def parse_event_logs(cluster_event_data=None, submission_data=None, event_time=N
 				nodes[n] = node_id
 				node_id += 1
 
-			print(all_nodes)
-			print(pod_nodes)
-			print(nodes)
-			print(len(intervals))
-			print(intervals)
-			print(len(submission_data))
+			#print(all_nodes)
+			#print(pod_nodes)
+			#print(nodes)
+			#print(len(intervals))
+			#print(intervals)
+			#print(len(submission_data))
 			for i, (key, value) in enumerate(intervals.items()):
 				#print(len(intervals))
-				print("index " + str(i))
+				#print("index " + str(i))
 				#print(key)
 				
 				#job_id 
 				#s = "sleep-26-100444"
 				# TODO: Note that event_job_id = job_data + 1
 				job_id = re.findall(r'\d+', key)[0]
-				print("job_id" + str(job_id))
+				#print("job_id" + str(job_id))
 				# sleep-26-100444 - format
 				job_names[i] = key
 				jobs['idx'].append(int(job_id) - 1)#i)
@@ -511,37 +973,49 @@ def parse_event_logs(cluster_event_data=None, submission_data=None, event_time=N
 					jobs['start'].append(None)
 				else:
 					jobs['start'].append(value[0])
+				
 				if job_pods[key] in pod_nodes:
 					jobs['node'].append(pod_nodes[job_pods[key]])
 				else: 
 					jobs['node'].append("unknown")
+					
 				if job_pods[key] in pod_nodes:
 					jobs['instance_type'].append(node_instances[pod_nodes[job_pods[key]]])
 				else: 
 					jobs['instance_type'].append("unknown")
 		
 	# TODO: Determine if logs should be initialized to submission_time or arrival_time
-	print(jobs['arrival'])
+	#print(jobs['arrival'])
 
 	if not jobs['arrival']:
 		print("No job arrival times logged!")
 
-	print(jobs)
+	#print(jobs)
 	#min_arrival = min(jobs['arrival']) #min(jobs['submission_time']) #min(jobs['arrival'])
-	print(jobs['arrival'])
-	print(jobs['submission_time'])
-	print(jobs['wait_time'])
+	#print(jobs['arrival'])
+	#print(jobs['submission_time'])
+	#print(jobs['wait_time'])
 	#time.sleep(10000)
 
+	#Normalize times based on minimum submission time 
 	min_arrival = min(jobs['submission_time']) #min(jobs['arrival'])
 	jobs['arrival'] = [i - min_arrival for i in jobs['arrival']]
 	jobs['submission_time'] = [i - min_arrival for i in jobs['submission_time']]
 	jobs['start'] = [i - min_arrival if i is not None else None for i in jobs['start']]
 
-	print("NODE NAMES: ")
-	print(all_nodes)
-	print(len(all_nodes))
-	return jobs, len(all_nodes)
+
+	#jobs = {'idx':[], 'runtime':[], 'arrival':[], 'num_gpus':[], 'allocated_gpus':[], 'start':[], 'instance_type':[], 'node_index': [], 'node': [], 'cpus': [], 'submission_time': [], 'wait_time':[]}
+
+	jobs['arrival'] = np.array(jobs['arrival'])
+	jobs['num_gpus'] =  np.array(jobs['num_gpus'])
+	#'cluster_size'
+    #'gpus_per_node'
+
+	#print("NODE NAMES: ")
+	#print(all_nodes)
+	#print(len(all_nodes))
+	
+	return jobs, len(all_nodes), hyperparameters
 
 def increase_ttl():
 	# TODO: Determine feasible design before implementation
@@ -615,30 +1089,56 @@ def retrieve_raw_events():
 	text_file.close()
 
 
-def view_real_arrival_times(event_number=None):#cluster_data_path=None, submission_data_path=None):
+def view_real_arrival_times(event_number=None, scale=1, plot_sweep=False, get_data=False, dim=(-100, 100, 0, 100), ratio=(1, 1), gpus_per_node=8, avoid_congestion=True):#cluster_data_path=None, submission_data_path=None):
 	costs = {}
 	if event_number: #cluster_data_path and submission_data_path: 
 		cluster_data_path = "../logs/archive/" + str(event_number) + "/events/"
 		submission_data_path = "../logs/archive/" + str(event_number) + "/jobs/"
+		sweep_data_path = "../logs/archive/" + str(event_number) + '/sweep.json'
+		sweep_data = read_submission_data(submission_log_path=sweep_data_path)
+
 		files = os.listdir(cluster_data_path)
 		num_graphs = len(files) #-2#+ 1 #2
-		fig, axs = plt.subplots(nrows=num_graphs, ncols=1)
+		#fig, axs = plt.subplots(nrows=num_graphs, ncols=1, figsize=(5*scale, 30*scale))
+		fig, axs = plt.subplots(nrows=num_graphs, ncols=1, figsize=(ratio[0]*scale, ratio[1]*scale))
 		#fig, axs = plt.subplots(nrows=2, ncols=1)
 		# Iterate over the files and check if they have the ".json" extension
 		#for file in files:
 		file_count = 0 
 		for i in range(len(files)):
 			file = files[i]
-			print("FILE NAME " + file)
+			#print("FILE NAME " + file)
 			cluster_log_path = cluster_data_path + file
 			submission_log_path = submission_data_path + file
-			print("CLUSTER LOG PATH")
-			print(cluster_log_path)
-			cluster_event_data = read_cluster_event_data(cluster_log_path=cluster_log_path)
-			submission_data = read_submission_data(submission_log_path=submission_log_path)
-			jobs, num_nodes = parse_event_logs(cluster_event_data=cluster_event_data, submission_data=submission_data, time_stamp=event_number)
-			print("JOB DATA")
-			print(jobs)
+
+			'''
+			# TODO: Skip the plot if a specific file cannot be found
+			#if cluster_log_path not in 
+			cluster_log_path_file = cluster_log_path + ".json"
+			submission_data_path_file = submission_data_path + ".json"
+			
+			print("CHECKING FILES: " + cluster_log_path_file + " " + submission_data_path_file)
+			if not os.path.isfile(cluster_log_path_file):
+				continue
+
+			if not os.path.isfile(submission_data_path_file):
+				continue
+			'''
+
+			#print("CLUSTER LOG PATH")
+			#print(cluster_log_path)
+			try:
+				cluster_event_data = read_cluster_event_data(cluster_log_path=cluster_log_path)
+				submission_data = read_submission_data(submission_log_path=submission_log_path)
+				jobs, num_nodes, hps = parse_event_logs(cluster_event_data=cluster_event_data, submission_data=submission_data, event_time=event_number, avoid_congestion=avoid_congestion)#time_stamp=event_number)
+			except Exception as e: 
+				continue 	
+		
+			events = cluster_event_data
+			submissions = submission_data
+			if get_data: 
+				return jobs, events, submissions
+
 			#cost = job_logs.cloud_cost(jobs=jobs, num_nodes=num_nodes)
 			#costs[file] = cost
 			plot_dir = "../logs/archive/plots/"
@@ -647,9 +1147,25 @@ def view_real_arrival_times(event_number=None):#cluster_data_path=None, submissi
 				os.mkdir(plot_dir)
 
 			plot_path = "../logs/archive/plots/" + file[:-5] + ".png"
-			print(plot_path)
-			plot_job_intervals(jobs, num_nodes, save=True, path=plot_path, subplt=axs, plt_index=i, tag=str(file))
-			
+			#print(plot_path)
+		
+			#if plot_sweep:
+			#"wait " + str(jobs_wait['wait_time'][i]) +  " arr " + str(jobs_wait['arrival_rate'][i] 
+			'''
+			{"hyperparameters": {"waiting_policy": "fifo_wait", "time_constrained": true, "cluster_size": 4, "cpus_per_node": 8, "cloud_cluster_nodes": 4, "cloud_cpu_per_node": 8, "random_seed": 0, "total_jobs": 100, "batch_time": 2, "wait_time": 0.0, "time_out": 5, "mean_duration": 10, "arrival_rate": 0.016666666666666666, "cpu_sizes": [1, 2, 4], "cpu_dist": [0, 0.5, 0.5], "gpu_sizes": [1, 2, 4, 8, 16, 32], "gpu_dist": [0, 0.2, 0.2, 0.2, 0.2, 0.2], "memory_sizes": [100, 500, 1000, 50000], "memory_dict": [0.25, 0.25, 0.25, 0.25]},
+			'''
+			tag = str(file)
+			tag = ""
+			varying_values = sweep_data['varying_values'] #varying_values
+			for value in varying_values: 
+				tag += str(submission_data['hyperparameters'][value])
+				tag += " | "
+			#for 
+
+			axs = plot_job_intervals(jobs, num_nodes, save=True, path=plot_path, subplt=axs, plt_index=i, tag=tag, scale=scale, plot_sweep=plot_sweep, dim=dim, ratio=ratio, gpus_per_node=gpus_per_node)
+			#else:
+			#	plot_job_intervals(jobs, num_nodes, save=False, path=plot_path, subplt=axs, plt_index=i, tag=str(file), scale=scale, plot_sweep=plot_sweep)
+	
 			#job_logs.plot_job_intervals(jobs, num_nodes)
 			
 			#if file.endswith(".json"):
@@ -661,14 +1177,17 @@ def view_real_arrival_times(event_number=None):#cluster_data_path=None, submissi
 				break 
 			
 	#return costs
+	#plt.tight_layout()
+
 	plt.show()
 
 	return 
 
-def analyze_sweep(event_number=None, graph=False):#, fixed_values=OrderedDict(), varying_values=OrderedDict()):#path=None):
+def analyze_sweep(event_number=None, graph=False, avoid_congestion=False):#, fixed_values=OrderedDict(), varying_values=OrderedDict()):#path=None):
 	"""Takes each batch job file and computes values (e.g. cloud cost, system utilization)"""
 
 	metrics = {}
+	all_jobs = {}
 	if event_number:
 		cluster_data_path = "../logs/archive/" + str(event_number) + '/events/'
 		submission_data_path = "../logs/archive/" + str(event_number) + '/jobs/'
@@ -684,13 +1203,33 @@ def analyze_sweep(event_number=None, graph=False):#, fixed_values=OrderedDict(),
 		for i in range(len(files)):
 			file = str(i) + ".json" #files[i]
 			print("FILENAME: " + file)
+			#cluster_log_path = cluster_data_path + file
+			#submission_log_path = submission_data_path + file
+
+			# TODO: Skip the plot if a specific file cannot be found
+			#if cluster_log_path not in 
+			'''
+			cluster_log_path_file = cluster_data_path + file
+			submission_data_path_file = submission_data_path + file
+			
+			print("CHECKING FILES: " + cluster_log_path_file + " " + submission_data_path_file)
+			if not os.path.isfile(cluster_log_path_file):
+				continue
+
+			if not os.path.isfile(submission_data_path_file):
+				continue
+			'''
+
 			cluster_log_path = cluster_data_path + file
 			submission_log_path = submission_data_path + file
 
 			print(cluster_log_path)
-			cluster_event_data = read_cluster_event_data(cluster_log_path=cluster_log_path)
-			submission_data = read_submission_data(submission_log_path=submission_log_path)
-			jobs, num_nodes = parse_event_logs(cluster_event_data=cluster_event_data, submission_data=submission_data)
+			try: 
+				cluster_event_data = read_cluster_event_data(cluster_log_path=cluster_log_path)
+				submission_data = read_submission_data(submission_log_path=submission_log_path)
+				jobs, num_nodes, hps = parse_event_logs(cluster_event_data=cluster_event_data, submission_data=submission_data, avoid_congestion=avoid_congestion)
+			except Exception as e:
+				continue 
 			
 
 			# TODO: Compute baseline cost and cost savings
@@ -703,12 +1242,22 @@ def analyze_sweep(event_number=None, graph=False):#, fixed_values=OrderedDict(),
 
 			for k, v in hyperparameters.items(): 
 				job_metrics[k] = v
+				jobs[k] = v
+
+			#jobs[]
 
 			sweep_metrics = sweep[str(i)]
 			for k, v in sweep_metrics.items(): 
 				job_metrics[k] = v
-
+				
+			for k, v in job_metrics.items(): 
+				if k == 'cloud_cost':
+					jobs['total_cloud_cost'] = v
+				elif k == 'avg_jct': 
+					jobs[k] = v
+		
 			metrics[i] = job_metrics
+			all_jobs[i] = jobs
 			
 			#if file.endswith(".json"):
 			#	log_path = log_path + str(file)
@@ -724,12 +1273,11 @@ def analyze_sweep(event_number=None, graph=False):#, fixed_values=OrderedDict(),
 	if graph: 
 		graph_metrics(metrics=metrics, fixed_values=fixed_values, varying_values=varying_values)
 
-	return metrics
+	return metrics, all_jobs
 
 def compute_metrics(jobs, num_nodes):
 	# TODO: Compute steady state value i.e. remove cloud cost from first X and last X jobs
 	# TODO: Compute total value i.e. beg to end simulation cost --> compute start and end time for each node
-
 	# TODO: Only consider jobs with start=None, because they are run on the cloud
 	'''
 	arrivals = jobs['arrival']
@@ -746,7 +1294,7 @@ def compute_metrics(jobs, num_nodes):
 	instance_types = jobs['instance_type']
 	runtimes = jobs['runtime']
 	submission_times = jobs['submission_time']
-	wait_times = jobs['wait_time']
+	wait_times = jobs['wait_times']
 	start = jobs['start']
 
 	# NOTE: Job runtime has integer precisions due to granularity of kuberentes event logs
@@ -763,11 +1311,17 @@ def compute_metrics(jobs, num_nodes):
 	# TODO: Compute JCT = Waitime + Runtime
 	job_completion_times = [runtimes[i] + wait_times[i] for i in range(len(runtimes))]
 	jct = sum(job_completion_times)/len(job_completion_times)
-
+	'''
+	result_dict['stats']['avg_jct'] = (total_waiting_time + total_running_time) / num_jobs
+	'''
+	print(instance_types)
+	#time.sleep(100)
 	for i in range(len(runtimes)):
 		print(start[i])
 		runtime = runtimes[i] / (60 * 60)
 		#total_time += runtime
+		print(i)
+		print(instance_types[i])
 		instance_type = instance_types[i]
 		instance_cost_per_hour = GCP_PRICES[instance_type]
 		total_time += runtimes[i]
@@ -810,6 +1364,7 @@ def compute_metrics(jobs, num_nodes):
 	'''
 
 	metrics = {
+		"runtime": sum_cloud_space + sum_local_space,
 		"cloud_cost": cloud_cost,
 		"onprem_cost": onprem_cost,
 		"system_utilization": system_utilization,
@@ -911,6 +1466,7 @@ def graph_metrics(metrics=None, fixed_values=OrderedDict(), varying_values=Order
 	# TODO: Specify subplots dimensions based on number of varying_values 
 	varying_values = list(varying_values.items())
 	fixed_values = list(fixed_values.items())
+	metrics_df = pd.DataFrame.from_dict(metrics)
 
 	print(varying_values)
 	print(fixed_values)
@@ -932,6 +1488,7 @@ def graph_metrics(metrics=None, fixed_values=OrderedDict(), varying_values=Order
 	sweep_dimensions = [len(varying_values[i][1]) for i in range(len(varying_values))]
 	print(sweep_dimensions)
 	plot_dimensions = [[j for j in range(i)] for i in sweep_dimensions[:-1]]
+	print("Plot Dimensions ")
 	print(plot_dimensions)
 
 	if plot_dimensions: 
@@ -948,7 +1505,8 @@ def graph_metrics(metrics=None, fixed_values=OrderedDict(), varying_values=Order
 			graphs[dim]['onprem_cost'] = [] #.append(trial['onprem_cost'])  
 			graphs[dim]['system_utilization'] = [] #.append(trial['system_utilization'])
 			graphs[dim]['cluster_utilization'] = []
-			graphs[dim]['job_completion_time'] = []
+			#graphs[dim]['job_completion_time'] = []
+			graphs[dim]['avg_jct'] = []
 	else:
 		dim = 0
 		graphs[dim]['arrival_rate'] = [] #.append(trial['arrival_rate'])
@@ -956,7 +1514,8 @@ def graph_metrics(metrics=None, fixed_values=OrderedDict(), varying_values=Order
 		graphs[dim]['onprem_cost'] = [] #.append(trial['onprem_cost'])  
 		graphs[dim]['system_utilization'] = [] #.append(trial['system_utilization'])
 		graphs[dim]['cluster_utilization'] = []
-		graphs[dim]['job_completion_time'] = []
+		#graphs[dim]['job_completion_time'] = []
+		graphs[dim]['avg_jct'] = []
 
 	print("GRAPH")
 	print(graphs)
@@ -971,8 +1530,13 @@ def graph_metrics(metrics=None, fixed_values=OrderedDict(), varying_values=Order
 		# TODO: Solve 1d, then 2d, then 3d
 		# TODO: Use mod to group values
 		#d1 = i % len(varying_values[0][1])
-		d1 = (i // len(varying_values[-1][1])) % len(varying_values[-2][1])
-		d2 = (i // (len(varying_values[-1][1]) * len(varying_values[-2][1]))) % len(varying_values[-3][1])
+		#d1 = (i // len(varying_values[-1][1])) % len(varying_values[-2][1])
+		#d2 = (i // (len(varying_values[-1][1]) * len(varying_values[-2][1]))) % len(varying_values[-3][1])
+
+		# TODO: Clean up plotting using pandas dataframe
+		# TODO: Remove indexing methods 
+		d2 = (i // len(varying_values[-1][1])) % len(varying_values[-2][1])
+		d1 = (i // (len(varying_values[-1][1]) * len(varying_values[-2][1]))) % len(varying_values[-3][1])
 		dim = (d1, d2)
 
 		maps[dim] = trial['arrival_rate']
@@ -981,7 +1545,8 @@ def graph_metrics(metrics=None, fixed_values=OrderedDict(), varying_values=Order
 		graphs[dim]['onprem_cost'].append(trial['onprem_cost'])  
 		graphs[dim]['system_utilization'].append(trial['system_utilization'])
 		graphs[dim]['cluster_utilization'].append(trial['cluster_utilization'])
-		graphs[dim]['job_completion_time'].append(trial['job_completion_time'])
+		#graphs[dim]['job_completion_time'].append(trial['job_completion_time'])
+		graphs[dim]['avg_jct'].append(trial['avg_jct'])
 
 	print("MAP")
 	print(maps)
@@ -1027,11 +1592,11 @@ def graph_metrics(metrics=None, fixed_values=OrderedDict(), varying_values=Order
 	# TODO: JCT [NOT STARTED]
 	# TODO: Incorporate realtime submission time logging for the future
 	for dim in graphs: 
-		axs[dim].plot(graphs[dim]['system_utilization'], graphs[dim]['job_completion_time'], label="job_completion_time")
+		#axs[dim].plot(graphs[dim]['system_utilization'], graphs[dim]['job_completion_time'], label="job_completion_time")
+		axs[dim].plot(graphs[dim]['system_utilization'], graphs[dim]['avg_jct'], label="avg_jct")
 		axs[dim].set_xlabel('system_utilization', fontsize=5)
 		axs[dim].set_ylabel('job_completion_time', fontsize=5)
 		title = varying_values[0][0] + " " + str(varying_values[0][1][dim[0]]) + " " + varying_values[1][0] + " " + str(varying_values[1][1][dim[1]])
-		#title = "test"
 		axs[dim].set_title(title, fontsize=5)
 		
 		curr_xmin, curr_xmax = axs[dim].get_xlim()
@@ -1388,3 +1953,23 @@ def log_parser(log_file, new_file, strings):
 			f.write(line + '\n')
 
 	return parsed_logs
+
+"""Misc Utils"""
+EVENT_SWEEP = 1682925843
+EVENT_SWEEP_05_03_2023 = 1683099273
+def pull_vm_scheduler_logs(event_number=0):
+	#TODO: Create log directory if not located yet
+	# TODO: Set local python path
+	#export PYTHONPATH=/Users/surya/Documents/sky/starburst
+	#subprocess.run(['export', 'PYTHONPATH=/Users/surya/Documents/sky/starburst'])
+	gcp_path = 'suryaven@sky-scheduler:/home/suryaven/test/starburst/starburst/logs/archive/{}/'.format(event_number)
+	local_path = '../logs/archive/'
+	#'/Users/suryaven/Documents/personal/sky/starburst/starburst/logs/archive/'
+
+	plot_dirs = ["../logs/", "../logs/archive/"]
+	for plot_dir in plot_dirs:
+		if not os.path.exists(plot_dir):
+			os.mkdir(plot_dir)
+	#'--zone', 'us-central1-c',
+	subprocess.run(['gcloud', 'compute',  'scp', '--recurse', gcp_path, local_path, '--zone', 'us-central1-c',])
+

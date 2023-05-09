@@ -23,16 +23,22 @@ import logging
 logger = logging.getLogger(__name__)
 
 '''
+Design Layout [DRAFT 4]
+- Run all experiments in on large cluster
+	- (1) Mimic separate nodes by paritioning existing nodes with boundaries
+	- (2) Subpartition nodes within a given cluster to run specific nodes
+
+
 Design Layout [DRAFT 3]
 - Before each run within a sweep, create the cluster then delete the cluster
-	- Cluster creation and deletion takes ~5 minutes
+	- Cluster creation and deletion takes ~5-10 minutes to create -- another 5-10 minutes to delete 
+		- There may be a quota on number of clusters I can launch
 	- Steps to Complete
 		- Create N cluster at once in parallel, where N > 100
 		- Setup github code within each cluster then run a sweep 
 		- SCP logs from scheduler VM back to local commputer
 			- No need to scp any files or logs directly from k8s clusters
 		- Then terminate the clusters all in parallel
-
 Design Layout [DRAFT 2]
 
 - Sweep Requirements -> Cluster -> Add Logs -> Parse Logs -> Analyze Sweep Requirements -> Plot
@@ -153,6 +159,86 @@ Core Functions
 	- Generate_Sweep()
 """
 
+import concurrent.futures
+from google.cloud import container_v1
+
+def parallel_experiments(num_clusters=1, project_id = 'sky-burst', zone = 'us-central1-c', cluster_prefix='parallel-exp'):
+	# Create a GKE client
+	client = container_v1.ClusterManagerClient()
+
+	def create_cluster(cluster_name):
+		nonlocal project_id
+		nonlocal zone
+
+		# Define the cluster config
+		cluster = {
+			'name': cluster_name,
+			'network': 'skypilot-vpc',
+			'initial_node_count': 1,
+			#'master_auth': {
+			#	'username': 'admin',
+			#	'password': 'passwordpassword'
+			#},
+			'node_config': {
+				'machine_type': 'n1-standard-1',
+				'disk_size_gb': 100,
+				'oauth_scopes': [
+					'https://www.googleapis.com/auth/compute',
+					'https://www.googleapis.com/auth/devstorage.read_write',
+					'https://www.googleapis.com/auth/logging.write',
+					'https://www.googleapis.com/auth/monitoring'
+				]
+			}
+		}
+
+		# Create the cluster
+		operation = client.create_cluster(project_id=project_id, zone=zone, cluster=cluster)
+		#result = operation.result()
+		status = operation.status
+		print(f'Cluster {cluster_name} status {status}')
+		return status
+
+	def delete_cluster(cluster_name):
+		nonlocal project_id
+		nonlocal zone
+
+		# Delete the cluster
+		operation = client.delete_cluster(project_id=project_id, zone=zone, cluster_id=cluster_name)
+		#result = operation.result()
+		status = operation.status
+		print(f'Cluster {cluster_name} status {status}')
+		return status 
+
+	# Use a ThreadPoolExecutor to create the clusters in parallel
+	with concurrent.futures.ThreadPoolExecutor() as executor:
+		# Submit the create_cluster function for each cluster to the executor
+		futures = [executor.submit(create_cluster, f'{cluster_prefix}-{i}') for i in range(num_clusters)]
+		# Wait for all the futures to complete
+		'''
+		for future in concurrent.futures.as_completed(futures):
+			try:
+				# Get the result of the future, if available
+				result = future.result()
+			except Exception as e:
+				# Handle any exceptions raised by the create_cluster function
+				print(f'Error creating cluster: {e}')
+		'''
+
+	# Use a ThreadPoolExecutor to delete the clusters in parallel
+	with concurrent.futures.ThreadPoolExecutor() as executor:
+		# Submit the delete_cluster function for each cluster to the executor
+		futures = [executor.submit(delete_cluster, f'{cluster_prefix}-{i}') for i in range(num_clusters)]
+		# Wait for all the futures to complete
+		'''
+		for future in concurrent.futures.as_completed(futures):
+			try:
+				# Get the result of the future, if available
+				result = future.result()
+			except Exception as e:
+				# Handle any exceptions raised by the delete_cluster function
+				print(f'Error deleting cluster: {e}')
+		'''
+
 class Config:
     def __init__(self, config_dict):
         self.__dict__.update(config_dict)
@@ -167,14 +253,18 @@ def generate_jobs(hyperparameters):
 
 	job_index = 0 #1
 	submit_time = 0
+
 	while True:
 		if hp.time_constrained == True and submit_time > hp.batch_time:
 			break
 		elif hp.time_constrained == False and job_index >= hp.total_jobs: #num_jobs:
 			break
 		job = {}
-		#TODO: Handle the inverse
+
+		#TODO: Handle the inverse -- this is inaccurarte 
 		submit_time += np.random.exponential(scale=hp.arrival_rate)
+
+
 		job_duration = np.random.exponential(scale=hp.mean_duration)
 		cpus = int(np.random.choice(hp.cpu_sizes, p=hp.cpu_dist))
 		gpus = min(0, int(np.random.exponential(scale=2)))
@@ -557,8 +647,9 @@ def run(hyperparameters, batch_repo, index):
 	save_jobs(jobs=jobs, repo=batch_repo, tag=index)
 	c1, c2 = mp.Pipe()
 	grpc_port = 10000 #50051
-	# SCHEDULER
-	p0 = mp.Process(target=driver.custom_start, args=(None, c2, grpc_port, 1, "gke_sky-burst_us-central1-c_starburst","gke_sky-burst_us-central1-c_starburst-cloud",hp.waiting_policy, hp.wait_time, jobs))
+
+	p0 = mp.Process(target=driver.custom_start, args=(None, c2, grpc_port, 1, "gke_sky-burst_us-central1-c_starburst","gke_sky-burst_us-central1-c_starburst-cloud", hp.waiting_policy, hp.wait_time, jobs))
+
 	p0.start()
 	
 	clear_logs()
@@ -641,7 +732,7 @@ def submit_sweep(fixed_values=OrderedDict(), varying_values=OrderedDict()):
 
 def plot_sweep(sweep_timestamp=0, fixed_values=OrderedDict(), varying_values=OrderedDict()):
 	print("Analyzing and plotting data...")
-	job_logs.analyze_sweep(event_number=sweep_timestamp, graph=True)#, fixed_values=fixed_values, varying_values=varying_values)
+	metrics, all_jobs = job_logs.analyze_sweep(event_number=sweep_timestamp, graph=True)#, fixed_values=fixed_values, varying_values=varying_values)
 	print("Plotting complete...")
 	return 
 
@@ -771,8 +862,8 @@ def main():
 	return 
 
 if __name__ == '__main__':
-    main()
-	#pass
+    #main()
+	pass
 
 """
 UTIL + MISC FUNCTIONS
@@ -793,11 +884,16 @@ def view_submitted_arrival_times(num_jobs = 100, batch_time=100):
 	arrival_times = []
 	for i in range(len(arrival_rates)):
 		ar = arrival_rates[i]
-		times = submit_jobs(time_constrained=True, batch_time=batch_time, arrival_rate=ar, sleep_mean=10, submit=False)
+		#times = submit_jobs(time_constrained=True, batch_time=batch_time, arrival_rate=ar, sleep_mean=10, submit=False)
+		hyp =  copy.deepcopy(DEFAULT_HYPERPARAMETERS)
+		hyp['arrival_rate'] = 10
+		hyp['batch_time'] = 600
+		hyp['mean_duration'] = 60
+		times = generate_jobs(hyp)
 		arrival_times.append(times)
 		axs[i].eventplot(times)
 		axs[i].set_ylabel(str(ar))
-		axs[i].set_xlim((0, 800))
+		axs[i].set_xlim((0, hyp['batch_time']))#800))
 		axs[i].set_yticks([])
 
 	plt.show()

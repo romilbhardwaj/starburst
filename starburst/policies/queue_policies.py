@@ -86,6 +86,7 @@ class FIFOWaitPolicy(BasePolicy):
         import time
         start_time = time.perf_counter()
         curr_time = time.perf_counter()
+
         logger.debug("Started process_queue(): ~~~ --- " + str(curr_time-start_time))
 
         retry = 0 
@@ -144,6 +145,7 @@ class FIFOWaitPolicy(BasePolicy):
                     logger.debug(f"SUBMIT - ONPREM ### Currtime {debug_time} Submitime {job.job_submit_time}")
                     # TODO: Can_fit incorrectly executes here -- print out log of cluster state before and after submit_job
                     # TODO: Figure out how to properly parse the job data from the cluster event logs
+
                     # Remove from queue
                     job_queue.remove(job)
                     # Submit the job
@@ -162,8 +164,15 @@ class FIFOWaitPolicy(BasePolicy):
         else:
             logger.info("Job queue is empty.")
             curr_time = time.perf_counter()
+
             logger.debug("Completed process_queue(): ~~~ --- " + str(curr_time-start_time))
+
             return
+
+# TODO: Implement Linear Wait Policy
+'''
+
+'''
 
 class TimeEstimatorPolicy(BasePolicy):
     def __init__(self,
