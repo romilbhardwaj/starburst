@@ -6,3 +6,7 @@ numpy
 matplotlib
 jinja2
 prometheus-api-client
+pandas 
+numpy 
+tabulate
+tqdm
