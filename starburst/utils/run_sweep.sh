@@ -10,5 +10,7 @@ if [ ! -d "$directory" ]; then
 fi
 
 python3 clean_processes.py
+python3 clean_processes.py
+python3 clean_processes.py
 
-nohup python3 sampled_jobs.py > ../logs/logs/output_$1.log 2>&1 &
+nohup python3 submit_jobs.py > ../logs/logs/output_$1.log 2>&1 &

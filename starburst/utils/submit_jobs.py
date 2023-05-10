@@ -9,7 +9,7 @@ from datetime import datetime
 from starburst.drivers import main_driver
 import json
 from kubernetes import client, config
-import job_logs
+import starburst.utils.log_jobs as log_jobs
 import multiprocessing as mp
 import starburst.drivers.main_driver as driver 
 import subprocess
@@ -19,6 +19,7 @@ from collections import defaultdict
 from collections import OrderedDict
 import atexit 
 import logging
+import sweeps 
 
 logger = logging.getLogger(__name__)
 
@@ -124,7 +125,8 @@ run_config = {
 '''
 
 DEFAULT_HYPERPARAMETERS = {
-	#"policy": "fifo_onprem_only",
+	"uniform_arrival": 1, 
+	"uniform_submission": False,
 	"waiting_policy": "fifo_onprem_only",
 	"time_constrained": True,
 	#"onprem_cluster_nodes": 4,
@@ -134,8 +136,7 @@ DEFAULT_HYPERPARAMETERS = {
 	"cloud_cluster_nodes": 4, 
 	"cloud_cpu_per_node": 8,  
 	"random_seed": 0,
-	'total_jobs': 100,#args.total_jobs,
-	#"num_jobs": 100,
+	'total_jobs': 100,
 	"batch_time": 300,
 	"wait_time": 0,
 	"time_out": 5,
@@ -257,12 +258,15 @@ def generate_jobs(hyperparameters):
 	while True:
 		if hp.time_constrained == True and submit_time > hp.batch_time:
 			break
-		elif hp.time_constrained == False and job_index >= hp.total_jobs: #num_jobs:
+		elif hp.time_constrained == False and job_index >= hp.total_jobs:
 			break
 		job = {}
 
-		#TODO: Handle the inverse -- this is inaccurarte 
-		submit_time += np.random.exponential(scale=1/hp.arrival_rate)
+		#TODO: Handle the inverse -- this is inaccurarte
+		if hp.uniform_submission: 
+			submit_time += hp.uniform_arrival
+		else: 
+			submit_time += max(0.05, np.random.exponential(scale=1/hp.arrival_rate))
 		job_duration = np.random.exponential(scale=hp.mean_duration)
 		cpus = int(np.random.choice(hp.cpu_sizes, p=hp.cpu_dist))
 		gpus = min(0, int(np.random.exponential(scale=2)))
@@ -483,19 +487,15 @@ def clear_logs():
 		else:
 			# if no exceptions were raised, break out of the loop
 			print("Logs cleared successfully.")
-			break
-
-		
+			break	
 	print("Completed Clearing Logs...")
 
 def log(tag=None, batch_repo=None, loop=True):
-	event_data = job_logs.event_data_dict()
-	job_logs.write_cluster_event_data(batch_repo=batch_repo, event_data=event_data, tag=tag, loop=loop)
+	event_data = log_jobs.event_data_dict()
+	log_jobs.write_cluster_event_data(batch_repo=batch_repo, event_data=event_data, tag=tag, loop=loop)
 
 def empty_cluster():
 	"""Function returns true if there are any running pods in the cluster"""
-
-
 	'''
 	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst")
 	onprem_api = client.CoreV1Api()
@@ -547,7 +547,6 @@ def empty_cluster():
 		'succeeded': 1,
 		'uncounted_terminated_pods': {'failed': None, 'succeeded': None}}}
 		"""
-
 	'''
 	for api in cluster_apis:
 		pods = api.list_namespaced_pod(namespace)
@@ -555,7 +554,6 @@ def empty_cluster():
 		if running_pods:
 			return False
 	'''
-	
 	'''
 	for api in cluster_apis:
 		jobs = api.list_job_for_all_namespaces()
@@ -565,7 +563,6 @@ def empty_cluster():
 		if running_jobs:
 			return False
 	'''
-
 	return True 
 
 def reached_last_job(job_name): 
@@ -644,17 +641,14 @@ def run(hyperparameters, batch_repo, index):
 	logger.debug("JOBS SUBMITTED " + str(jobs))
 	save_jobs(jobs=jobs, repo=batch_repo, tag=index)
 	c1, c2 = mp.Pipe()
-	grpc_port = 10000 #50051
+	grpc_port = 10000
 
 	p0 = mp.Process(target=driver.custom_start, args=(None, c2, grpc_port, 1, "gke_sky-burst_us-central1-c_starburst","gke_sky-burst_us-central1-c_starburst-cloud", hp.waiting_policy, hp.wait_time, jobs))
-
 	p0.start()
 	
 	clear_logs()
-	#while (c1.poll() == False) or (not (len(c1.recv()) == 0 and empty_cluster())):
 	while not empty_cluster():
 		print("Cleaning Logs and Cluster....")
-		#print("Connected: " + str(c1.poll()) + " - Empty Job Queue: " + str(len(c1.recv()) == 0) + " - Empty Cluster: " + str(empty_cluster()) )
 		time.sleep(1)
 	clear_logs()
 	
@@ -664,36 +658,14 @@ def run(hyperparameters, batch_repo, index):
 	p1.start()
 	p2.start()
 
-	'''
-	# Keeps running until the cluster is empty
-	while (p2.is_alive()) or (c1.poll() == False) or (not (len(c1.recv()) == 0 and empty_cluster())):
-		print("Wait for Job to Complete....")
-		print("p2 alive status: " + str(p2.is_alive()))
-		print("Job Queue: " + str(c1.recv()))
-		time.sleep(1)
-	p1.terminate()
-	'''
-
-
-	# Keep running until last job is completd
-	'''
-	Retrieve data of last job to submit
-	'''
-	
+	# Keep running until last job is completed
 	last_job = len(jobs) - 2
 	while True:
-		#logger.
 		logger.debug("Waiting for last job to complete $$$")
 		if reached_last_job("sleep-" + str(last_job)):
 			p1.terminate()
 			p2.terminate()
 			break 
-
-	#atexit.register(func=log, args=(tag, batch_repo, False)
-	# TODO: Ensure p2 dies only after all submitted jobs have completed
-	# TODO: Ensure p1 only dies after all p2 jobs have been properly logged -- force it to log one last time before closing 
-
-	
 
 	p1 = mp.Process(target=log, args=(tag, batch_repo, False))
 	p1.start()
@@ -722,7 +694,10 @@ def run_sweep(sweep={}):#, fixed_values=OrderedDict(), varying_values=OrderedDic
 
 	return sweep_timestamp
 
-def submit_sweep(fixed_values=OrderedDict(), varying_values=OrderedDict()):
+#def submit_sweep(fixed_values=OrderedDict(), varying_values=OrderedDict()):
+def submit_sweep(sweep=None):
+	fixed_values = OrderedDict(sweep['fixed_values'])
+	varying_values = OrderedDict(sweep['varying_values'])
 	sweep = generate_sweep(fixed_values=fixed_values, varying_values=varying_values)
 	#save_sweep(sweep=sweep, fixed_values=fixed_values, varying_values=varying_values)
 	time_stamp = run_sweep(sweep)
@@ -730,7 +705,7 @@ def submit_sweep(fixed_values=OrderedDict(), varying_values=OrderedDict()):
 
 def plot_sweep(sweep_timestamp=0, fixed_values=OrderedDict(), varying_values=OrderedDict()):
 	print("Analyzing and plotting data...")
-	metrics, all_jobs = job_logs.analyze_sweep(event_number=sweep_timestamp, graph=True)#, fixed_values=fixed_values, varying_values=varying_values)
+	metrics, all_jobs = log_jobs.analyze_sweep(event_number=sweep_timestamp, graph=True)#, fixed_values=fixed_values, varying_values=varying_values)
 	print("Plotting complete...")
 	return 
 
@@ -823,45 +798,47 @@ def generate_sweep(fixed_values=OrderedDict(), varying_values=OrderedDict()):
 	return sweep
 
 def generate_interval(min=0, max=10, intervals=10):
-	return np.linspace(min, max, num=intervals+1).tolist()#[1:]
+	return np.linspace(min, max, num=intervals+1).tolist()
 
 def main():
 	"""
 	Note: Only execute sweep through the main function, since mp package fails otherwise
 	"""
-
 	hyperparameters = copy.deepcopy(DEFAULT_HYPERPARAMETERS)
 	
 	fixed_values = {
-		#"num_jobs": 5,
-		#"total_jobs": 5, 
-		"batch_time": 120, #600, #60,#10, #2, #600,#30, 
-		"mean_duration": 10, #60,#2, 
-		#"policy": "fifo_wait",
+		"batch_time": 180, 
+		"mean_duration": 15,
 		"waiting_policy": "fifo_wait",
 		"cpu_sizes":[1, 2, 4],
-		#"cpu_dist": [0, 0.5, 0.5], #[0.2, 0.4, 0.4]
+		"uniform_submission": True, 
+		"uniform_arrival": 4
 	}
 
 	fixed_values = OrderedDict(fixed_values)
 	
 	"""Varying values from outer most to inner most loop"""
 	varying_values = {	
-		"cpu_dist": [[0.6, 0.25, 0.15]],# [[0, 0.5, 0.5]], #[[0.2, 0.4, 0.4], [0, 0.5, 0.5], [0, 0, 1]],	
-		"wait_time": [0.1, 2.5, 5, 10], #[0.1, 2.5, 5, 10], #generate_interval(0.1, 10, 3), #2), #3), #generate_interval(0, 10, 10),
-		# TODO: Don't save the inverse in the sweep - 0.35578947
-		# TODO: [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.25] * 0.35578947
-		"arrival_rate":  [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3][::-1]#[1/i for i in generate_interval(0.1, 7, 10)][1:] #[1/(i * 0.35578947) for i in [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25]], #[1/i for i in generate_interval(0.1, 3, 4)],#[1:]], #generate_interval(0, hyperparameters["mean_duration"] * (1 / (hyperparameters["cluster_size"] * hyperparameters["cpus_per_node"])) * 4 * 2, 10)[1:],		
+		"cpu_dist": [[0.6, 0.25, 0.15]],
+		"wait_time": [0.1, 2.5, 5, 10],
+		# TODO: [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.25] * 0.35578947 #Don't save the inverse in the sweep - 0.35578947
+		"arrival_rate": [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3] 
 	}
 	varying_values = OrderedDict(varying_values)
-	submit_sweep(fixed_values=fixed_values, varying_values=varying_values)
-	#sweep = generate_sweep(fixed_values=fixed_values, varying_values=varying_values)
-	#print(sweep)
+
+	sweep = {
+		"fixed_values": fixed_values, 
+		"varying_values": varying_values
+	}
+
+	sweep = sweeps.SWEEPS['3']
+
+	submit_sweep(sweep=sweep)
 	return 
 
 if __name__ == '__main__':
-    #main()
-	pass
+    main()
+	#pass
 
 """
 UTIL + MISC FUNCTIONS
@@ -893,5 +870,4 @@ def view_submitted_arrival_times(num_jobs = 100, batch_time=100):
 		axs[i].set_ylabel(str(ar))
 		axs[i].set_xlim((0, hyp['batch_time']))#800))
 		axs[i].set_yticks([])
-
 	plt.show()

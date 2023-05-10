@@ -77,6 +77,10 @@ class FIFOWaitPolicy(BasePolicy):
         self.loop = loop
         self.preemmpt_cpu = preempt_cpu
         self.linear_wait_constant = linear_wait_constant
+        self.cache = {}
+        self.prevState = None
+        self.currState = None
+
         super().__init__(onprem_manager, cloud_manager)
 
     def process_queue(self, job_queue: List[Job]):
@@ -141,6 +145,16 @@ class FIFOWaitPolicy(BasePolicy):
 
                 debug_time = time.time()
                 if time.time() - job.job_submit_time <= self.wait_threshold and self.onprem_manager.can_fit(job):
+                    self.currState = self.onprem_manager.get_allocatable_resources_per_node()
+
+                    if self.prevState == self.currState:
+                        logger.debug(f"SCHEDULER OVERCLOCKED ***")
+                            
+                    #self.prevState = self.currState
+                    logger.debug("PREV STATE IS " + str(self.prevState))
+                    logger.debug("CURR STATE IS " + str(self.currState))
+                    self.prevState = self.currState
+                    self.currState = None
                 #if self.onprem_manager.can_fit(job):
                     logger.debug(f"SUBMIT - ONPREM ### Currtime {debug_time} Submitime {job.job_submit_time}")
                     # TODO: Can_fit incorrectly executes here -- print out log of cluster state before and after submit_job
