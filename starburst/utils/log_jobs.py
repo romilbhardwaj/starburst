@@ -12,7 +12,7 @@ import os
 from collections import defaultdict
 from collections import OrderedDict
 import itertools
-import sampled_jobs
+import starburst.utils.submit_jobs as submit_jobs
 import pandas as pd
 import subprocess
 import numpy as np 
