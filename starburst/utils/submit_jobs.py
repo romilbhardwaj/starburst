@@ -9,7 +9,7 @@ from datetime import datetime
 from starburst.drivers import main_driver
 import json
 from kubernetes import client, config
-import job_logs
+import starburst.utils.log_jobs as log_jobs
 import multiprocessing as mp
 import starburst.drivers.main_driver as driver 
 import subprocess
@@ -264,7 +264,7 @@ def generate_jobs(hyperparameters):
 
 		#TODO: Handle the inverse -- this is inaccurarte
 		if hp.uniform_submission: 
-			submission_time += hp.uniform_arrival
+			submit_time += hp.uniform_arrival
 		else: 
 			submit_time += max(0.05, np.random.exponential(scale=1/hp.arrival_rate))
 		job_duration = np.random.exponential(scale=hp.mean_duration)
@@ -487,19 +487,15 @@ def clear_logs():
 		else:
 			# if no exceptions were raised, break out of the loop
 			print("Logs cleared successfully.")
-			break
-
-		
+			break	
 	print("Completed Clearing Logs...")
 
 def log(tag=None, batch_repo=None, loop=True):
-	event_data = job_logs.event_data_dict()
-	job_logs.write_cluster_event_data(batch_repo=batch_repo, event_data=event_data, tag=tag, loop=loop)
+	event_data = log_jobs.event_data_dict()
+	log_jobs.write_cluster_event_data(batch_repo=batch_repo, event_data=event_data, tag=tag, loop=loop)
 
 def empty_cluster():
 	"""Function returns true if there are any running pods in the cluster"""
-
-
 	'''
 	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst")
 	onprem_api = client.CoreV1Api()
@@ -551,7 +547,6 @@ def empty_cluster():
 		'succeeded': 1,
 		'uncounted_terminated_pods': {'failed': None, 'succeeded': None}}}
 		"""
-
 	'''
 	for api in cluster_apis:
 		pods = api.list_namespaced_pod(namespace)
@@ -559,7 +554,6 @@ def empty_cluster():
 		if running_pods:
 			return False
 	'''
-	
 	'''
 	for api in cluster_apis:
 		jobs = api.list_job_for_all_namespaces()
@@ -569,7 +563,6 @@ def empty_cluster():
 		if running_jobs:
 			return False
 	'''
-
 	return True 
 
 def reached_last_job(job_name): 
@@ -712,7 +705,7 @@ def submit_sweep(sweep=None):
 
 def plot_sweep(sweep_timestamp=0, fixed_values=OrderedDict(), varying_values=OrderedDict()):
 	print("Analyzing and plotting data...")
-	metrics, all_jobs = job_logs.analyze_sweep(event_number=sweep_timestamp, graph=True)#, fixed_values=fixed_values, varying_values=varying_values)
+	metrics, all_jobs = log_jobs.analyze_sweep(event_number=sweep_timestamp, graph=True)#, fixed_values=fixed_values, varying_values=varying_values)
 	print("Plotting complete...")
 	return 
 
@@ -838,8 +831,7 @@ def main():
 		"varying_values": varying_values
 	}
 
-	sweeps = sweeps.SWEEPS
-	sweep = sweeps['3']
+	sweep = sweeps.SWEEPS['3']
 
 	submit_sweep(sweep=sweep)
 	return 
