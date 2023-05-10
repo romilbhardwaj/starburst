@@ -17,14 +17,11 @@ import pandas as pd
 import subprocess
 import numpy as np 
 #import ..skyburst
-
-
-
 # TODO: Integrate kubecost or GCP calculator
 # TODO: Include accurate cloud specific costs (e.g. network, disk, instance type)
 # TODO: Submit cloud quotas requests
-
 # TODO: Change unkown value from default cost of e2-standard-8 to better value
+
 GCP_PRICES = {
 	"e2-medium": 0.038795,
 	"e2-standard-8": 0.31036,
@@ -73,7 +70,7 @@ cluster_event_data = {
 	'cloud': copy.deepcopy(event_data)
 }
 
-# Connect to Prometheus
+# TODO: Remove prometheus connection, no longer used
 onprem = PrometheusConnect(url="http://34.67.143.10:30000/", disable_ssl=True)
 cloud = PrometheusConnect(url="http://34.28.53.85:30000/", disable_ssl=True)
 
@@ -868,112 +865,11 @@ def retrieve_df(event_number=None, avoid_congestion=False):
 	jobs_df = jobs_df.transpose()
 	return jobs_df
 
-def analyze_sweep(event_number=None, graph=False, avoid_congestion=False):#, fixed_values=OrderedDict(), varying_values=OrderedDict()):#path=None):
-	"""Takes each batch job file and computes values (e.g. cloud cost, system utilization)"""
-
-	metrics = {}
-	all_jobs = {}
-	if event_number:
-		cluster_data_path = "../logs/archive/" + str(event_number) + '/events/'
-		submission_data_path = "../logs/archive/" + str(event_number) + '/jobs/'
-		sweep_data_path = "../logs/archive/" + str(event_number) + "/sweep.json"
-		with open(sweep_data_path, "r") as f: #"../logs/event_data.json", "r") as f:
-			sweep = json.load(f)
-
-		#exempt_files = []
-		files = os.listdir(cluster_data_path)
-		#files = sorted(files)
-
-		# Iterate over the files and check if they have the ".json" extension
-		for i in range(len(files)):
-			file = str(i) + ".json" #files[i]
-			print("FILENAME: " + file)
-			#cluster_log_path = cluster_data_path + file
-			#submission_log_path = submission_data_path + file
-
-			# TODO: Skip the plot if a specific file cannot be found
-			#if cluster_log_path not in 
-			'''
-			cluster_log_path_file = cluster_data_path + file
-			submission_data_path_file = submission_data_path + file
-			
-			print("CHECKING FILES: " + cluster_log_path_file + " " + submission_data_path_file)
-			if not os.path.isfile(cluster_log_path_file):
-				continue
-
-			if not os.path.isfile(submission_data_path_file):
-				continue
-			'''
-
-			cluster_log_path = cluster_data_path + file
-			submission_log_path = submission_data_path + file
-
-			print(cluster_log_path)
-			try: 
-				cluster_event_data = read_cluster_event_data(cluster_log_path=cluster_log_path)
-				submission_data = read_submission_data(submission_log_path=submission_log_path)
-				jobs, num_nodes, hps = parse_event_logs(cluster_event_data=cluster_event_data, submission_data=submission_data, avoid_congestion=avoid_congestion)
-			except Exception as e:
-				continue 
-			
-
-			# TODO: Compute baseline cost and cost savings
-			#cost, cost_density, system_utilization = compute_metrics(jobs=jobs, num_nodes=num_nodes)
-			#metrics[i] = {"cost": cost, "cost_density": cost_density, "system_utilization": system_utilization, "hyperparameters": hyperparameters}
-			
-			hyperparameters = submission_data['hyperparameters']
-			job_metrics = compute_metrics(jobs=jobs, num_nodes=num_nodes)
-			#job_metrics["hyperparameters"] = hyperparameters
-
-			for k, v in hyperparameters.items(): 
-				job_metrics[k] = v
-				jobs[k] = v
-
-			#jobs[]
-
-			sweep_metrics = sweep[str(i)]
-			for k, v in sweep_metrics.items(): 
-				job_metrics[k] = v
-				
-			for k, v in job_metrics.items(): 
-				if k == 'cloud_cost':
-					jobs['total_cloud_cost'] = v
-				elif k == 'avg_jct': 
-					jobs[k] = v
-		
-			metrics[i] = job_metrics
-			all_jobs[i] = jobs
-			
-			#if file.endswith(".json"):
-			#	log_path = log_path + str(file)
-			#	break 
-
-	#print(metrics)
-	#time.sleep(1000)
-	fixed_values = OrderedDict(sweep['fixed_values'])
-	varying_values = OrderedDict(sweep['varying_values'])
-	print(fixed_values)
-	print(varying_values)
-
-	if graph: 
-		graph_metrics(metrics=metrics, fixed_values=fixed_values, varying_values=varying_values)
-
-	return metrics, all_jobs
-
 def compute_metrics(jobs, num_nodes):
 	# TODO: Compute steady state value i.e. remove cloud cost from first X and last X jobs
 	# TODO: Compute total value i.e. beg to end simulation cost --> compute start and end time for each node
 	# TODO: Only consider jobs with start=None, because they are run on the cloud
 	'''
-	arrivals = jobs['arrival']
-	runtimes = jobs['runtime']
-	terminations = arrivals + runtimes
-	start_time = min(arrivals)
-	end_time = max(terminations)
-	total_time = end_time - start_time
-	cost = AWS_PRICES['vCPU'] * total_time/60
-	'''
-
 	cloud_cost = 0 
 	onprem_cost = 0 
 	instance_types = jobs['instance_type']
@@ -981,32 +877,15 @@ def compute_metrics(jobs, num_nodes):
 	submission_times = jobs['submission_time']
 	wait_times = jobs['wait_times']
 	start = jobs['start']
-
-	# NOTE: Job runtime has integer precisions due to granularity of kuberentes event logs
-	print(runtimes)
-	print(wait_times)
-	print(submission_times)
-
-	#time.sleep(1000)
 	max_arrival = max(jobs['arrival'])
 	min_arrival = min(jobs['arrival'])
 	total_time = 0 
 	cloud_time = 0 
 	onprem_time = 0
-	# TODO: Compute JCT = Waitime + Runtime
 	job_completion_times = [runtimes[i] + wait_times[i] for i in range(len(runtimes))]
 	jct = sum(job_completion_times)/len(job_completion_times)
-	'''
-	result_dict['stats']['avg_jct'] = (total_waiting_time + total_running_time) / num_jobs
-	'''
-	print(instance_types)
-	#time.sleep(100)
 	for i in range(len(runtimes)):
-		print(start[i])
 		runtime = runtimes[i] / (60 * 60)
-		#total_time += runtime
-		print(i)
-		print(instance_types[i])
 		instance_type = instance_types[i]
 		instance_cost_per_hour = GCP_PRICES[instance_type]
 		total_time += runtimes[i]
@@ -1017,28 +896,20 @@ def compute_metrics(jobs, num_nodes):
 			onprem_cost += runtime * instance_cost_per_hour
 			onprem_time += runtime
 
-	# TODO: Ensure accurate system utilization values		
-	job_makespan = (4 * 8 * (max_arrival - min_arrival)) # 4 nodes per cluster w/ 8 CPU's each
+	job_makespan = (4 * 8 * (max_arrival - min_arrival))
 	total_job_volume = total_time
 	norm_system_utilization = job_makespan/total_job_volume
-
-	# TODO: Compute the accurate values
-	# Sum_local_space = onprem make span
-	# Sum_cloud_space = cloud make span 
 
 	cluster_size = 4
 	gpus_per_node = 8 
 	end_time = max_arrival
 	start_time = min_arrival
 
-	# TODO: Change the on
-
 	sum_local_space = onprem_time
 	sum_cloud_space = cloud_time
 	cluster_utilization = sum_local_space / (cluster_size * gpus_per_node * (end_time - start_time))
 	system_utilization = (sum_local_space + sum_cloud_space) / (cluster_size * gpus_per_node * (end_time - start_time))
 
-	'''
 	result_dict['stats']['cluster_utilization'] = sum_local_space / (
         simulator_spec['cluster_size'] * simulator_spec['gpus_per_node'] *
         (end_time - start_time))
@@ -1046,9 +917,7 @@ def compute_metrics(jobs, num_nodes):
         sum_local_space + sum_cloud_space) / (simulator_spec['cluster_size'] *
                                               simulator_spec['gpus_per_node'] *
                                               (end_time - start_time))
-	'''
-	
-	
+					      
 	metrics = {
 		"runtime": sum_cloud_space + sum_local_space,
 		"cloud_cost": cloud_cost,
@@ -1056,14 +925,11 @@ def compute_metrics(jobs, num_nodes):
 		"system_utilization": system_utilization,
 		"cluster_utilization": cluster_utilization,
 		"norm_system_utilization": norm_system_utilization,
-		#'job_completion_time': jct
 		'avg_jct': jct
 	}
-
-
-
-	#return (cloud_cost, onprem_cost), (cloud_cost/total_time, onprem_cost/total_time), norm_system_utilization
 	return metrics
+	'''
+	
 
 label_dict = {
     'avg_jct': 'Avg. JCT (hr)',
@@ -1414,32 +1280,11 @@ def read_submission_data(submission_log_path=None):
 		return loaded_data
 	return {}
 
-
-
 def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None, loop=False):
-	global cluster_event_data
-	import logging
-	#client.rest.logger.setLevel(logging.WARNING)
-	logger = logging.getLogger(__name__)
 	'''
-	Outputs: 
-	(1) Store relevant event data in a dictionary continously to disk
+	Store relevant event data in a dictionary to disk with periodic calls
 
-	Design Requirements: 
-	(1) Track both long and short jobs
-		(a) Store data from different experiments efficiently 
-
-	Possible Designs: 
-	(1) Update the event data dictionary then save locally as json
-
-	Possible Tools: 
-	(1) 
-	'''
-
-	'''
-	Example Events
-
-	Events:
+	Examples:
 	Type    Reason     Age   From               Message
 	----    ------     ----  ----               -------
 	Normal  Scheduled  52m   default-scheduler  Successfully assigned default/sleep-6-481852-sswbd to gke-starburst-default-pool-8bec73e3-81j8
@@ -1448,8 +1293,11 @@ def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None, l
 	Normal  Created    52m   kubelet            Created container sleep
 	Normal  Started    52m   kubelet            Started container sleep
 	'''
-	
 
+	global cluster_event_data
+	import logging
+	#client.rest.logger.setLevel(logging.WARNING)
+	logger = logging.getLogger(__name__)
 	log_frequency = 1
 	# TODO: Write experiment metadata to job events metadata
 
@@ -1513,19 +1361,15 @@ def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None, l
 				with open(current_log_path, 'r') as f:
 					cluster_event_data = json.load(f)
 			except Exception as e: 
-				# print the exception message
 				print(f"Caught an exception: {e}")
-				# re-execute the code inside the try block
 				print("Re-executing code...")
 				continue
 			else:
-				# if no exceptions were raised, break out of the loop
 				print("Logs cleared successfully.")
 				break
 
 	# Get a list of all pods in the default namespace 
 	while True:
-		#logger
 		clusters = {"onprem": onprem_api, "cloud": cloud_api}
 		for type in clusters:
 			api = clusters[type]
@@ -1534,15 +1378,12 @@ def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None, l
 				event_data = cluster_event_data[type]
 
 				# TODO: Determine what to do with message data - item.message
-				# TODO: Set TTL value to 30 days
-				# TODO: Store events outside the cluster etcd database
 				instances = retrieve_node_instance(api)
 				event_data['node_instances'] = instances
 				
 				for item in events.items:
 					event_reason = item.reason
 					#logger.debug("Event reason: ~~~ --- !!! " + str(event_reason))
-					
 					if event_reason == 'Pulling':
 						involved_object = item.involved_object
 						if involved_object.kind == 'Pod': 
@@ -1606,13 +1447,13 @@ def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None, l
 							event_data['job_completion_times'][job_name] = int(job_completion_time.timestamp())
 
 		# TODO: Save job hyperparameters directly into job events metadata	
-		with open(current_log_path, "w") as f: #"../logs/event_data.json", "w") as f:
+		with open(current_log_path, "w") as f:
 			json.dump(cluster_event_data, f)
 
 		if not loop: 
 			break 
 
-		# Retrieve data each minute 
+		# Retrieve data each second 
 		time.sleep(log_frequency)
 	
 	return 0
@@ -1641,22 +1482,18 @@ def log_parser(log_file, new_file, strings):
 	return parsed_logs
 
 """Misc Utils"""
-EVENT_SWEEP = 1682925843
-EVENT_SWEEP_05_03_2023 = 1683099273
+
 def pull_vm_scheduler_logs(event_number=0, force=True):
-	#TODO: Create log directory if not located yet
-	# TODO: Set local python path
-	#export PYTHONPATH=/Users/surya/Documents/sky/starburst
-	#subprocess.run(['export', 'PYTHONPATH=/Users/surya/Documents/sky/starburst'])
+	#TODO: Generalize this function for different GKE clusters, acccounts, and filepaths
+	#TODO: Set local python path
+
 	gcp_path = 'suryaven@sky-scheduler:/home/suryaven/test/starburst/starburst/logs/archive/{}/'.format(event_number)
 	local_path = '../logs/archive/'
-	#'/Users/suryaven/Documents/personal/sky/starburst/starburst/logs/archive/'
 
 	plot_dirs = ["../logs/", "../logs/archive/"]
 	for plot_dir in plot_dirs:
 		if not os.path.exists(plot_dir):
 			os.mkdir(plot_dir)
-	#'--zone', 'us-central1-c',
 
 	exists = os.path.isdir(local_path + str(event_number) + '/')
 	if not exists or force: 
