@@ -804,35 +804,7 @@ def main():
 	"""
 	Note: Only execute sweep through the main function, since mp package fails otherwise
 	"""
-	hyperparameters = copy.deepcopy(DEFAULT_HYPERPARAMETERS)
-	
-	fixed_values = {
-		"batch_time": 180, 
-		"mean_duration": 15,
-		"waiting_policy": "fifo_wait",
-		"cpu_sizes":[1, 2, 4],
-		"uniform_submission": True, 
-		"uniform_arrival": 4
-	}
-
-	fixed_values = OrderedDict(fixed_values)
-	
-	"""Varying values from outer most to inner most loop"""
-	varying_values = {	
-		"cpu_dist": [[0.6, 0.25, 0.15]],
-		"wait_time": [0.1, 2.5, 5, 10],
-		# TODO: [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.25] * 0.35578947 #Don't save the inverse in the sweep - 0.35578947
-		"arrival_rate": [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3] 
-	}
-	varying_values = OrderedDict(varying_values)
-
-	sweep = {
-		"fixed_values": fixed_values, 
-		"varying_values": varying_values
-	}
-
-	sweep = sweeps.SWEEPS['3']
-
+	sweep = sweeps.SWEEPS['6']
 	submit_sweep(sweep=sweep)
 	return 
 

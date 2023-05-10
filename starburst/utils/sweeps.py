@@ -1,9 +1,57 @@
 import numpy as np
+import submit_jobs
+
+DEFAULT_HYPERPARMATERS = submit_jobs.DEFAULT_HYPERPARAMETERS
 
 def generate_interval(min=0, max=10, intervals=10):
 	return np.linspace(min, max, num=intervals+1).tolist()
 
 SWEEPS = {
+	"6": { # Uniform wait -- smoke test scheduler
+        "fixed_values": {
+            "batch_time": 180, 
+            "mean_duration": 5,
+            "waiting_policy": "fifo_wait",
+            "cpu_sizes":[1, 2, 4],
+            "uniform_submission": True, 
+            "uniform_arrival": 10,
+        },
+	    "varying_values": {	
+            "cpu_dist": [[0.6, 0.25, 0.15]],
+            "wait_time": [1, 5],
+            "arrival_rate": [1] 
+        }
+    },
+	"5": { # Uniform wait -- smoke test scheduler
+        "fixed_values": {
+            "batch_time": 180, 
+            "mean_duration": 5,
+            "waiting_policy": "fifo_wait",
+            "cpu_sizes":[1, 2, 4],
+            "uniform_submission": True, 
+            "uniform_arrival": 10,
+        },
+	    "varying_values": {	
+            "cpu_dist": [[0.6, 0.25, 0.15]],
+            "wait_time": [0.5, 5],
+            "arrival_rate": [1] 
+        }
+    },
+	"4": { # Uniform wait -- smoke test scheduler
+        "fixed_values": {
+            "batch_time": 180, 
+            "mean_duration": 5,
+            "waiting_policy": "fifo_wait",
+            "cpu_sizes":[1, 2, 4],
+            "uniform_submission": True, 
+            "uniform_arrival": 30
+        },
+	    "varying_values": {	
+            "cpu_dist": [[0.6, 0.25, 0.15]],
+            "wait_time": [0.5, 5],
+            "arrival_rate": [1, 1, 1] 
+        }
+    },
     "3": {
         "fixed_values" : {
             "batch_time": 180,
