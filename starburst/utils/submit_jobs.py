@@ -94,9 +94,7 @@ result_dict = {
 	'simulator_spec': simulator_spec,
 	'stats': {}
 }
-'''
 
-'''
 run_config = {
 	# Cluster config
 	'cluster_size': args.cluster_size,
@@ -164,6 +162,7 @@ import concurrent.futures
 from google.cloud import container_v1
 
 def parallel_experiments(num_clusters=1, project_id = 'sky-burst', zone = 'us-central1-c', cluster_prefix='parallel-exp'):
+	#TODO: Finalize design and implement this codebase 
 	# Create a GKE client
 	client = container_v1.ClusterManagerClient()
 
@@ -326,7 +325,6 @@ def submit(jobs={}, arrivals=[], timestamp=None, index=None):
 
 			job_index += 1
 		#TODO: Improve stop condition -- wait until last job completes
-		
 		if job_index >= total_jobs: 
 			break
 
@@ -346,8 +344,7 @@ def submit(jobs={}, arrivals=[], timestamp=None, index=None):
 		# TODO: add scheduler_submit_time value in addition to submit_time 
 		job_data[str(i)]['scheduler_submit_time'] = submit_times[i] 
 
-	with open(trial_data_path, "w") as f: #"../logs/event_data.json", "r") as f:
-		#job_data = json.dump(f)
+	with open(trial_data_path, "w") as f:
 		json.dump(job_data, f)
 
 	return 
@@ -406,8 +403,7 @@ def generate_sampled_job_yaml(job_id=0, arrival_time=0, sleep_time=5, workload={
 	return 
 
 def clear_logs():
-	# TODO: Automate log cleaning
-	# TODO: Remove logs and both onprem and cloud cluster
+	"""Automates clearing of cluster state by removing event, logs, and pods on both onprem and cloud cluster"""
 	print("Started Clearing Logs...")
 
 	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst")
@@ -420,39 +416,13 @@ def clear_logs():
 
 	cluster_apis = [(onprem_api, onprem_api_batch), (cloud_api, cloud_api_batch)]
 
-	'''
-	for apis in cluster_apis:
-		# TODO: Add a try catch exception in case deletion fails 
-
-		api, api_batch = apis
-		# Delete all event logs in the cluster
-		api.delete_collection_namespaced_event(
-			namespace='default',  # Replace with the namespace where you want to delete the events
-			body=client.V1DeleteOptions(),
-		)
-
-		jobs_list = api_batch.list_namespaced_job(namespace='default')
-		for job in jobs_list.items:
-			api_batch.delete_namespaced_job(
-				name=job.metadata.name, 
-				namespace='default', 
-				body=client.V1DeleteOptions(
-					propagation_policy='Foreground', 
-					grace_period_seconds=0
-					)
-			)
-	'''
-
 	while True:
 		try:
-			# code to try executing
 			for apis in cluster_apis:
-				# TODO: Add a try catch exception in case deletion fails 
-
 				api, api_batch = apis
-				# Delete all event logs in the cluster
+
 				api.delete_collection_namespaced_event(
-					namespace='default',  # Replace with the namespace where you want to delete the events
+					namespace='default',
 					body=client.V1DeleteOptions(),
 				)
 
@@ -468,24 +438,15 @@ def clear_logs():
 					)
 
 				# TODO: Debug code that deletes all pods from previous runs 
-				# List all the pods in the target namespace
 				pods = api.list_namespaced_pod(namespace='default')
-
-				# Iterate through the pods and delete them
 				for pod in pods.items:
 					print(f"Deleting pod {pod.metadata.name} in namespace {pod.metadata.namespace}")
 					api.delete_namespaced_pod(name=pod.metadata.name, namespace=pod.metadata.namespace, body=client.V1DeleteOptions())
-					
-
-			# raise an exception to test
 		except Exception as e:
-			# print the exception message
 			print(f"Caught an exception: {e}")
-			# re-execute the code inside the try block
 			print("Re-executing code...")
 			continue
 		else:
-			# if no exceptions were raised, break out of the loop
 			print("Logs cleared successfully.")
 			break	
 	print("Completed Clearing Logs...")
@@ -496,18 +457,25 @@ def log(tag=None, batch_repo=None, loop=True):
 
 def empty_cluster():
 	"""Function returns true if there are any running pods in the cluster"""
-	'''
-	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst")
-	onprem_api = client.CoreV1Api()
+	"""
+	'status': {'active': None,
+	'completed_indexes': None,
+	'completion_time': datetime.datetime(2023, 4, 30, 7, 3, 35, tzinfo=tzutc()),
+	'conditions': [{'last_probe_time': datetime.datetime(2023, 4, 30, 7, 3, 35, tzinfo=tzutc()),
+					'last_transition_time': datetime.datetime(2023, 4, 30, 7, 3, 35, tzinfo=tzutc()),
+					'message': None,
+					'reason': None,
+					'status': 'True',
+					'type': 'Complete'}],
+	'failed': None,
+	'ready': 0,
+	'start_time': datetime.datetime(2023, 4, 30, 7, 3, 29, tzinfo=tzutc()),
+	'succeeded': 1,
+	'uncounted_terminated_pods': {'failed': None, 'succeeded': None}}}
+	"""
 
-	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst-cloud")
-	cloud_api = client.CoreV1Api()
-
-	cluster_apis = [onprem_api, cloud_api]
-	namespace = "default"
-	'''
 	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst")
-	onprem_api = client.CoreV1Api()
+	onnprem_api = client.CoreV1Api()
 	onprem_api_batch = client.BatchV1Api()
 
 	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst-cloud")
@@ -523,46 +491,12 @@ def empty_cluster():
 		running_pods = [pod for pod in pods.items if pod.status.phase == "Running"]
 		if running_pods:
 			return False
-
+		
 		jobs = api_batch.list_job_for_all_namespaces()
-		running_jobs = [job.status.succeeded for job in jobs.items if job.status.succeeded != 1] # if pod.status.phase == "Running"]
-		#print(running_jobs)
-		#time.sleep(1000)
-		if running_jobs:
+		unsucceedful_jobs = [job.status.succeeded for job in jobs.items if job.status.succeeded != 1]
+		if unsucceedful_jobs:
 			return False 
 
-		"""
-		'status': {'active': None,
-		'completed_indexes': None,
-		'completion_time': datetime.datetime(2023, 4, 30, 7, 3, 35, tzinfo=tzutc()),
-		'conditions': [{'last_probe_time': datetime.datetime(2023, 4, 30, 7, 3, 35, tzinfo=tzutc()),
-						'last_transition_time': datetime.datetime(2023, 4, 30, 7, 3, 35, tzinfo=tzutc()),
-						'message': None,
-						'reason': None,
-						'status': 'True',
-						'type': 'Complete'}],
-		'failed': None,
-		'ready': 0,
-		'start_time': datetime.datetime(2023, 4, 30, 7, 3, 29, tzinfo=tzutc()),
-		'succeeded': 1,
-		'uncounted_terminated_pods': {'failed': None, 'succeeded': None}}}
-		"""
-	'''
-	for api in cluster_apis:
-		pods = api.list_namespaced_pod(namespace)
-		running_pods = [pod for pod in pods.items if pod.status.phase == "Running"]
-		if running_pods:
-			return False
-	'''
-	'''
-	for api in cluster_apis:
-		jobs = api.list_job_for_all_namespaces()
-		running_jobs = [job.status for job in jobs.items]# if pod.status.phase == "Running"]
-		print(running_jobs)
-		time.sleep(1000)
-		if running_jobs:
-			return False
-	'''
 	return True 
 
 def reached_last_job(job_name): 
@@ -572,30 +506,19 @@ def reached_last_job(job_name):
 				return job
 		return None
 
-
 	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst")
 	onprem_api = client.CoreV1Api()
 	onprem_api_batch = client.BatchV1Api()
 
 	try: 
 		job_list = onprem_api_batch.list_namespaced_job(namespace="default")
-		job = find_job_with_substring(job_list.items, job_name)
-
+		job = fid_job_with_substring(job_list.items, job_name)
 		status = job.status
 
 		if job: 
-			logger.debug("Succ")
+			logger.debug("Job Succeeded")
 			logger.debug(str(job.status.succeeded))
-			#logger.debug("Found job")# + str(job))
-			#logger.debug("Succeeded status " + str(job.status.succeeded) + " " + str(status.succeeded) + " " + str(status['succeeded']))
-			#logger.debug("Found job with status " + str(status))
-			
-		#job = onprem_api_batch.read_namespaced_job(name=job_name, namespace="default")
-		
-
-		#if status.succeeded is not None and status.succeeded > 0:
-		#if status.succeeded == 1:
-		#if job.status.succeeded == 1 or status.succeeded == 1 or status['succeeded'] == 1:
+			#logger.debug("Found job " + str(job) + " with status " + str(status))
 		if job.status.succeeded == 1:
 			return True 
 	except Exception as e:
@@ -613,20 +536,7 @@ def reached_last_job(job_name):
 		if job: 
 			logger.debug("Succ")
 			logger.debug(str(job.status.succeeded))
-			#logger.debug("Found job")# + str(job))
-			#logger.debug("Succeeded status " + str(job.status.succeeded) + " " + str(status.succeeded) + " " + str(status['succeeded']))
-			#logger.debug("Found job with status " + str(status))
-			
-
-		#if job: 
-		#	logger.debug("Found job " + str(job))
-
-		#job = cloud_api_batch.read_namespaced_job(name=job_name, namespace="default")
-		#status = job.status
-
-		#if status.succeeded is not None and status.succeeded > 0:
-		#if status.succeeded == 1:
-		#if job.status.succeeded == 1 or status.succeeded == 1 or status['succeeded'] == 1:
+			#logger.debug("Found job " + str(job) + " with status " + str(status))
 		if job.status.succeeded == 1:
 			return True 
 	except Exception as e: 
@@ -694,7 +604,6 @@ def run_sweep(sweep={}):#, fixed_values=OrderedDict(), varying_values=OrderedDic
 
 	return sweep_timestamp
 
-#def submit_sweep(fixed_values=OrderedDict(), varying_values=OrderedDict()):
 def submit_sweep(sweep=None):
 	fixed_values = OrderedDict(sweep['fixed_values'])
 	varying_values = OrderedDict(sweep['varying_values'])
@@ -729,9 +638,10 @@ def generate_sweep(fixed_values=OrderedDict(), varying_values=OrderedDict()):
 			- waiting time [column]
 				- arrival rate [data]
 	'''
-	sweep={}
+	sweep = {}
 	sweep["fixed_values"] = fixed_values
 	sweep["varying_values"] = varying_values
+
 	# DEFAULT VALUES
 	hyperparameters = copy.deepcopy(DEFAULT_HYPERPARAMETERS)
 	
@@ -740,8 +650,6 @@ def generate_sweep(fixed_values=OrderedDict(), varying_values=OrderedDict()):
 		hyperparameters[key] = value
 
 	# VARYING VALUES
-	# TODO: Create cartesian product of values then iterate through the values and map them to a job index
-
 	keys = []
 	values = []
 	for key, value in varying_values.items():
@@ -749,52 +657,12 @@ def generate_sweep(fixed_values=OrderedDict(), varying_values=OrderedDict()):
 		values.append(value)
 
 	#values = values[::-1]
-
 	grid_search = itertools.product(*values)
 	
 	for trial_index, trial in enumerate(grid_search):
 		for key_index, key in enumerate(keys):
 			hyperparameters[key] = trial[key_index]
 		sweep[trial_index] = copy.deepcopy(hyperparameters)
-
-	'''
-	# SWEEP 1
-	hyperparameters["policy"] = "fifo_wait"
-
-	for cpu_dist in cpu_dists: 
-		for w in wait_times:
-			for a in arrival_rates:
-				hyperparameters["cpu_dist"] = cpu_dist
-				hyperparameters["arrival_rate"] = a
-				hyperparameters["wait_time"] = w
-				sweep[index] = copy.deepcopy(hyperparameters)
-				index += 1
-	'''
-
-	'''
-	# SWEEP 2
-	hyperparameters["policy"] = "fifo_onprem_only"
-
-	for cpu_dist in cpu_dists: 
-		for a in arrival_rates:
-			hyperparameters["cpu_dist"] = cpu_dist
-			hyperparameters["arrival_rate"] = a
-			sweep[index] = copy.deepcopy(hyperparameters)
-			index += 1			
-	'''
-
-	'''
-	# SWEEP 3
-	hyperparameters["policy"] = "time_estimator"
-
-	for cpu_dist in cpu_dists: 
-		for a in arrival_rates:
-			hyperparameters["arrival_rate"] = a
-			hyperparameters["wait_time"] = w
-			sweep[index] = hyperparameters
-			index += 1
-	'''
-	
 	return sweep
 
 def generate_interval(min=0, max=10, intervals=10):
