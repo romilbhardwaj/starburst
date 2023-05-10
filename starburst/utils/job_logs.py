@@ -212,6 +212,12 @@ def average_jct():
 #diff_df['norm_system_utilization'] = total_job_volume/(job_makespan*diff_df['cluster_size']*sim_df['gpus_per_node'].iloc[0])
 #x_axis = 'norm_system_utilization'
 
+'''
+def generate_gantt_chart(jobs, num_nodes, save=True, path=plot_path, subplt=axs, plt_index=i, tag=tag, scale=scale, plot_sweep=plot_sweep, dim=dim, ratio=ratio, gpus_per_node=gpus_per_node):
+	axs = plot_jobs.plot_trace_spacetime_and_spillover(jobs, num_nodes, save=save, path=path, subplt=subplt, plt_index=plt_index, tag=tag, scale=scale, plot_sweep=False, dim=dim, ratio=ratio, gpus_per_node=gpus_per_node)
+	return axs
+'''
+
 def plot_job_intervals(jobs, num_nodes, save=False, path=None, subplt=None, plt_index=None, tag=None, scale=1, plot_sweep=False, dim=(-100, 100, 0, 100), ratio=(1, 1), gpus_per_node=8):
 	axs = plot_jobs.plot_trace_spacetime_and_spillover(jobs, num_nodes, save=save, path=path, subplt=subplt, plt_index=plt_index, tag=tag, scale=scale, plot_sweep=False, dim=dim, ratio=ratio, gpus_per_node=gpus_per_node)
 	return axs
@@ -692,10 +698,42 @@ def retrieve_raw_events():
 	n = text_file.write(str(events))
 	text_file.close()
 
+def plot_gantt_charts(jobs_df=None, scale=1, plot_sweep=False, get_data=False, dim=(-100, 100, 0, 100), ratio=(1, 1), gpus_per_node=8, avoid_congestion=True, clip_last_job=True):
+	num_graphs = len(jobs_df)
+	fig, axs = plt.subplots(nrows=num_graphs, ncols=1, figsize=(ratio[0]*scale, ratio[1]*scale))
+	for i in range(num_graphs):
+		plot_dir = "../logs/archive/plots/"
+		if not os.path.exists(plot_dir):
+			os.mkdir(plot_dir)
 
-def view_real_arrival_times(event_number=None, scale=1, plot_sweep=False, get_data=False, dim=(-100, 100, 0, 100), ratio=(1, 1), gpus_per_node=8, avoid_congestion=True):#cluster_data_path=None, submission_data_path=None):
+		plot_path = "../logs/archive/plots/" + str(i) + ".png"
+		tag = ""
+
+		# TODO: Add list of varying value indices and fixed value indices to jobs dataframe
+
+		varying_values = jobs_df['varying_values'][i]
+		for value in varying_values: 
+			tag += str(jobs_df[value][i])
+			tag += " | "
+
+		if clip_last_job:
+			last_end_time = max(jobs_df['completion_times'][i])
+			dim = (dim[0], dim[1], dim[2], last_end_time)
+
+		axs = plot_job_intervals(jobs, num_nodes, save=True, path=plot_path, subplt=axs, plt_index=i, tag=tag, scale=scale, plot_sweep=plot_sweep, dim=dim, ratio=ratio, gpus_per_node=gpus_per_node)
+		
+		file_count += 1
+		if file_count >= num_graphs: 
+			break 
+			
+	plt.show()
+	return 0 
+
+# TODO: Rename function as generate_gantt_chart
+def view_real_arrival_times(event_number=None, scale=1, plot_sweep=False, get_data=False, dim=(-100, 100, 0, 100), ratio=(1, 1), gpus_per_node=8, avoid_congestion=True, clip_last_job=True):
+#def generate_gantt_chart(jobs_df=None, dim=(-100, 100, 0, 100), ratio=(1, 1), gpus_per_node=8, avoid_congestion=True, clip_last_job=True):
 	costs = {}
-	if event_number: #cluster_data_path and submission_data_path: 
+	if event_number:
 		cluster_data_path = "../logs/archive/" + str(event_number) + "/events/"
 		submission_data_path = "../logs/archive/" + str(event_number) + "/jobs/"
 		sweep_data_path = "../logs/archive/" + str(event_number) + '/sweep.json'
@@ -703,9 +741,7 @@ def view_real_arrival_times(event_number=None, scale=1, plot_sweep=False, get_da
 
 		files = os.listdir(cluster_data_path)
 		num_graphs = len(files) #-2#+ 1 #2
-		#fig, axs = plt.subplots(nrows=num_graphs, ncols=1, figsize=(5*scale, 30*scale))
 		fig, axs = plt.subplots(nrows=num_graphs, ncols=1, figsize=(ratio[0]*scale, ratio[1]*scale))
-		#fig, axs = plt.subplots(nrows=2, ncols=1)
 		# Iterate over the files and check if they have the ".json" extension
 		#for file in files:
 		file_count = 0 
@@ -729,8 +765,6 @@ def view_real_arrival_times(event_number=None, scale=1, plot_sweep=False, get_da
 				continue
 			'''
 
-			#print("CLUSTER LOG PATH")
-			#print(cluster_log_path)
 			try:
 				cluster_event_data = read_cluster_event_data(cluster_log_path=cluster_log_path)
 				submission_data = read_submission_data(submission_log_path=submission_log_path)
@@ -743,15 +777,12 @@ def view_real_arrival_times(event_number=None, scale=1, plot_sweep=False, get_da
 			if get_data: 
 				return jobs, events, submissions
 
-			#cost = job_logs.cloud_cost(jobs=jobs, num_nodes=num_nodes)
-			#costs[file] = cost
+
 			plot_dir = "../logs/archive/plots/"
 			if not os.path.exists(plot_dir):
-				#os.mkdir(archive_path)
 				os.mkdir(plot_dir)
 
 			plot_path = "../logs/archive/plots/" + file[:-5] + ".png"
-			#print(plot_path)
 		
 			#if plot_sweep:
 			#"wait " + str(jobs_wait['wait_time'][i]) +  " arr " + str(jobs_wait['arrival_rate'][i] 
@@ -760,11 +791,14 @@ def view_real_arrival_times(event_number=None, scale=1, plot_sweep=False, get_da
 			'''
 			tag = str(file)
 			tag = ""
-			varying_values = sweep_data['varying_values'] #varying_values
+			varying_values = sweep_data['varying_values']
 			for value in varying_values: 
 				tag += str(submission_data['hyperparameters'][value])
 				tag += " | "
-			#for 
+
+			if clip_last_job:
+				last_end_time = 100
+				dim = (dim[0], dim[1], dim[2], last_end_time)
 
 			axs = plot_job_intervals(jobs, num_nodes, save=True, path=plot_path, subplt=axs, plt_index=i, tag=tag, scale=scale, plot_sweep=plot_sweep, dim=dim, ratio=ratio, gpus_per_node=gpus_per_node)
 			#else:
@@ -792,7 +826,7 @@ def analyze_df(jobs_df):
 	#metrics[i] = {"cost": cost, "cost_density": cost_density, "system_utilization": system_utilization, "hyperparameters": hyperparameters}
 	return jobs_df
 
-def retrieve_df(event_number=None, graph=False, avoid_congestion=False):
+def retrieve_df(event_number=None, avoid_congestion=False):
 	"""Turns all logs from sweep into a pandas dataframe for analysis"""
 	all_jobs = {}
 	if event_number:
@@ -822,6 +856,9 @@ def retrieve_df(event_number=None, graph=False, avoid_congestion=False):
 				jobs[k] = v
 
 			sweep_metrics = sweep[str(i)]
+			jobs["varying_values"] = sweep["varying_values"].keys()
+			jobs["fixed_values"] = sweep["fixed_values"].keys()
+
 			for k, v in sweep_metrics.items(): 
 				jobs[k + "_sweep"] = v
  			
@@ -1606,7 +1643,7 @@ def log_parser(log_file, new_file, strings):
 """Misc Utils"""
 EVENT_SWEEP = 1682925843
 EVENT_SWEEP_05_03_2023 = 1683099273
-def pull_vm_scheduler_logs(event_number=0):
+def pull_vm_scheduler_logs(event_number=0, force=True):
 	#TODO: Create log directory if not located yet
 	# TODO: Set local python path
 	#export PYTHONPATH=/Users/surya/Documents/sky/starburst
@@ -1620,5 +1657,8 @@ def pull_vm_scheduler_logs(event_number=0):
 		if not os.path.exists(plot_dir):
 			os.mkdir(plot_dir)
 	#'--zone', 'us-central1-c',
-	subprocess.run(['gcloud', 'compute',  'scp', '--recurse', gcp_path, local_path, '--zone', 'us-central1-c',])
+
+	exists = os.path.isdir(local_path + str(event_number) + '/')
+	if not exists or force: 
+		subprocess.run(['gcloud', 'compute',  'scp', '--recurse', gcp_path, local_path, '--zone', 'us-central1-c',])
 
