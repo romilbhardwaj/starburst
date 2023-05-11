@@ -735,7 +735,8 @@ def view_real_arrival_times(event_number=None, scale=1, plot_sweep=False, get_da
 				cluster_event_data = read_cluster_event_data(cluster_log_path=cluster_log_path)
 				submission_data = read_submission_data(submission_log_path=submission_log_path)
 				jobs, num_nodes, hps = parse_event_logs(cluster_event_data=cluster_event_data, submission_data=submission_data, event_time=event_number, avoid_congestion=avoid_congestion)#time_stamp=event_number)
-			except Exception as e: 
+			except Exception as e:
+				print(e)
 				continue 	
 		
 			events = cluster_event_data
