@@ -8,7 +8,6 @@ from kubernetes import client, config
 from datetime import datetime
 from starburst.drivers import main_driver
 import json
-from kubernetes import client, config
 import starburst.utils.log_jobs as log_jobs
 import multiprocessing as mp
 import starburst.drivers.main_driver as driver 
@@ -432,14 +431,68 @@ def generate_sweep(fixed_values=OrderedDict(), varying_values=OrderedDict()):
 def generate_interval(min=0, max=10, intervals=10):
 	return np.linspace(min, max, num=intervals+1).tolist()
 
+def create_cluster(cluster=None):
+	"""
+	TODO: Wait till GKE cluster finishes creating
+	TODO: https://cloud.google.com/kubernetes-engine/docs/reference/rest/v1/projects.locations.clusters 
+	"""
+	client = container_v1.ClusterManagerClient() 
+	operation = client.create_cluster(project_id=cluster['project_id'], zone=cluster['zone'], cluster=cluster['cluster'])
+
+def delete_cluster(cluster=None):
+	"""
+	Wait until cluster finishes creating
+	"""
+	client = container_v1.ClusterManagerClient() 
+	operation = client.delete_cluster(project_id=cluster['project_id'], zone=cluster['zone'], cluster_id=cluster['name'])
+
 def main(arg1, arg2):
 	"""
 	Runs sweep of runs on starburst
+	TODO: Integrate cluster creation and deletion code before and after call to submit_sweep()
+	TODO: Create both onprem and cloud clusters before sweep
 	"""
 	sweep = sweeps.SWEEPS[arg2]
+	cluster = {
+		'name': "starburst_gpu",
+		'network': 'skypilot-vpc',
+		'initial_node_count': 1,
+		'master_auth': {
+			'username': "",
+			'password': ""
+		},
+		'node_config': {
+			'machine_type': 'n1-standard-96',
+			'disk_size_gb': 100,
+			'oauth_scopes': [
+				'https://www.googleapis.com/auth/compute',
+				'https://www.googleapis.com/auth/devstorage.read_write',
+				'https://www.googleapis.com/auth/logging.write',
+				'https://www.googleapis.com/auth/monitoring'
+			],
+			"accelerators": [
+                {
+                    "accelerator_count": 1,
+                    "accelerator_type": "nvidia-tesla-v100"
+                }
+            ]
+		},
+	}
+
+	cluster_config = {
+		"cluster_name": "starburst_gpu",
+		"project_id": 'sky-burst', 
+		"zone": 'us-central1-c', 
+		"cluster_prefix": 'parallel-exp',
+		"cluster": cluster
+	}
+
 	if arg1 == 'run': 
+		#create_cluster(cluster_config)
 		submit_sweep(sweep=sweep)
-	return 
+		#delete_cluster(cluster_config)
+
+	return
 
 if __name__ == '__main__':
     main(arg1=sys.argv[1], arg2=sys.argv[2])
@@ -454,7 +507,13 @@ def start_scheduler(policy="fifo_onprem_only", onprem_cluster="gke_sky-burst_us-
 	#subprocess.run(['python3', '-m', 'starburst.drivers.main_driver' '--policy', policy, '--onprem_k8s_cluster_name', onprem_cluster,'--cloud_k8s_cluster_name', cloud_cluster])
 	return
 
-def parallel_experiments(num_clusters=1, project_id = 'sky-burst', zone = 'us-central1-c', cluster_prefix='parallel-exp'):
+def update_local_kube_config():
+	"""
+	Update the local kubeconfig with the values of the newly created cluster
+	Use gcloud to update local kubeconfig values
+	"""
+
+def parallel_experiments(cluster_configs=None): #num_clusters=1, project_id='sky-burst', zone = 'us-central1-c', cluster_prefix='parallel-exp'):
 	'''
 	Creates cluster, submits job, deletes cluster
 	#TODO: Finalize design and implement this codebase 
@@ -462,47 +521,7 @@ def parallel_experiments(num_clusters=1, project_id = 'sky-burst', zone = 'us-ce
 	#TODO: Create a GPU GKE cluster then delete it
 	#TODO: Add created cluster name to local /.kube/config file to allow for automated authentication 
 	'''	
-	client = container_v1.ClusterManagerClient()
-
-	def create_cluster(cluster_name):
-		nonlocal project_id
-		nonlocal zone
-
-		# Define the cluster config
-		cluster = {
-			'name': cluster_name,
-			'network': 'skypilot-vpc',
-			'initial_node_count': 1,
-			#'master_auth': {
-			#	'username': 'admin',
-			#	'password': 'passwordpassword'
-			#},
-			'node_config': {
-				'machine_type': 'n1-standard-1',
-				'disk_size_gb': 100,
-				'oauth_scopes': [
-					'https://www.googleapis.com/auth/compute',
-					'https://www.googleapis.com/auth/devstorage.read_write',
-					'https://www.googleapis.com/auth/logging.write',
-					'https://www.googleapis.com/auth/monitoring'
-				]
-			}
-		}
-		operation = client.create_cluster(project_id=project_id, zone=zone, cluster=cluster)
-		#result = operation.result()
-		status = operation.status
-		print(f'Cluster {cluster_name} status {status}')
-		return status
-
-	def delete_cluster(cluster_name):
-		nonlocal project_id
-		nonlocal zone
-		operation = client.delete_cluster(project_id=project_id, zone=zone, cluster_id=cluster_name)
-		#result = operation.result()
-		status = operation.status
-		print(f'Cluster {cluster_name} status {status}')
-		return status 
-
+	client = container_v1.ClusterManagerClient() 
 	# Use a ThreadPoolExecutor to create the clusters in parallel
 	with concurrent.futures.ThreadPoolExecutor() as executor:
 		# Submit the create_cluster function for each cluster to the executor

@@ -1,4 +1,3 @@
-from prometheus_api_client import PrometheusConnect
 import matplotlib.pyplot as plt
 import math
 from kubernetes import client, config
@@ -564,7 +563,6 @@ def pull_vm_scheduler_logs(event_number=0, force=True):
 
 
 def plot_docker_pull_time(event_data=None):
-	# TODO: Store docker pull time
 	'''
 	Outputs: 
 	(1) Docker pull start time
@@ -590,6 +588,8 @@ def plot_docker_pull_time(event_data=None):
 	(5) Event: https://kubernetes.io/docs/reference/kubernetes-api/cluster-resources/event-v1/
 	(6) Grafana Agent: https://www.cncf.io/blog/2023/03/13/how-to-use-kubernetes-events-for-effective-alerting-and-monitoring/ 
 	(x) Something else
+
+	# TODO: Store docker pull time
 	'''
 	image_pull_times = []
 	if event_data: 
