@@ -10,3 +10,7 @@ pandas
 numpy 
 tabulate
 tqdm
+cvxpy
+seaborn
+google-cloud
+google-cloud-container
