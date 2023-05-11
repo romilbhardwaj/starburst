@@ -11,7 +11,7 @@ for process in processes:
         cmdline = process.cmdline()
 
         # check if this is a Python process and if it matches the script name
-        if name == 'python3' and 'sampled_jobs.py' in cmdline:
+        if name == 'python3' and 'submit_jobs.py' in cmdline:
             # terminate the process
             process.terminate()
     except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):

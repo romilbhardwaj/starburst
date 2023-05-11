@@ -247,11 +247,11 @@ def empty_cluster(clusters={}):
 	'uncounted_terminated_pods': {'failed': None, 'succeeded': None}}}
 	"""
 
-	config.load_kube_config(context=cluster['onprem'])
+	config.load_kube_config(context=clusters['onprem'])
 	onprem_api = client.CoreV1Api()
 	onprem_api_batch = client.BatchV1Api()
 
-	config.load_kube_config(context=cluster['cloud'])
+	config.load_kube_config(context=clusters['cloud'])
 	cloud_api = client.CoreV1Api()
 	cloud_api_batch = client.BatchV1Api()
 
@@ -354,8 +354,9 @@ def run(hyperparameters, batch_repo, index):
 	# Keep running until last job is completed
 	last_job = len(jobs) - 2
 	while True:
-		logger.debug("Waiting for last job to complete $$$")
-		if reached_last_job(last_job="sleep-" + str(last_job), clusters=clusters):
+		logger.debug("Running ...")
+		if reached_last_job(job_name="sleep-" + str(last_job), clusters=clusters):
+			logger.debug("Last job completed $$$")
 			p1.terminate()
 			p2.terminate()
 			break 
@@ -436,7 +437,7 @@ def main(arg1, arg2):
 	Runs sweep of runs on starburst
 	"""
 	sweep = sweeps.SWEEPS[arg2]
-	if arg1: 
+	if arg1 == 'run': 
 		submit_sweep(sweep=sweep)
 	return 
 

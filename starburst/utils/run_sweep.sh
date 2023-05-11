@@ -13,4 +13,4 @@ python3 clean_processes.py
 python3 clean_processes.py
 python3 clean_processes.py
 
-nohup python3 submit_jobs.py > ../logs/logs/output_$1.log 2>&1 &
+nohup python3 submit_jobs.py run $1 > ../logs/logs/output_$2.log 2>&1 &
