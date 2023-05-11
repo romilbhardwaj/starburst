@@ -20,107 +20,10 @@ from collections import OrderedDict
 import atexit 
 import logging
 import sweeps 
+import concurrent.futures
+from google.cloud import container_v1
 
 logger = logging.getLogger(__name__)
-
-'''
-Design Layout [DRAFT 4]
-- Run all experiments in on large cluster
-	- (1) Mimic separate nodes by paritioning existing nodes with boundaries
-	- (2) Subpartition nodes within a given cluster to run specific nodes
-
-
-Design Layout [DRAFT 3]
-- Before each run within a sweep, create the cluster then delete the cluster
-	- Cluster creation and deletion takes ~5-10 minutes to create -- another 5-10 minutes to delete 
-		- There may be a quota on number of clusters I can launch
-	- Steps to Complete
-		- Create N cluster at once in parallel, where N > 100
-		- Setup github code within each cluster then run a sweep 
-		- SCP logs from scheduler VM back to local commputer
-			- No need to scp any files or logs directly from k8s clusters
-		- Then terminate the clusters all in parallel
-Design Layout [DRAFT 2]
-
-- Sweep Requirements -> Cluster -> Add Logs -> Parse Logs -> Analyze Sweep Requirements -> Plot
-- Input Requirements -> Grid Search Values 
-
-Design Layout [DRAFT 1]
-
-1. Generate Job Hyperparameters
-	a. Hyperparameters
-		i. Arrival Time
-		ii. Sleep Time
-			a. 5 min lower bound
-			b. 24 hr upper bound
-		iii. Workload Size
-			a. CPUs
-			b. GPUs
-2. Insert Hyperparameters into Jinja Job Yaml
-3. Submit Batch of Jobs
-	a. Same arrival time 
-		i. Different sleep time 
-		ii. Diferent workload size
-	b. Randomly sampled arrival time
-		i. Different sleep time
-		ii. Different workload size
-
-Example -- Fixed workload and sleep time
-- Same workload, same sleep time
-	- Varying arrival time
-		- Simulate as a poisson process: https://timeseriesreasoning.com/contents/poisson-process/
-		- Specify difference between arrival time of two events from exponential distribution
-			- Keep a cumalitive sum of the times stored in an array
-	- Submit Jobs to Array of Job times
-		- Simple loop 
-		- Multithreading 
-			- https://www.studytonight.com/python/python-threading-timer-object
-
-Option 1: 
-	- if proability of event is less than generated thresshold then submit job 
-	- space betwen two events follows exponential 
-'''
-
-'''
-result_dict = {
-	'idx': np.array([j.idx for j in finished_jobs]),
-	'arrival': np.array([j.arrival for j in finished_jobs]),
-	'start': np.array([j.start for j in finished_jobs]),
-	'runtime': np.array([j.runtime for j in finished_jobs]),
-	'deadline': np.array([j.deadline for j in finished_jobs]),
-	'num_gpus': np.array([j.num_gpus for j in finished_jobs]),
-	'state': np.array([j.state for j in finished_jobs]),
-	'allocated_gpus': np.array([j.allocated_gpus for j in finished_jobs]),
-	'simulator_spec': simulator_spec,
-	'stats': {}
-}
-
-run_config = {
-	# Cluster config
-	'cluster_size': args.cluster_size,
-	'gpus_per_node': args.gpus_per_node,
-	'cpus_per_node': args.cpus_per_node,
-	# Policy config
-	'sched_alg': args.sched_alg,
-	'binpack_alg': args.binpack_alg,
-	'waiting_policy': args.waiting_policy,
-	'backfill': args.backfill,
-	'loop': args.loop,
-	'predict_wait': args.predict_wait,
-	# Simulator config
-	'verbose': args.verbose,
-	'debug': args.debug,
-	'warmup_jobs': args.warmup_jobs,
-	'jobgen_spec': {
-		'dataset': args.dataset,
-		'arrival_rate': args.arrival_rate,
-		'cv_factor': args.cv_factor,
-		'total_jobs': args.total_jobs,
-		'job_runtime': args.job_runtime,
-		'seed': args.seed
-	}
-}
-'''
 
 DEFAULT_HYPERPARAMETERS = {
 	"uniform_arrival": 1, 
@@ -147,97 +50,6 @@ DEFAULT_HYPERPARAMETERS = {
 	"memory_sizes": [100, 500, 1000, 50000],
 	"memory_dict": [0.25, 0.25, 0.25, 0.25],
 }
-
-"""
-Core Dictionaries
-- Job Dictionary
-- TODO: Sweep Dictionary 
-
-Core Functions
-- Sweep 
-	- Generate_Sweep()
-"""
-
-import concurrent.futures
-from google.cloud import container_v1
-
-def parallel_experiments(num_clusters=1, project_id = 'sky-burst', zone = 'us-central1-c', cluster_prefix='parallel-exp'):
-	#TODO: Finalize design and implement this codebase 
-	# Create a GKE client
-	client = container_v1.ClusterManagerClient()
-
-	def create_cluster(cluster_name):
-		nonlocal project_id
-		nonlocal zone
-
-		# Define the cluster config
-		cluster = {
-			'name': cluster_name,
-			'network': 'skypilot-vpc',
-			'initial_node_count': 1,
-			#'master_auth': {
-			#	'username': 'admin',
-			#	'password': 'passwordpassword'
-			#},
-			'node_config': {
-				'machine_type': 'n1-standard-1',
-				'disk_size_gb': 100,
-				'oauth_scopes': [
-					'https://www.googleapis.com/auth/compute',
-					'https://www.googleapis.com/auth/devstorage.read_write',
-					'https://www.googleapis.com/auth/logging.write',
-					'https://www.googleapis.com/auth/monitoring'
-				]
-			}
-		}
-
-		# Create the cluster
-		operation = client.create_cluster(project_id=project_id, zone=zone, cluster=cluster)
-		#result = operation.result()
-		status = operation.status
-		print(f'Cluster {cluster_name} status {status}')
-		return status
-
-	def delete_cluster(cluster_name):
-		nonlocal project_id
-		nonlocal zone
-
-		# Delete the cluster
-		operation = client.delete_cluster(project_id=project_id, zone=zone, cluster_id=cluster_name)
-		#result = operation.result()
-		status = operation.status
-		print(f'Cluster {cluster_name} status {status}')
-		return status 
-
-	# Use a ThreadPoolExecutor to create the clusters in parallel
-	with concurrent.futures.ThreadPoolExecutor() as executor:
-		# Submit the create_cluster function for each cluster to the executor
-		futures = [executor.submit(create_cluster, f'{cluster_prefix}-{i}') for i in range(num_clusters)]
-		# Wait for all the futures to complete
-		'''
-		for future in concurrent.futures.as_completed(futures):
-			try:
-				# Get the result of the future, if available
-				result = future.result()
-			except Exception as e:
-				# Handle any exceptions raised by the create_cluster function
-				print(f'Error creating cluster: {e}')
-		'''
-
-	# Use a ThreadPoolExecutor to delete the clusters in parallel
-	with concurrent.futures.ThreadPoolExecutor() as executor:
-		# Submit the delete_cluster function for each cluster to the executor
-		futures = [executor.submit(delete_cluster, f'{cluster_prefix}-{i}') for i in range(num_clusters)]
-		# Wait for all the futures to complete
-		'''
-		for future in concurrent.futures.as_completed(futures):
-			try:
-				# Get the result of the future, if available
-				result = future.result()
-			except Exception as e:
-				# Handle any exceptions raised by the delete_cluster function
-				print(f'Error deleting cluster: {e}')
-		'''
 
 class Config:
     def __init__(self, config_dict):
@@ -617,24 +429,11 @@ def plot_sweep(sweep_timestamp=0, fixed_values=OrderedDict(), varying_values=Ord
 
 def generate_sweep(fixed_values=OrderedDict(), varying_values=OrderedDict()): 
 	"""
-	Takes specified fixed values and generates grid of hyperparameters based on varying values 
-	"""
+	Takes specified fixed values and generates grid of hyperparameters based on varying values
+	
 	# TODO: Integrate hpo tool (e.g. optuna)
 	# TODO: Specify grid search values, then plot them
-
-	'''
-	Example 1:
-	Sweep: 
-		1 - arrival rates
-		2 - waiting times
-		3 - policy
-		4 - cpu_dist
-
-		- order
-		- cpu dist [row] 
-			- waiting time [column]
-				- arrival rate [data]
-	'''
+	"""
 	sweep = {}
 	sweep["fixed_values"] = fixed_values
 	sweep["varying_values"] = varying_values
@@ -708,3 +507,82 @@ def view_submitted_arrival_times(num_jobs = 100, batch_time=100):
 		axs[i].set_xlim((0, hyp['batch_time']))#800))
 		axs[i].set_yticks([])
 	plt.show()
+	
+
+def parallel_experiments(num_clusters=1, project_id = 'sky-burst', zone = 'us-central1-c', cluster_prefix='parallel-exp'):
+	#TODO: Finalize design and implement this codebase 
+	# Create a GKE client
+	client = container_v1.ClusterManagerClient()
+
+	def create_cluster(cluster_name):
+		nonlocal project_id
+		nonlocal zone
+
+		# Define the cluster config
+		cluster = {
+			'name': cluster_name,
+			'network': 'skypilot-vpc',
+			'initial_node_count': 1,
+			#'master_auth': {
+			#	'username': 'admin',
+			#	'password': 'passwordpassword'
+			#},
+			'node_config': {
+				'machine_type': 'n1-standard-1',
+				'disk_size_gb': 100,
+				'oauth_scopes': [
+					'https://www.googleapis.com/auth/compute',
+					'https://www.googleapis.com/auth/devstorage.read_write',
+					'https://www.googleapis.com/auth/logging.write',
+					'https://www.googleapis.com/auth/monitoring'
+				]
+			}
+		}
+
+		# Create the cluster
+		operation = client.create_cluster(project_id=project_id, zone=zone, cluster=cluster)
+		#result = operation.result()
+		status = operation.status
+		print(f'Cluster {cluster_name} status {status}')
+		return status
+
+	def delete_cluster(cluster_name):
+		nonlocal project_id
+		nonlocal zone
+
+		# Delete the cluster
+		operation = client.delete_cluster(project_id=project_id, zone=zone, cluster_id=cluster_name)
+		#result = operation.result()
+		status = operation.status
+		print(f'Cluster {cluster_name} status {status}')
+		return status 
+
+	# Use a ThreadPoolExecutor to create the clusters in parallel
+	with concurrent.futures.ThreadPoolExecutor() as executor:
+		# Submit the create_cluster function for each cluster to the executor
+		futures = [executor.submit(create_cluster, f'{cluster_prefix}-{i}') for i in range(num_clusters)]
+		# Wait for all the futures to complete
+		'''
+		for future in concurrent.futures.as_completed(futures):
+			try:
+				# Get the result of the future, if available
+				result = future.result()
+			except Exception as e:
+				# Handle any exceptions raised by the create_cluster function
+				print(f'Error creating cluster: {e}')
+		'''
+
+	# Use a ThreadPoolExecutor to delete the clusters in parallel
+	with concurrent.futures.ThreadPoolExecutor() as executor:
+		# Submit the delete_cluster function for each cluster to the executor
+		futures = [executor.submit(delete_cluster, f'{cluster_prefix}-{i}') for i in range(num_clusters)]
+		# Wait for all the futures to complete
+		'''
+		for future in concurrent.futures.as_completed(futures):
+			try:
+				# Get the result of the future, if available
+				result = future.result()
+			except Exception as e:
+				# Handle any exceptions raised by the delete_cluster function
+				print(f'Error deleting cluster: {e}')
+		'''
