@@ -2,7 +2,7 @@ import logging
 import re
 import time
 from typing import Dict, Optional
-
+import time
 import yaml
 from kubernetes import client, config
 from kubernetes.client import models
@@ -79,7 +79,6 @@ class KubernetesManager(object):
                     2 ** 20)  # Convert to megabytes
 
     def get_cluster_resources(self):
-        import time
         start_time = time.perf_counter()
         curr_time = time.perf_counter()
         logger.debug("Started get_cluster_resources(): ~~~ --- " + str(curr_time-start_time))
@@ -137,8 +136,6 @@ class KubernetesManager(object):
     def get_allocatable_resources_per_node(self) -> Dict[str, Dict[str, int]]:
         """ Get allocatable resources per node. """
         # Get the nodes and running pods
-        
-        import time
         start_time = time.perf_counter()
         curr_time = time.perf_counter()
 
@@ -235,8 +232,6 @@ class KubernetesManager(object):
     def can_fit(self, job: Job) -> Optional[str]:
         """ Check if a job can fit in the cluster. """
         #self.get_cluster_resources()
-
-        import time
         start_time = time.perf_counter()
         curr_time = time.perf_counter()
         logger.debug("Started can_fit(): ~~~ --- " + str(curr_time-start_time))
@@ -256,7 +251,6 @@ class KubernetesManager(object):
 
     def submit_job(self, job: Job):
         """ Submit a YAML which contains the Kubernetes Job declaration using the batch api """
-        import time
         start_time = time.perf_counter()
         curr_time = time.perf_counter()
         logger.debug("Started submit_job(): ~~~ --- " + str(curr_time-start_time))
