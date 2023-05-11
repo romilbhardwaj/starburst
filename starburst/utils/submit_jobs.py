@@ -461,7 +461,6 @@ def parallel_experiments(num_clusters=1, project_id = 'sky-burst', zone = 'us-ce
 	#TODO: Don't create a new cluster if cluster already running
 	#TODO: Create a GPU GKE cluster then delete it
 	#TODO: Add created cluster name to local /.kube/config file to allow for automated authentication 
-	#TODO: 
 	'''	
 	client = container_v1.ClusterManagerClient()
 
