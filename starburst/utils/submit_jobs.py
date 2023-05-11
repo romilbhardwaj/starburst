@@ -22,34 +22,11 @@ import logging
 import sweeps 
 import concurrent.futures
 from google.cloud import container_v1
+import sys 
+
+DEFAULT_HYPERPARAMETERS = sweeps.DEFAULT_HYPERPARAMETERS
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_HYPERPARAMETERS = {
-	"uniform_arrival": 1, 
-	"uniform_submission": False,
-	"waiting_policy": "fifo_onprem_only",
-	"time_constrained": True,
-	#"onprem_cluster_nodes": 4,
-	"cluster_size": 4,
-	#"onprem_cpu_per_node": 8,
-	"cpus_per_node": 8, 
-	"cloud_cluster_nodes": 4, 
-	"cloud_cpu_per_node": 8,  
-	"random_seed": 0,
-	'total_jobs': 100,
-	"batch_time": 300,
-	"wait_time": 0,
-	"time_out": 5,
-	"mean_duration": 30,
-	"arrival_rate": 1,
-	"cpu_sizes": [1,2,4,8,16,32],
-	"cpu_dist": [0, 0.2, 0.2, 0.2, 0.2, 0.2], 
-	"gpu_sizes": [1,2,4,8,16,32],
-	"gpu_dist": [0, 0.2, 0.2, 0.2, 0.2, 0.2],
-	"memory_sizes": [100, 500, 1000, 50000],
-	"memory_dict": [0.25, 0.25, 0.25, 0.25],
-}
 
 class Config:
     def __init__(self, config_dict):
@@ -72,8 +49,6 @@ def generate_jobs(hyperparameters):
 		elif hp.time_constrained == False and job_index >= hp.total_jobs:
 			break
 		job = {}
-
-		#TODO: Handle the inverse -- this is inaccurarte
 		if hp.uniform_submission: 
 			submit_time += hp.uniform_arrival
 		else: 
@@ -119,38 +94,23 @@ def submit(jobs={}, arrivals=[], timestamp=None, index=None):
 	
 	while True:
 		curr_time = time.time()
-		#print(str(job_index) + " " + str(total_jobs) +  " " + str(curr_time) + " " + str(arrivals[job_index]) + " " + str(start_time))
-		#print(arrivals)
-		#print(job_index)
 		if job_index < total_jobs and curr_time > arrivals[job_index][1] + start_time:
 			job = jobs[job_index]
-			generate_sampled_job_yaml(job_id=job_index, sleep_time=job["job_duration"], workload=job['workload'])
-			#os.system('python3 -m starburst.drivers.submit_job --job-yaml ../../examples/sampled/sampled_job.yaml')
+			generate_sampled_job_yaml(job_id=job_index, job=job)
 			subprocess.run(['python3', '-m', 'starburst.drivers.submit_job', '--job-yaml', '../../examples/sampled/sampled_job.yaml'])
 			submit_time = time.time()
-
-			#if job_index not in submit_times: 
-			#	submit_times[job_index] = []
 			submit_times[job_index] = submit_time
-
 			job_index += 1
 		#TODO: Improve stop condition -- wait until last job completes
 		if job_index >= total_jobs: 
 			break
-
-		'''
-		elif (arrivals != []) and (curr_time >= start_time + arrivals[-1][1] + jobs["hyperparameters"]["time_out"]): 
-			print("Job Connection Time Out...")
-			break
-		'''
 	
 	trial_data_path = "../logs/archive/" + str(timestamp) + "/jobs/" + str(index) + ".json"
 	job_data = {}
-	with open(trial_data_path, "r") as f: #"../logs/event_data.json", "r") as f:
+	with open(trial_data_path, "r") as f:
 		job_data = json.load(f)
 
 	for i in range(len(arrivals)):
-		#job_data[str(i)]['submit_time'] = submit_times[i]
 		# TODO: add scheduler_submit_time value in addition to submit_time 
 		job_data[str(i)]['scheduler_submit_time'] = submit_times[i] 
 
@@ -164,9 +124,14 @@ def execute(hyperparameters, repo, tag):
 	save_jobs(jobs, repo, tag)
 	submit(jobs, arrivals)
 
-def generate_sampled_job_yaml(job_id=0, arrival_time=0, sleep_time=5, workload={"cpu": 0, "memory": 0, "gpu": 0}):
-	""" Generalizes job submission to perform hyperparameter sweep """
+def generate_sampled_job_yaml(job_id=0, job=None):
+	""" 
+	Generalizes job submission to perform hyperparameter sweep 
 	# TODO: Finalize design
+	"""
+	sleep_time=job["job_duration"]
+	workload=job['workload']
+
 	output = ""
 	env = Environment(
 		loader=FileSystemLoader("../../examples/sampled/templates"),
@@ -179,7 +144,6 @@ def generate_sampled_job_yaml(job_id=0, arrival_time=0, sleep_time=5, workload={
 	set_limits = False
 
 	for w in workload.values():
-		print(w)
 		if w > 0: 
 			set_limits = True
 			template = env.get_template("resource_limit.yaml.jinja")
@@ -192,7 +156,6 @@ def generate_sampled_job_yaml(job_id=0, arrival_time=0, sleep_time=5, workload={
 			output += "\n" + template.render({w: workload[w]})
 
 	for w in workload.values():
-		print(w)
 		if w > 0: 
 			set_limits = True
 			template = env.get_template("resource_request.yaml.jinja")
@@ -212,15 +175,15 @@ def generate_sampled_job_yaml(job_id=0, arrival_time=0, sleep_time=5, workload={
 	job_yaml.close()
 	return 
 
-def clear_logs():
+def clear_logs(clusters={}):
 	"""Automates clearing of cluster state by removing event, logs, and pods on both onprem and cloud cluster"""
 	print("Started Clearing Logs...")
 
-	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst")
+	config.load_kube_config(context=clusters['onprem'])
 	onprem_api = client.CoreV1Api()
 	onprem_api_batch = client.BatchV1Api()
 
-	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst-cloud")
+	config.load_kube_config(context=clusters['cloud'])
 	cloud_api = client.CoreV1Api()
 	cloud_api_batch = client.BatchV1Api()
 
@@ -265,7 +228,7 @@ def log(tag=None, batch_repo=None, loop=True):
 	event_data = log_jobs.event_data_dict()
 	log_jobs.write_cluster_event_data(batch_repo=batch_repo, event_data=event_data, tag=tag, loop=loop)
 
-def empty_cluster():
+def empty_cluster(clusters={}):
 	"""Function returns true if there are any running pods in the cluster"""
 	"""
 	'status': {'active': None,
@@ -284,11 +247,11 @@ def empty_cluster():
 	'uncounted_terminated_pods': {'failed': None, 'succeeded': None}}}
 	"""
 
-	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst")
-	onnprem_api = client.CoreV1Api()
+	config.load_kube_config(context=cluster['onprem'])
+	onprem_api = client.CoreV1Api()
 	onprem_api_batch = client.BatchV1Api()
 
-	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst-cloud")
+	config.load_kube_config(context=cluster['cloud'])
 	cloud_api = client.CoreV1Api()
 	cloud_api_batch = client.BatchV1Api()
 
@@ -309,32 +272,31 @@ def empty_cluster():
 
 	return True 
 
-def reached_last_job(job_name): 
+def reached_last_job(job_name=None, clusters={}): 
 	def find_job_with_substring(jobs, substring):
 		for job in jobs:
 			if substring in job.metadata.name:
 				return job
 		return None
 
-	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst")
+	config.load_kube_config(context=clusters['onprem'])
 	onprem_api = client.CoreV1Api()
 	onprem_api_batch = client.BatchV1Api()
 
 	try: 
 		job_list = onprem_api_batch.list_namespaced_job(namespace="default")
-		job = fid_job_with_substring(job_list.items, job_name)
+		job = find_job_with_substring(job_list.items, job_name)
 		status = job.status
 
 		if job: 
 			logger.debug("Job Succeeded")
 			logger.debug(str(job.status.succeeded))
-			#logger.debug("Found job " + str(job) + " with status " + str(status))
 		if job.status.succeeded == 1:
 			return True 
 	except Exception as e:
 		pass
 
-	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst-cloud")
+	config.load_kube_config(context=clusters['cloud'])
 	cloud_api = client.CoreV1Api()
 	cloud_api_batch = client.BatchV1Api()
 
@@ -344,9 +306,8 @@ def reached_last_job(job_name):
 		status = job.status
 
 		if job: 
-			logger.debug("Succ")
+			logger.debug("Succeed")
 			logger.debug(str(job.status.succeeded))
-			#logger.debug("Found job " + str(job) + " with status " + str(status))
 		if job.status.succeeded == 1:
 			return True 
 	except Exception as e: 
@@ -363,14 +324,26 @@ def run(hyperparameters, batch_repo, index):
 	c1, c2 = mp.Pipe()
 	grpc_port = 10000
 
-	p0 = mp.Process(target=driver.custom_start, args=(None, c2, grpc_port, 1, "gke_sky-burst_us-central1-c_starburst","gke_sky-burst_us-central1-c_starburst-cloud", hp.waiting_policy, hp.wait_time, jobs))
+	'''
+	clusters = {
+		"onprem": "gke_sky-burst_us-central1-c_starburst",
+		"cloud": "gke_sky-burst_us-central1-c_starburst-cloud"
+	}
+	'''
+
+	clusters = {
+		"onprem": hp.onprem_cluster,
+		"cloud": hp.cloud_cluster
+	}
+
+	p0 = mp.Process(target=driver.custom_start, args=(None, c2, grpc_port, 1, clusters['onprem'], clusters['cloud'], hp.waiting_policy, hp.wait_time, jobs))
 	p0.start()
 	
-	clear_logs()
-	while not empty_cluster():
+	clear_logs(clusters=clusters)
+	while not empty_cluster(clusters=clusters):
 		print("Cleaning Logs and Cluster....")
 		time.sleep(1)
-	clear_logs()
+	clear_logs(clusters=clusters)
 	
 	tag = str(index)
 	p1 = mp.Process(target=log, args=(tag, batch_repo, True))
@@ -382,7 +355,7 @@ def run(hyperparameters, batch_repo, index):
 	last_job = len(jobs) - 2
 	while True:
 		logger.debug("Waiting for last job to complete $$$")
-		if reached_last_job("sleep-" + str(last_job)):
+		if reached_last_job(last_job="sleep-" + str(last_job), clusters=clusters):
 			p1.terminate()
 			p2.terminate()
 			break 
@@ -398,7 +371,7 @@ def run(hyperparameters, batch_repo, index):
 	
 	return 0 
 
-def run_sweep(sweep={}):#, fixed_values=OrderedDict(), varying_values=OrderedDict()):
+def run_sweep(sweep={}):
 	sweep_timestamp =  str(int(datetime.now().timestamp()))
 	sweep_dir = "../logs/archive/" + sweep_timestamp + "/"
 	if not os.path.exists(sweep_dir):
@@ -419,13 +392,7 @@ def submit_sweep(sweep=None):
 	varying_values = OrderedDict(sweep['varying_values'])
 	sweep = generate_sweep(fixed_values=fixed_values, varying_values=varying_values)
 	time_stamp = run_sweep(sweep)
-	return time_stamp
-
-def plot_sweep(sweep_timestamp=0, fixed_values=OrderedDict(), varying_values=OrderedDict()):
-	print("Analyzing and plotting data...")
-	metrics, all_jobs = log_jobs.analyze_sweep(event_number=sweep_timestamp, graph=True)#, fixed_values=fixed_values, varying_values=varying_values)
-	print("Plotting complete...")
-	return 
+	return time_stamp 
 
 def generate_sweep(fixed_values=OrderedDict(), varying_values=OrderedDict()): 
 	"""
@@ -464,16 +431,17 @@ def generate_sweep(fixed_values=OrderedDict(), varying_values=OrderedDict()):
 def generate_interval(min=0, max=10, intervals=10):
 	return np.linspace(min, max, num=intervals+1).tolist()
 
-def main():
+def main(arg1, arg2):
 	"""
-	Note: Only execute sweep through the main function, since mp package fails otherwise
+	Runs sweep of runs on starburst
 	"""
-	sweep = sweeps.SWEEPS['6']
-	submit_sweep(sweep=sweep)
+	sweep = sweeps.SWEEPS[arg2]
+	if arg1: 
+		submit_sweep(sweep=sweep)
 	return 
 
 if __name__ == '__main__':
-    main()
+    main(arg1=sys.argv[1], arg2=sys.argv[2])
 	#pass
 
 """
@@ -483,35 +451,17 @@ UTIL + MISC FUNCTIONS
 def start_scheduler(policy="fifo_onprem_only", onprem_cluster="gke_sky-burst_us-central1-c_starburst", cloud_cluster="gke_sky-burst_us-central1-c_starburst-cloud"):
 	os.system('python3 -m starburst.drivers.main_driver --policy {} --onprem_k8s_cluster_name {} --cloud_k8s_cluster_name {}'.format(policy, onprem_cluster, cloud_cluster))
 	#subprocess.run(['python3', '-m', 'starburst.drivers.main_driver' '--policy', policy, '--onprem_k8s_cluster_name', onprem_cluster,'--cloud_k8s_cluster_name', cloud_cluster])
-	#python3 -m starburst.drivers.main_driver --policy fifo_onprem_only --onprem_k8s_cluster_name gke_sky-burst_us-central1-c_starburst --cloud_k8s_cluster_name gke_sky-burst_us-central1-c_starburst-cloud
-	#starburst, driver.custom_start(onprem_k8s_cluster_name=onprem_cluster, cloud_k8s_cluster_name=cloud_cluster, policy=policy)
-	return 
-
-def view_submitted_arrival_times(num_jobs = 100, batch_time=100): 
-	batches = 5
-	fig, axs = plt.subplots(nrows=5, ncols=1)
-	arrival_rates = np.linspace(0, 8, num=batches+1).tolist()[1:]
-	
-	arrival_times = []
-	for i in range(len(arrival_rates)):
-		ar = arrival_rates[i]
-		#times = submit_jobs(time_constrained=True, batch_time=batch_time, arrival_rate=ar, sleep_mean=10, submit=False)
-		hyp =  copy.deepcopy(DEFAULT_HYPERPARAMETERS)
-		hyp['arrival_rate'] = 10
-		hyp['batch_time'] = 600
-		hyp['mean_duration'] = 60
-		times = generate_jobs(hyp)
-		arrival_times.append(times)
-		axs[i].eventplot(times)
-		axs[i].set_ylabel(str(ar))
-		axs[i].set_xlim((0, hyp['batch_time']))#800))
-		axs[i].set_yticks([])
-	plt.show()
-	
+	return
 
 def parallel_experiments(num_clusters=1, project_id = 'sky-burst', zone = 'us-central1-c', cluster_prefix='parallel-exp'):
+	'''
+	Creates cluster, submits job, deletes cluster
 	#TODO: Finalize design and implement this codebase 
-	# Create a GKE client
+	#TODO: Don't create a new cluster if cluster already running
+	#TODO: Create a GPU GKE cluster then delete it
+	#TODO: Add created cluster name to local /.kube/config file to allow for automated authentication 
+	#TODO: 
+	'''	
 	client = container_v1.ClusterManagerClient()
 
 	def create_cluster(cluster_name):
@@ -538,8 +488,6 @@ def parallel_experiments(num_clusters=1, project_id = 'sky-burst', zone = 'us-ce
 				]
 			}
 		}
-
-		# Create the cluster
 		operation = client.create_cluster(project_id=project_id, zone=zone, cluster=cluster)
 		#result = operation.result()
 		status = operation.status
@@ -549,8 +497,6 @@ def parallel_experiments(num_clusters=1, project_id = 'sky-burst', zone = 'us-ce
 	def delete_cluster(cluster_name):
 		nonlocal project_id
 		nonlocal zone
-
-		# Delete the cluster
 		operation = client.delete_cluster(project_id=project_id, zone=zone, cluster_id=cluster_name)
 		#result = operation.result()
 		status = operation.status

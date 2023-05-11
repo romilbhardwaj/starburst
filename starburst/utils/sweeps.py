@@ -1,7 +1,32 @@
 import numpy as np
-import submit_jobs
 
-DEFAULT_HYPERPARMATERS = submit_jobs.DEFAULT_HYPERPARAMETERS
+DEFAULT_HYPERPARAMETERS = {
+	"uniform_arrival": 1, 
+	"uniform_submission": False,
+	"waiting_policy": "fifo_onprem_only",
+	"time_constrained": True,
+	#"onprem_cluster_nodes": 4,
+	"cluster_size": 4,
+	#"onprem_cpu_per_node": 8,
+	"cpus_per_node": 8, 
+	"cloud_cluster_nodes": 4, 
+	"cloud_cpu_per_node": 8,  
+	"random_seed": 0,
+	'total_jobs': 100,
+	"batch_time": 300,
+	"wait_time": 0,
+	"time_out": 5,
+	"mean_duration": 30,
+	"arrival_rate": 1,
+	"cpu_sizes": [1,2,4,8,16,32],
+	"cpu_dist": [0, 0.2, 0.2, 0.2, 0.2, 0.2], 
+	"gpu_sizes": [1,2,4,8,16,32],
+	"gpu_dist": [0, 0.2, 0.2, 0.2, 0.2, 0.2],
+	"memory_sizes": [100, 500, 1000, 50000],
+	"memory_dict": [0.25, 0.25, 0.25, 0.25],
+	"onprem_cluster": "gke_sky-burst_us-central1-c_starburst",
+    "cloud_cluster": "gke_sky-burst_us-central1-c_starburst-cloud",
+}
 
 def generate_interval(min=0, max=10, intervals=10):
 	return np.linspace(min, max, num=intervals+1).tolist()
