@@ -126,6 +126,13 @@ class KubernetesManager(object):
 
     #print(f"Total CPU: {total_cpu} cores")
     #print(f"Total Memory: {total_memory / 1024**2:.2f} GiB")
+    def stream_state():
+        # TODO: Implement asynchronous function that updates cluster state with each schedule event
+        return 
+
+    def get_state():
+        # TODO: Retrieves data from dictionary that finds state 
+        return
 
     def get_allocatable_resources_per_node(self) -> Dict[str, Dict[str, int]]:
         """ Get allocatable resources per node. """
@@ -169,7 +176,7 @@ class KubernetesManager(object):
 
         # Initialize a dictionary to store available resources per node
         available_resources = {}
-        running_pods = {}
+        running_pods = set() #{}
 
         for node in nodes:
             name = node.metadata.name
@@ -184,7 +191,8 @@ class KubernetesManager(object):
 
             for pod in pods:
                 #logger.debug("Pod resource information: ~~~ --- " + str(pod))
-                if pod.spec.node_name == name and pod.status.phase in ['Running', 'Pending']:
+                if pod.spec.node_name == name and pod.status.phase in ['Running', 'Pending'] and pod.metadata.namespace == 'default':
+                    running_pods.add(pod.metadata.name)
                     for container in pod.spec.containers:
                         if container.resources.requests:
                             used_cpu += self.parse_resource_cpu(
@@ -222,7 +230,7 @@ class KubernetesManager(object):
 
         logger.debug("Available resources from can_fit(): ~~~ --- " + str(available_resources))
 
-        return available_resources
+        return available_resources, running_pods
 
     def can_fit(self, job: Job) -> Optional[str]:
         """ Check if a job can fit in the cluster. """
@@ -233,7 +241,7 @@ class KubernetesManager(object):
         curr_time = time.perf_counter()
         logger.debug("Started can_fit(): ~~~ --- " + str(curr_time-start_time))
         job_resources = job.resources
-        cluster_resources = self.get_allocatable_resources_per_node()
+        cluster_resources, running_pods = self.get_allocatable_resources_per_node()
         
         for node_name, node_resources in cluster_resources.items():
             if node_resources["cpu"] >= job_resources.get("cpu", 0) and \
