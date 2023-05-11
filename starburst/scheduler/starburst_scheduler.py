@@ -23,7 +23,9 @@ class StarburstScheduler:
                  event_logger: object,
                  onprem_cluster_name: str,
                  cloud_cluster_name: str,
-                 queue_policy_str: str = "fifo_onprem_only"):
+                 queue_policy_str: str = "fifo_onprem_only",
+                 wait_time: int = 0,
+                 job_data: dict = {}):
         """
         Main Starburst scheduler class. Responsible for processing events in the provided event queue.
         :param event_queue: Main event queue
@@ -44,7 +46,12 @@ class StarburstScheduler:
 
         # Set up policy
         queue_policy_class = queue_policies.get_policy(queue_policy_str)
-        self.queue_policy = queue_policy_class(self.onprem_cluster_manager, self.cloud_cluster_manager)
+        if queue_policy_str == "fifo_wait":
+            self.queue_policy = queue_policy_class(self.onprem_cluster_manager, self.cloud_cluster_manager, wait_threshold=wait_time)
+        elif queue_policy_str == "time_estimator":
+            self.queue_policy = queue_policy_class(self.onprem_cluster_manager, self.cloud_cluster_manager, wait_threshold=wait_time, job_data=job_data)
+        else: 
+            self.queue_policy = queue_policy_class(self.onprem_cluster_manager, self.cloud_cluster_manager)
 
         # Get asyncio loop
         self.aioloop = asyncio.get_event_loop()
@@ -55,6 +62,7 @@ class StarburstScheduler:
         :param event:
         :return:
         '''
+        # TODO: Timeout event for job 
         if event.event_type == EventTypes.SCHED_TICK:
             assert isinstance(event, SchedTick)
             self.processor_sched_tick_event(event)
@@ -78,15 +86,32 @@ class StarburstScheduler:
         """ Process an add job event. This is where you probably want to add job to your queue"""
         self.job_queue.append(event.job)
 
-    async def scheduler_loop(self):
+    async def scheduler_loop(self, queue, conn):
         """Main loop"""
+        start_time = time.perf_counter()
+        counter = 0 
         while True:
-            logger.debug("Waiting for event.")
+            curr_time = time.perf_counter()
+            logger.debug("Count(" + str(counter) + ") Loop start: ~~~ " + str(curr_time-start_time))
+            counter += 1
+            curr_time = time.perf_counter()
+            logger.debug("Start event processing: ~~~ " + str(curr_time-start_time))
 
             # Fetch event
             event = await self.event_queue.get()
+
+            curr_time = time.perf_counter()
+            logger.debug("Fetched event: ~~~ " + str(curr_time-start_time))
+
             logger.debug(str(event))
             self.event_logger.log_event(event)
 
+            curr_time = time.perf_counter()
+            logger.debug("Logged event: ~~~ " + str(curr_time-start_time))
+
             # Parse and handle event
             self.process_event(event)
+
+            curr_time = time.perf_counter()
+
+            logger.debug("End event processing and loop: ~~~ " + str(curr_time-start_time))

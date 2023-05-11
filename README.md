@@ -3,7 +3,7 @@
 A hybrid cloud scheduler that enables you to run your k8s workloads on-prem and in the cloud.
 
 # Quickstart
-0. `pip install -e . && pip install -r requirements.txt`
+0. ``pip3 install -e . && pip3 install -r requirements.txt``
 1. Setup your k8s clusters. These can be either GKE clusters or setup locally for quick debug. Here I'll setup two k8s clusters locally on my laptop. 
    ```console
    # This creates two clusters on your laptop
@@ -13,11 +13,11 @@ A hybrid cloud scheduler that enables you to run your k8s workloads on-prem and 
    After you have done this, make sure they show up in `kubectl config get-contexts`.
 2. Once you have your two k8s clusters ready, run Starburst:
    ```console
-   python -m starburst.drivers.main_driver --policy fifo_onprem_only
+   python3 -m starburst.drivers.main_driver --policy fifo_onprem_only
    ```
 3. You can now submit k8s jobs to starburst. We have an example job in `examples/example_job.yaml`. In a new terminal, submit the job to starburst.
    ```console
-   python -m starburst.drivers.submit_job --job-yaml examples/example_job.yaml
+   python3 -m starburst.drivers.submit_job --job-yaml examples/example_job.yaml
    ```
 4. If you have chosen the `fifo_onprem_only` policy, your job should now be running on the onprem cluster! 🥳 You should see an output like:
     ```console
@@ -65,3 +65,18 @@ A hybrid cloud scheduler that enables you to run your k8s workloads on-prem and 
 * Policies are defined in `starburst/policies`.
   * To define a custom policy, you must implement the `process_queue` method from `BasePolicy`. This method is called every time a `SchedTick` event is processed.
   * The policy can access the cluster state information and queue state to make waiting/scheduling decisions.
+
+
+# Connect to GKE Clusters
+1. Setup gcloud
+2. Install gke-gcloud-auth-plugin
+  a. gcloud components install kubectl
+  b. gcloud components install gke-gcloud-auth-plugin
+3. Update kubeconfig file with GKE cluster values
+4. `gcloud container clusters get-credentials <cluster-name> --zone <zone> --project <your-project-id>`
+  a. gcloud container clusters get-credentials starburst --zone us-central1-c	 --project sky-burst
+
+E.g. cluster-name = starburst, starburst-cloud 
+
+# Setup Remote-SSH 
+Running scheduler on GCP vm instance helps speed up development time 
