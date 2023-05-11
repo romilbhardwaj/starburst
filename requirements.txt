@@ -13,4 +13,5 @@ tqdm
 cvxpy
 seaborn
 google-cloud
+kubernetes
 google-cloud-container

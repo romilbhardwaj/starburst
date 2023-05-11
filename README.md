@@ -65,3 +65,18 @@ A hybrid cloud scheduler that enables you to run your k8s workloads on-prem and 
 * Policies are defined in `starburst/policies`.
   * To define a custom policy, you must implement the `process_queue` method from `BasePolicy`. This method is called every time a `SchedTick` event is processed.
   * The policy can access the cluster state information and queue state to make waiting/scheduling decisions.
+
+
+# Connect to GKE Clusters
+1. Setup gcloud
+2. Install gke-gcloud-auth-plugin
+  a. gcloud components install kubectl
+  b. gcloud components install gke-gcloud-auth-plugin
+3. Update kubeconfig file with GKE cluster values
+4. `gcloud container clusters get-credentials <cluster-name> --zone <zone> --project <your-project-id>`
+  a. gcloud container clusters get-credentials starburst --zone us-central1-c	 --project sky-burst
+
+E.g. cluster-name = starburst, starburst-cloud 
+
+# Setup Remote-SSH 
+Running scheduler on GCP vm instance helps speed up development time 
