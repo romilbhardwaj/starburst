@@ -278,10 +278,8 @@ def generate_jobs(hyperparameters):
 		jobs[job_index] = job
 		arrivals.append((job_index, submit_time))
 		job_index += 1
-	
-	#last_job = job_index - 1
 
-	return jobs, arrivals#, last_job 
+	return jobs, arrivals
 
 def save_jobs(jobs, repo, tag):
 	log_path = "../logs/"
@@ -608,7 +606,6 @@ def submit_sweep(sweep=None):
 	fixed_values = OrderedDict(sweep['fixed_values'])
 	varying_values = OrderedDict(sweep['varying_values'])
 	sweep = generate_sweep(fixed_values=fixed_values, varying_values=varying_values)
-	#save_sweep(sweep=sweep, fixed_values=fixed_values, varying_values=varying_values)
 	time_stamp = run_sweep(sweep)
 	return time_stamp
 
@@ -700,7 +697,6 @@ def main():
 	}
 
 	sweep = sweeps.SWEEPS['3']
-
 	submit_sweep(sweep=sweep)
 	return 
 
