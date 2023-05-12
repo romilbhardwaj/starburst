@@ -27,12 +27,53 @@ DEFAULT_HYPERPARAMETERS = {
 	"use_new_cluster": True, 
 	"onprem_cluster": "gke_sky-burst_us-central1-c_starburst",
     "cloud_cluster": "gke_sky-burst_us-central1-c_starburst-cloud",
+    "gpu_workload": False
 }
 
 def generate_interval(min=0, max=10, intervals=10):
 	return np.linspace(min, max, num=intervals+1).tolist()
 
 SWEEPS = {
+    "11": { # Single node gpu test with longer job time to ensure gpu index value is saved
+		"fixed_values": {
+            "batch_time": 180, 
+            "mean_duration": 15,
+            "waiting_policy": "fifo_wait",
+            "cpu_sizes":[0.1, 0.1, 0.1],
+            "gpu_sizes": [1, 1],
+            "gpu_dist": [0.5, 0.5],
+            "uniform_submission": True, 
+            "uniform_arrival": 0.5,
+            "onprem_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu',
+            "cloud_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu-cloud',
+            "gpu_workload": True
+        },
+	    "varying_values": {	
+            "cpu_dist": [[0.6, 0.25, 0.15]],
+            "wait_time": [2,3,4,5,6,7,8],
+            "arrival_rate": [1] 
+        }
+    },
+	"10": { # Single node gpu test
+		"fixed_values": {
+            "batch_time": 180, 
+            "mean_duration": 5,
+            "waiting_policy": "fifo_wait",
+            "cpu_sizes":[0.1, 0.1, 0.1],
+            "gpu_sizes": [1, 1],
+            "gpu_dist": [0.5, 0.5],
+            "uniform_submission": True, 
+            "uniform_arrival": 0.5,
+            "onprem_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu',
+            "cloud_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu-cloud',
+            "gpu_workload": True
+        },
+	    "varying_values": {	
+            "cpu_dist": [[0.6, 0.25, 0.15]],
+            "wait_time": [2,3,4,5,6,7,8],
+            "arrival_rate": [1] 
+        }
+    },
 	"9": { # CPU death test
         "fixed_values": {
             "batch_time": 180, 
