@@ -22,6 +22,8 @@ import sweeps
 import concurrent.futures
 from google.cloud import container_v1
 import sys 
+import yaml 
+import requests
 
 DEFAULT_HYPERPARAMETERS = sweeps.DEFAULT_HYPERPARAMETERS
 
@@ -54,7 +56,7 @@ def generate_jobs(hyperparameters):
 			submit_time += max(0.05, np.random.exponential(scale=1/hp.arrival_rate))
 		job_duration = np.random.exponential(scale=hp.mean_duration)
 		cpus = int(np.random.choice(hp.cpu_sizes, p=hp.cpu_dist))
-		gpus = min(0, int(np.random.exponential(scale=2)))
+		gpus = int(np.random.choice(hp.gpu_sizes, p=hp.gpu_dist)) #min(0, int(np.random.exponential(scale=2)))
 		memory = min(0, int(np.random.exponential(scale=50)))
 		job['submit_time'] = submit_time
 		job['scheduler_submit_time'] = None
@@ -223,9 +225,9 @@ def clear_logs(clusters={}):
 			break	
 	print("Completed Clearing Logs...")
 
-def log(tag=None, batch_repo=None, loop=True):
+def log(tag=None, batch_repo=None, loop=True, onprem_cluster="", cloud_cluster=""):
 	event_data = log_jobs.event_data_dict()
-	log_jobs.write_cluster_event_data(batch_repo=batch_repo, event_data=event_data, tag=tag, loop=loop)
+	log_jobs.write_cluster_event_data(batch_repo=batch_repo, event_data=event_data, tag=tag, loop=loop, onprem_cluster=onprem_cluster, cloud_cluster=cloud_cluster)
 
 def empty_cluster(clusters={}):
 	"""Function returns true if there are any running pods in the cluster"""
@@ -323,18 +325,28 @@ def run(hyperparameters, batch_repo, index):
 	c1, c2 = mp.Pipe()
 	grpc_port = 10000
 
-	'''
-	clusters = {
-		"onprem": "gke_sky-burst_us-central1-c_starburst",
-		"cloud": "gke_sky-burst_us-central1-c_starburst-cloud"
-	}
-	'''
-
 	clusters = {
 		"onprem": hp.onprem_cluster,
 		"cloud": hp.cloud_cluster
 	}
+	
+	'''
+	config.load_kube_config(context=clusters['onprem'])
+	onprem_api = client.AppsV1Api()
 
+	config.load_kube_config(context=clusters['cloud'])
+	cloud_api = client.AppsV1Api()
+	'''
+	#client.V1DaemonSet()
+	'''
+	if hp.gpu_workload:
+		url = "https://raw.githubusercontent.com/GoogleCloudPlatform/container-engine-accelerators/master/nvidia-driver-installer/cos/daemonset-preloaded.yaml"
+		r = requests.get(url)
+		open('gpu_plugin.yaml', 'wb').write(r.content)
+		gpu_support = yaml.safe_load('gpu_plugin.yaml')
+		resp = onprem_api.create_namespaced_daemon_set(body=gpu_support, namespace="default") 
+		resp = cloud_api.create_namespaced_daemon_set(body=gpu_support, namespace="default") 
+	'''
 	p0 = mp.Process(target=driver.custom_start, args=(None, c2, grpc_port, 1, clusters['onprem'], clusters['cloud'], hp.waiting_policy, hp.wait_time, jobs))
 	p0.start()
 	
@@ -345,7 +357,7 @@ def run(hyperparameters, batch_repo, index):
 	clear_logs(clusters=clusters)
 	
 	tag = str(index)
-	p1 = mp.Process(target=log, args=(tag, batch_repo, True))
+	p1 = mp.Process(target=log, args=(tag, batch_repo, True, clusters['onprem'], clusters['cloud']))
 	p2 = mp.Process(target=submit, args=(jobs, arrivals, batch_repo, index))
 	p1.start()
 	p2.start()
@@ -486,6 +498,10 @@ def main(arg1, arg2):
 		"cluster_prefix": 'parallel-exp',
 		"cluster": cluster
 	}
+
+	# TODO:: Automate adding the gpu device plugin: kubectl apply -f https://raw.githubusercontent.com/GoogleCloudPlatform/container-engine-accelerators/master/nvidia-driver-installer/cos/daemonset-preloaded.yaml 
+	
+	
 
 	if arg1 == 'run': 
 		#create_cluster(cluster_config)
