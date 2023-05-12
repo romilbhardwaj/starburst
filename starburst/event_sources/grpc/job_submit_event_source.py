@@ -36,6 +36,13 @@ class JobSubmissionServicer(job_submit_pb2_grpc.JobSubmissionServicer):
         job_dict = yaml.safe_load(request.JobYAML)
         #print(job_dict)
         #print(job_dict['spec']['template']['spec']['containers'][0]['resources']['limits']['cpu'])
+        cpu = 0
+        if 'cpu' in job_dict['spec']['template']['spec']['containers'][0]['resources']['limits']:
+            cpu = job_dict['spec']['template']['spec']['containers'][0]['resources']['limits']['cpu']
+        gpu = 0 
+        if 'nvidia.com/gpu' in job_dict['spec']['template']['spec']['containers'][0]['resources']['limits']:
+            gpu = job_dict['spec']['template']['spec']['containers'][0]['resources']['limits']['nvidia.com/gpu']
+        
         job = Job(job_name=job_dict['metadata']['name'],#"MyJob",
                   # TODO: Parse out job_name and save it locally
                   job_submit_time=time.time(),
@@ -44,7 +51,11 @@ class JobSubmissionServicer(job_submit_pb2_grpc.JobSubmissionServicer):
                   # job_dict['spec']['template']['spec']['containers'][0]['command'][1]
                   job_end_time=0,
                   job_yaml=request.JobYAML,
-                  resources={'cpu': job_dict['spec']['template']['spec']['containers'][0]['resources']['limits']['cpu']}) #1})
+                  #TODO: Add parser for gpus
+                  resources={'cpu': cpu, 'gpu':gpu}
+                  #{'cpu': job_dict['spec']['template']['spec']['containers'][0]['resources']['limits']['cpu']}) #1})
+        )
+        
         event = JobAddEvent(job, timestamp=time.time())
         self.event_queues.put_nowait(event)
         if self.debug_mode:
