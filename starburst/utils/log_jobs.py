@@ -80,6 +80,7 @@ def event_data_dict():
 	job_completion_times = {}
 	job_pods = {}
 	node_instances = {}
+	gpu_index = {}
 
 	event_data = {
 		'container_creation_times': container_creation_times,
@@ -91,7 +92,8 @@ def event_data_dict():
 		'job_creation_times': job_creation_times,
 		'job_completion_times': job_completion_times,
 		'job_pods': job_pods, 
-		'node_instances': node_instances
+		'node_instances': node_instances,
+		'gpu_index': gpu_index
 	}
 
 	cluster_event_data = {
@@ -179,7 +181,7 @@ def parse_event_logs(cluster_event_data=None, submission_data=None, event_time=N
 				pod_name = pod
 				pod_start_time = start_times[pod]
 				pod_start_times[pod_name] = pod_start_time
-			
+				
 			min_arrival = math.inf
 
 			for job in creation_times:
@@ -269,14 +271,45 @@ def parse_event_logs(cluster_event_data=None, submission_data=None, event_time=N
 
 	return jobs, len(all_nodes), hyperparameters
 
-def retrieve_pod_data():
-	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst-cloud")
+def retrieve_pod_logs(cluster="", file_name="cluster_pod_logs.txt"):
+	config.load_kube_config(context=cluster)
+	api = client.CoreV1Api()
+	resps = []
+	while True: 
+		pod_list = api.list_namespaced_pod(namespace="default")
+		for pod in pod_list.items:
+			pod_name = pod.metadata.name
+			resp1 = api.read_namespaced_pod_log(name=pod_name, namespace="default")
+			#resp2 = api.read_namespaced_pod_status(name=pod_name, namespace="default")
+			resps.append(pod_name)
+			resps.append(resp1)
+			#resps.append(resp2)
+		break 
+	
+	with open(file_name, 'w') as f:
+		f.write(str(resps))
+	return
+
+def retrieve_pod_data(cluster="", file_name="cluster_pod_data.txt"):
+	config.load_kube_config(context=cluster)
 	api = client.CoreV1Api()
 	while True: 
 		pod_list = api.list_namespaced_pod(namespace="default")
-		print(pod_list)
 		break
-	return
+
+	with open(file_name, 'w') as f:
+		f.write(str(pod_list))
+	return pod_list
+
+def retrieve_node_data(cluster="", file_name="cluster_node_data.txt"):
+	config.load_kube_config(context=cluster)
+	api = client.CoreV1Api()
+	while True: 
+		node_list = api.list_node().items
+		break
+	with open(file_name, 'w') as f:
+		f.write(str(node_list))
+	return node_list
 
 def retrieve_node_instance(api):
 	node_list = api.list_node().items
@@ -371,7 +404,7 @@ def read_submission_data(submission_log_path=None):
 		return loaded_data
 	return {}
 
-def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None, loop=False):
+def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None, loop=False, onprem_cluster="", cloud_cluster=""):
 	'''
 	Store relevant event data in a dictionary to disk with periodic calls
 
@@ -418,10 +451,10 @@ def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None, l
 		else: 
 			current_log_path = log_path + "event_data_" + str(int(datetime.datetime.now().timestamp())) + ".json"
 
-	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst")
+	config.load_kube_config(context=onprem_cluster)#"gke_sky-burst_us-central1-c_starburst")
 	onprem_api = client.CoreV1Api()
 
-	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst-cloud")
+	config.load_kube_config(context=cloud_cluster)#"gke_sky-burst_us-central1-c_starburst-cloud")
 	cloud_api = client.CoreV1Api()
 
 	if not loop: 
@@ -442,13 +475,23 @@ def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None, l
 		for type in clusters:
 			api = clusters[type]
 			if api is not None:
+
 				events = api.list_event_for_all_namespaces()
 				event_data = cluster_event_data[type]
 
 				# TODO: Determine what to do with message data - item.message
 				instances = retrieve_node_instance(api)
 				event_data['node_instances'] = instances
-				
+
+				# TODO: Integrate GPU INDEX logging
+				# TODO: gpu_index = api.read_namespaced_pod_log(name=pod_name, namespace="default")
+				'''
+				pod_list = api.list_namespaced_pod(namespace="default")
+				for pod in pod_list.items:
+					pod_name = pod.metadata.name
+					gpu_index = api.read_namespaced_pod_log(name=pod_name, namespace="default")
+					event_data['gpu_index'][pod_name] = gpu_index
+				'''
 				for item in events.items:
 					event_reason = item.reason
 					#logger.debug("Event reason: ~~~ --- !!! " + str(event_reason))
