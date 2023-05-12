@@ -66,6 +66,10 @@ A hybrid cloud scheduler that enables you to run your k8s workloads on-prem and 
   * To define a custom policy, you must implement the `process_queue` method from `BasePolicy`. This method is called every time a `SchedTick` event is processed.
   * The policy can access the cluster state information and queue state to make waiting/scheduling decisions.
 
+# Perform hyperparameter sweep
+```
+bash run_sweep.sh 1 test_sweep
+```
 
 # Connect to GKE Clusters
 1. Setup gcloud
@@ -75,7 +79,8 @@ A hybrid cloud scheduler that enables you to run your k8s workloads on-prem and 
 3. Update kubeconfig file with GKE cluster values
 4. `gcloud container clusters get-credentials <cluster-name> --zone <zone> --project <your-project-id>`
   a. gcloud container clusters get-credentials starburst --zone us-central1-c	 --project sky-burst
-
+  b. gcloud container clusters get-credentials skyburst-gpu --zone us-central1-c --project sky-burst
+  c. gcloud container clusters get-credentials skyburst-gpu-cloud --zone us-central1-c --project sky-burst
 E.g. cluster-name = starburst, starburst-cloud 
 
 # Setup Remote-SSH 
