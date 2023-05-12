@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: testgpu
+spec: 
+  containers: 
+  - name: sleep
+    image: gcr.io/deeplearning-platform-release/pytorch-gpu.1-12
+    imagePullPolicy: Always
+    command: ["/bin/sh", "-c"]
+    args:
+    - |
+      nvidia-smi --query-gpu=index --format=csv,noheader && sleep 1000
+    resources: 
+      limits: 
+        nvidia.com/gpu: 1
+      requests:
+        nvidia.com/gpu: 1
