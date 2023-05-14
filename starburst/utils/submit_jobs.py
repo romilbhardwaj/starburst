@@ -55,8 +55,9 @@ def generate_jobs(hyperparameters):
 		else: 
 			submit_time += max(0.05, np.random.exponential(scale=1/hp.arrival_rate))
 		job_duration = np.random.exponential(scale=hp.mean_duration)
-		cpus = int(np.random.choice(hp.cpu_sizes, p=hp.cpu_dist))
 		gpus = int(np.random.choice(hp.gpu_sizes, p=hp.gpu_dist)) #min(0, int(np.random.exponential(scale=2)))
+		cpus = 11 * gpus
+		#cpus = int(np.random.choice(hp.cpu_sizes, p=hp.cpu_dist))
 		memory = min(0, int(np.random.exponential(scale=50)))
 		job['submit_time'] = submit_time
 		job['scheduler_submit_time'] = None
@@ -129,6 +130,7 @@ def generate_sampled_job_yaml(job_id=0, job=None):
 	""" 
 	Generalizes job submission to perform hyperparameter sweep 
 	# TODO: Finalize design
+	# TODO: Input the following value back into the yaml -- imagePullPolicy: Always
 	"""
 	sleep_time=job["job_duration"]
 	workload=job['workload']
@@ -226,8 +228,8 @@ def clear_logs(clusters={}):
 	print("Completed Clearing Logs...")
 
 def log(tag=None, batch_repo=None, loop=True, onprem_cluster="", cloud_cluster=""):
-	event_data = log_jobs.event_data_dict()
-	log_jobs.write_cluster_event_data(batch_repo=batch_repo, event_data=event_data, tag=tag, loop=loop, onprem_cluster=onprem_cluster, cloud_cluster=cloud_cluster)
+	cluster_event_data = log_jobs.event_data_dict()
+	log_jobs.write_cluster_event_data(batch_repo=batch_repo, cluster_event_data=cluster_event_data, tag=tag, loop=loop, onprem_cluster=onprem_cluster, cloud_cluster=cloud_cluster)
 
 def empty_cluster(clusters={}):
 	"""Function returns true if there are any running pods in the cluster"""
@@ -305,7 +307,6 @@ def reached_last_job(job_name=None, clusters={}):
 		job_list = cloud_api_batch.list_namespaced_job(namespace="default")
 		job = find_job_with_substring(job_list.items, job_name)
 		status = job.status
-
 		if job: 
 			logger.debug("Succeed")
 			logger.debug(str(job.status.succeeded))
@@ -362,6 +363,55 @@ def run(hyperparameters, batch_repo, index):
 	p1.start()
 	p2.start()
 
+	def all_submitted(submitted_jobs):
+		for submission_state in submitted_jobs.values():
+			if submission_state == False: 
+				return False 
+		return True
+	
+	def check_submitted(submitted_jobs):
+		def find_job_with_substring(jobs, substring):
+			for job in jobs:
+				if substring in job.metadata.name:
+					return job
+			return None
+
+		config.load_kube_config(context=clusters['onprem'])
+		onprem_api_batch = client.BatchV1Api()
+
+		config.load_kube_config(context=clusters['cloud'])
+		cloud_api_batch = client.BatchV1Api()
+
+		apis = [onprem_api_batch, cloud_api_batch]
+		for api in apis: 
+			for job in submitted_jobs: 
+				try: 
+					job_list = api.list_namespaced_job(namespace="default")
+					curr_job = find_job_with_substring(job_list.items, "sleep-" + str(job))
+					if curr_job.status.succeeded == 1:
+						submitted_jobs[job] = True 
+				except Exception as e:
+					pass
+		return submitted_jobs
+	
+	submitted_jobs = {}
+	for job in jobs:
+		if job == 'hyperparameters':
+			continue
+		submitted_jobs[job] = False
+
+	# TODO: Keep a dictionary that continously gets updated with information about each generated job
+	# TODO: Array
+	while True: 
+		logger.debug("Running ...")
+		logger.debug("Submitted Jobs State: " + str(submitted_jobs))
+		if all_submitted(submitted_jobs=submitted_jobs):
+			logger.debug("Last job completed $$$")
+			p1.terminate()
+			p2.terminate()
+			break 
+		submitted_jobs = check_submitted(submitted_jobs=submitted_jobs)
+	'''
 	# Keep running until last job is completed
 	last_job = len(jobs) - 2
 	while True:
@@ -371,14 +421,31 @@ def run(hyperparameters, batch_repo, index):
 			p1.terminate()
 			p2.terminate()
 			break 
-
-	p1 = mp.Process(target=log, args=(tag, batch_repo, False))
+	'''
+	p1 = mp.Process(target=log, args=(tag, batch_repo, False, clusters['onprem'], clusters['cloud']))
 	p1.start()
 	while (p1.is_alive()):
 		print("Saving last logs....")
 		print("p1 alive status: " + str(p1.is_alive()))
 		time.sleep(1)
-
+	'''
+	submitted_jobs = {}
+	for job in jobs:
+		if job == 'hyperparameters':
+			continue
+		submitted_jobs[job] = False
+	
+	while True: 
+		# TODO: Ensure one complete set of logs are executed to completion
+		logger.debug("Running ...")
+		logger.debug("Submitted Jobs State: " + str(submitted_jobs))
+		submitted_jobs = check_submitted(submitted_jobs=submitted_jobs)
+		if all_submitted(submitted_jobs=submitted_jobs):
+			logger.debug("Last job completed $$$")
+			p1.terminate()
+			break
+	'''
+		
 	p0.terminate()
 	
 	return 0 

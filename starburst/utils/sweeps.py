@@ -34,6 +34,67 @@ def generate_interval(min=0, max=10, intervals=10):
 	return np.linspace(min, max, num=intervals+1).tolist()
 
 SWEEPS = {
+	"14": { # 8 GPU, Multi gpu node test without cluster congestion
+		"fixed_values": {
+            "batch_time": 180, 
+            "mean_duration": 15,
+            "waiting_policy": "fifo_wait",
+            "cpu_sizes":[0.1, 0.1, 0.1],
+            "gpu_sizes": [1, 2, 4, 8],
+            "gpu_dist": [0.7, 0.15, 0.1, 0.05],
+	        "cpu_sizes": [i * 11 for i in [1, 2, 4, 8]],
+            "uniform_submission": True, 
+            "uniform_arrival": 10,
+            "onprem_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu',
+            "cloud_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu-cloud',
+            "gpu_workload": True
+        },
+	    "varying_values": {	
+            "cpu_dist": [[0.7, 0.15, 0.1, 0.05]], # NOTE: Cpu_dist not used when running gpu_jobs based on generate_jobs()
+            "wait_time": [2, 5, 10], #,3,4,5,6,7,8],
+            "arrival_rate": [1] 
+        }
+    },
+	"13": { # 2 GPU, Multi gpu node test without cluster congestion
+		"fixed_values": {
+            "batch_time": 60, 
+            "mean_duration": 5,
+            "waiting_policy": "fifo_wait",
+            "cpu_sizes":[0.1, 0.1, 0.1],
+            "gpu_sizes": [1, 2],
+            "gpu_dist": [0.2, 0.8],
+            "uniform_submission": True, 
+            "uniform_arrival": 10,
+            "onprem_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu',
+            "cloud_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu-cloud',
+            "gpu_workload": True
+        },
+	    "varying_values": {	
+            "cpu_dist": [[0.6, 0.25, 0.15]],
+            "wait_time": [2,3,4,5,6,7,8],
+            "arrival_rate": [1] 
+        }
+    },
+	"12": { # Single node gpu test without cluster congestion
+		"fixed_values": {
+            "batch_time": 60, 
+            "mean_duration": 5,
+            "waiting_policy": "fifo_wait",
+            "cpu_sizes":[0.1, 0.1, 0.1],
+            "gpu_sizes": [1, 1],
+            "gpu_dist": [0.5, 0.5],
+            "uniform_submission": True, 
+            "uniform_arrival": 10,
+            "onprem_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu',
+            "cloud_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu-cloud',
+            "gpu_workload": True
+        },
+	    "varying_values": {	
+            "cpu_dist": [[0.6, 0.25, 0.15]],
+            "wait_time": [2,3,4,5,6,7,8],
+            "arrival_rate": [1] 
+        }
+    },
     "11": { # Single node gpu test with longer job time to ensure gpu index value is saved
 		"fixed_values": {
             "batch_time": 180, 
