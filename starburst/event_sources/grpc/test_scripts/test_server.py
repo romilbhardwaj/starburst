@@ -14,7 +14,7 @@ def serve():
     q = Queue()
     job_submit_pb2_grpc.add_JobSubmissionServicer_to_server(
         JobSubmissionServicer(q, debug_mode=True), server)
-    server.add_insecure_port('[::]:10000')
+    server.add_insecure_port('[::]:30000')
     server.start()
     server.wait_for_termination()
 

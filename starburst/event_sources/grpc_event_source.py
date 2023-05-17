@@ -43,6 +43,7 @@ class JobSubmissionSource(BaseEventSource):
         self.server = grpc.aio.server(futures.ThreadPoolExecutor(max_workers=10))
         job_submission_pb2_grpc.add_JobSubmissionServicer_to_server(
             JobSubmissionServicer(self.output_queue), self.server)
+	logger.debug(f'QWERTY Running on port {server_port}')
         self.server.add_insecure_port(f'[::]:{server_port}')
 
     async def event_generator(self):

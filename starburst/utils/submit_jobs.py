@@ -346,7 +346,7 @@ def run(hyperparameters, batch_repo, index, tick):
 	logger.debug("JOBS SUBMITTED " + str(jobs))
 	save_jobs(jobs=jobs, repo=batch_repo, tag=index)
 	c1, c2 = mp.Pipe()
-	grpc_port = 10000
+	grpc_port = 30000 #9999 #50051
 
 	clusters = {
 		"onprem": hp.onprem_cluster,

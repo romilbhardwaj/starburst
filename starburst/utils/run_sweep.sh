@@ -1,6 +1,6 @@
-export PYTHONPATH=/home/suryaven/test/starburst
+export PYTHONPATH=/home/surya/starburst/
 
-cd /home/suryaven/test/starburst/starburst/utils
+cd /home/surya/starburst/starburst/utils
 
 current_time=$(date +%s)
 

@@ -15,3 +15,4 @@ seaborn
 google-cloud
 kubernetes
 google-cloud-container
+psutil
