@@ -72,10 +72,10 @@ class StarburstScheduler:
         :return:
         '''
         # TODO: Timeout event for job 
-        # if event.event_type == EventTypes.SCHED_TICK:
-        #     assert isinstance(event, SchedTick)
-        #     self.processor_sched_tick_event(event)
-        if event.event_type == EventTypes.JOB_ADD:
+        if event.event_type == EventTypes.SCHED_TICK:
+            assert isinstance(event, SchedTick)
+            self.processor_sched_tick_event(event)
+        elif event.event_type == EventTypes.JOB_ADD:
             assert isinstance(event, JobAddEvent)
             self.processor_job_add_event(event)
         else:
@@ -158,7 +158,7 @@ class StarburstScheduler:
             logger.debug("PROCESSEVENT TIME (()) " + str(_end_process_event_time - _start_process_event_time))
             logger.debug("QUEUE SIZE (()) " + str(self.event_queue.qsize))
             
-            time.sleep(0.5) # -(_end_time - _start_time))
+            await asyncio.sleep(0.5) # -(_end_time - _start_time))
             _interloop_end_time = time.perf_counter()
             logger.debug("INTERLOOP TIME (()) " + str(_interloop_end_time - _start_time))
             logger.debug("LOOP TIME (()) " + str(_end_time))#str(_end_time - _start_time))
