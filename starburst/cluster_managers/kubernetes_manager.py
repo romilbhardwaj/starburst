@@ -93,7 +93,7 @@ class KubernetesManager(object):
         total_memory = 0
 
         # Set pagination parameters
-        limit = 50
+        limit = None # 50
         continue_token = ""
 
         while True:
@@ -150,7 +150,7 @@ class KubernetesManager(object):
         #api_instance = client.CoreV1Api()
 
         api_instance = self.core_v1
-        limit = 50
+        limit = None #50
         continue_token = ""
         nodes, _, _ = api_instance.list_node_with_http_info(limit=limit, _continue=continue_token)
         pods, _, _ = api_instance.list_pod_for_all_namespaces_with_http_info(limit=limit, _continue=continue_token)#watch=False)
@@ -229,6 +229,57 @@ class KubernetesManager(object):
 
         return available_resources, running_pods
 
+    def job_running(self, job_name=None, namespace=None):
+        def find_job_with_substring(jobs, substring):
+            for job in jobs:
+                if substring in job.metadata.name:
+                    return job.metadata.name
+            return None
+        
+        limit = None
+        continue_token = ""
+        job_list, _, _ = self.batch_v1.list_namespaced_job_with_http_info(namespace="default", limit=limit, _continue=continue_token)        
+        real_job_name = find_job_with_substring(job_list.items, job_name)
+        logger.debug("FINDING JOB " +  str(job_name) + " Found: " + str(real_job_name))
+        if real_job_name: 
+            job = self.batch_v1.read_namespaced_job_status_with_http_info(name=real_job_name, namespace="default")
+            logger.debug("NEW JOB STATUS " + str(job[0].status) + " JOB NAME " +  str(job_name) + " Found: " + str(real_job_name))
+            #, limit=limit, _continue=continue_token)
+            '''
+            # Check the job status
+            if job.status.active is not None:
+                # Job is currently active, it's not waiting in the queue
+                print("Job is active and running.")
+            elif job.status.conditions is not None:
+                # Job is waiting in the queue
+                print("Job is waiting in the queue.")
+            else:
+                # Job is completed
+                print("Job has completed.")
+            return
+            '''
+            return job[0].status.active
+        else: 
+            return 0 
+    
+    '''
+    def empty_queue(self): 
+        
+        job = self.batch_v1.read_namespaced_job_status_with_http_info .read_namespaced_job(name=job_name, namespace=namespace)
+        
+        # Check the job status
+        if job.status.active is not None:
+            # Job is currently active, it's not waiting in the queue
+            print("Job is active and running.")
+        elif job.status.conditions is not None:
+            # Job is waiting in the queue
+            print("Job is waiting in the queue.")
+        else:
+            # Job is completed
+            print("Job has completed.")
+        return
+    '''
+
     def can_fit(self, job: Job) -> Optional[str]:
         """ Check if a job can fit in the cluster. """
         #self.get_cluster_resources()
@@ -236,6 +287,9 @@ class KubernetesManager(object):
         curr_time = time.perf_counter()
         logger.debug("Started can_fit(): ~~~ --- " + str(curr_time-start_time))
         job_resources = job.resources
+
+        # TODO: if previous has been scheduled than can move on
+        
         cluster_resources, running_pods = self.get_allocatable_resources_per_node()
         
         for node_name, node_resources in cluster_resources.items():
