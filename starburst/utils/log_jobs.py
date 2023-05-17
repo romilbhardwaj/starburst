@@ -40,35 +40,6 @@ SCALED_COSTS = {
 	"T4:vCPU": 7.5, #x
 }
 
-container_creation_times = {}
-container_start_times = {}
-image_pull_start_times = {}
-image_pull_end_times = {}
-scheduled_nodes = {}
-job_creation_times = {}
-job_completion_times = {}
-job_pods = {}
-node_instances = {}
-
-event_data = {
-	'container_creation_times': container_creation_times,
-	'container_start_times': container_start_times,
-	'image_pull_start_times': image_pull_start_times,
-	'image_pull_end_times': image_pull_end_times,
-	'scheduled_nodes': scheduled_nodes,
-	'job_creation_times': job_creation_times,
-	'job_completion_times': job_completion_times,
-	'job_pods': job_pods, 
-	'node_instances': node_instances
-	#'job_to_pod': 
-}
-
-# Global event data - updated when functions executed
-cluster_event_data = {
-	'onprem': copy.deepcopy(event_data),
-	'cloud': copy.deepcopy(event_data)
-}
-
 def event_data_dict():
 	container_creation_times = {}
 	container_start_times = {}
@@ -94,6 +65,7 @@ def event_data_dict():
 		'job_pods': job_pods, 
 		'node_instances': node_instances,
 		'gpu_index': gpu_index
+		#'job_to_pod'
 	}
 
 	cluster_event_data = {
@@ -102,8 +74,47 @@ def event_data_dict():
 	}
 	return cluster_event_data
 
+def retrieve_events_df(event_number=None, avoid_congestion=False, only_dict=False ):
+	'''
+	Offload all data cleaning to pandas, and none through python
+	'''
+	
+	"""Turns all logs from sweep into a pandas dataframe for analysis"""
+	all_jobs = {}
+	if event_number:
+		cluster_data_path = "../logs/archive/" + str(event_number) + '/events/'
+		submission_data_path = "../logs/archive/" + str(event_number) + '/jobs/'
+		sweep_data_path = "../logs/archive/" + str(event_number) + "/sweep.json"
+		
 
-def parse_event_logs(cluster_event_data=None, submission_data=None, event_time=None, avoid_congestion=True):#onprem_event_logs = None, cloud_event_logs = None):
+		files = os.listdir(cluster_data_path)
+
+		for i in range(len(files)):
+			#import pdb; pdb.set_trace()
+			file = str(i) + ".json"
+			cluster_log_path = cluster_data_path + file
+			submission_log_path = submission_data_path + file
+
+			try: 
+				cluster_event_data = read_cluster_event_data(cluster_log_path=cluster_log_path)
+				submission_data = read_submission_data(submission_log_path=submission_log_path)
+				with open(sweep_data_path, "r") as f: #"../logs/event_data.json", "r") as f:
+					sweep_data = json.load(f)
+				#jobs, num_nodes, hps = parse_event_logs(cluster_event_data=cluster_event_data, submission_data=submission_data, avoid_congestion=avoid_congestion)
+			except Exception as e:
+				print(e)
+				continue 
+
+	if only_dict:
+		return cluster_event_data, submission_data, sweep_data
+
+	cluster_event_data_df = pd.DataFrame.from_dict(cluster_event_data)
+	submission_data_df = pd.DataFrame.from_dict(submission_data)
+	sweep_data_df = pd.DataFrame.from_dict(sweep_data)
+
+	return cluster_event_data_df, submission_data_df, sweep_data_df
+
+def parse_event_logs(cluster_event_data=None, submission_data=None, event_time=None, avoid_congestion=True):
 	'''
 	Return values from parsed and joined logs (e.g. events, generated job data, and sweep values)
 
@@ -143,6 +154,10 @@ def parse_event_logs(cluster_event_data=None, submission_data=None, event_time=N
 
 	# TODO: Pass in a bool to look at JCT when assuming scheduled time vs. sumbission time
 	# TODO: Determine if logs should be initialized to submission_time or arrival_time
+	# TODO: Fix naming of allocated gpus -> allocated cpus && allocated gpus real to allocated gpus
+
+	#TODO: Rewrite this function within evaluation.ipynb -- save all event logs directly as pandas dataframe, then clean into a job_df
+	#TODO: Keep a new row for onprem versus cloud jobs 
 	'''
 
 	hyperparameters = None
@@ -151,7 +166,7 @@ def parse_event_logs(cluster_event_data=None, submission_data=None, event_time=N
 
 	job_names = {}
 
-	jobs = {'idx':[], 'runtime':[], 'arrival':[], 'num_gpus':[], 'allocated_gpus':[], 'start':[], 'instance_type':[], 'node_index': [], 'node': [], 'cpus': [], 'submission_time': [], 'wait_times':[]}
+	jobs = {'idx':[], 'runtime':[], 'arrival':[], 'num_gpus':[], 'allocated_gpus':[], 'allocated_gpus_real':[], 'allocated_node':[], 'start':[], 'instance_type':[], 'node_index': [], 'node': [], 'cpus': [], 'submission_time': [], 'wait_times':[]}
 
 	all_nodes = set()
 	nodes = {}
@@ -163,7 +178,6 @@ def parse_event_logs(cluster_event_data=None, submission_data=None, event_time=N
 	for type in clusters:
 		cluster = clusters[type]
 		if cluster is not None:
-			
 			start_times = cluster['container_start_times']
 			#pod_end_times = cluster['pod_end_times']
 			creation_times = cluster['job_creation_times']
@@ -237,11 +251,16 @@ def parse_event_logs(cluster_event_data=None, submission_data=None, event_time=N
 				else:
 					jobs['wait_times'].append(value[0] - submit_time)
 
+				#TODO: Currently cpu jobs map to gpu_indices
+				#TODO: Need to map gpu jobs to separate allocated_cpus and gpu jobs mapped to allocated_gpus
+
 				if job_pods[key] in pod_nodes:
 					jobs['allocated_gpus'].append({nodes[pod_nodes[job_pods[key]]]: []})
+					jobs['allocated_gpus_real'].append({nodes[pod_nodes[job_pods[key]]]: []})
 					jobs['node_index'].append(nodes[pod_nodes[job_pods[key]]])
 				else:
 					jobs['allocated_gpus'].append({})
+					jobs['allocated_gpus_real'].append({})
 					jobs['node_index'].append(None)
 				
 				if type == "cloud":
@@ -404,7 +423,7 @@ def read_submission_data(submission_log_path=None):
 		return loaded_data
 	return {}
 
-def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None, loop=False, onprem_cluster="", cloud_cluster=""):
+def write_cluster_event_data(batch_repo=None, cluster_event_data=None, tag=None, loop=False, onprem_cluster="", cloud_cluster=""):
 	'''
 	Store relevant event data in a dictionary to disk with periodic calls
 
@@ -420,8 +439,7 @@ def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None, l
 	# TODO: Write experiment metadata to job events metadata
 	# TODO: Move existing logs to archive
 	'''
-
-	global cluster_event_data
+	#global cluster_event_data
 	import logging
 	#client.rest.logger.setLevel(logging.WARNING)
 	logger = logging.getLogger(__name__)
@@ -451,10 +469,10 @@ def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None, l
 		else: 
 			current_log_path = log_path + "event_data_" + str(int(datetime.datetime.now().timestamp())) + ".json"
 
-	config.load_kube_config(context=onprem_cluster)#"gke_sky-burst_us-central1-c_starburst")
+	config.load_kube_config(context=onprem_cluster)
 	onprem_api = client.CoreV1Api()
 
-	config.load_kube_config(context=cloud_cluster)#"gke_sky-burst_us-central1-c_starburst-cloud")
+	config.load_kube_config(context=cloud_cluster)
 	cloud_api = client.CoreV1Api()
 
 	if not loop: 
@@ -475,23 +493,21 @@ def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None, l
 		for type in clusters:
 			api = clusters[type]
 			if api is not None:
-
 				events = api.list_event_for_all_namespaces()
 				event_data = cluster_event_data[type]
-
 				# TODO: Determine what to do with message data - item.message
 				instances = retrieve_node_instance(api)
 				event_data['node_instances'] = instances
-
 				# TODO: Integrate GPU INDEX logging
 				# TODO: gpu_index = api.read_namespaced_pod_log(name=pod_name, namespace="default")
-				'''
-				pod_list = api.list_namespaced_pod(namespace="default")
-				for pod in pod_list.items:
-					pod_name = pod.metadata.name
-					gpu_index = api.read_namespaced_pod_log(name=pod_name, namespace="default")
-					event_data['gpu_index'][pod_name] = gpu_index
-				'''
+				try: 
+					pod_list = api.list_namespaced_pod(namespace="default")
+					for gpu_pod in pod_list.items:
+						gpu_pod_name = gpu_pod.metadata.name
+						gpu_index = api.read_namespaced_pod_log(name=gpu_pod_name, namespace="default")
+						event_data['gpu_index'][gpu_pod_name] = gpu_index
+				except Exception as e: 
+					logger.debug("POD LOG ERROR CAUGHT: " + str(e))
 				for item in events.items:
 					event_reason = item.reason
 					#logger.debug("Event reason: ~~~ --- !!! " + str(event_reason))
@@ -542,7 +558,6 @@ def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None, l
 							if match:
 								pod_name = match.group(1)
 								event_data['job_pods'][job_name] = pod_name
-
 							job_creation_time = item.first_timestamp 
 							event_data['job_creation_times'][job_name] = int(job_creation_time.timestamp()) #[pod_name] = int(job_creation_time.timestamp())
 					elif event_reason == 'Completed':
@@ -553,14 +568,11 @@ def write_cluster_event_data(batch_repo=None, event_data=event_data, tag=None, l
 							job_name = involved_object.name 
 							job_completion_time = item.first_timestamp
 							event_data['job_completion_times'][job_name] = int(job_completion_time.timestamp())
-
 		# TODO: Save job hyperparameters directly into job events metadata	
 		with open(current_log_path, "w") as f:
 			json.dump(cluster_event_data, f)
-
 		if not loop: 
 			break 
-
 		# Retrieve data each second 
 		time.sleep(log_frequency)
 	
