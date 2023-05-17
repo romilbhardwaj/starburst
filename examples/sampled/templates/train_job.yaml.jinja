@@ -1,0 +1,14 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: train-{{job}}
+spec: 
+  template: 
+    spec: 
+      containers: 
+      - name: train
+        image: {{image}}
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          nvidia-smi --query-gpu=uuid --format=csv,noheader && {{setup_script}}
