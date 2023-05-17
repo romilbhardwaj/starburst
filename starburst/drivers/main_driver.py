@@ -79,7 +79,7 @@ if __name__ == '__main__':
     main()
 
 
-def custom_start(queue, conn, grpc_port=GRPC_PORT, sched_tick_time=SCHED_TICK_TIME, onprem_k8s_cluster_name=ONPREM_K8S_CLUSTER_NAME, cloud_k8s_cluster_name=CLOUD_K8S_CLUSTER_NAME, policy=POLICY_STR, wait_time=0, job_data={}):
+def custom_start(queue, conn, grpc_port=GRPC_PORT, sched_tick_time=SCHED_TICK_TIME, onprem_k8s_cluster_name=ONPREM_K8S_CLUSTER_NAME, cloud_k8s_cluster_name=CLOUD_K8S_CLUSTER_NAME, policy=POLICY_STR, wait_time=0, job_data={}, timestamp=None, index=None):
     #global startburst_scheduler
     '''
     # Parse command line arguments =================================================================
@@ -103,7 +103,7 @@ def custom_start(queue, conn, grpc_port=GRPC_PORT, sched_tick_time=SCHED_TICK_TI
     # Create event sources
     sched_tick_event_source = SchedTickEventSource(event_queue, sched_tick_time)
     grpc_job_submit_event_source = JobSubmissionEventSource(event_queue, grpc_port)
-    event_sources = [sched_tick_event_source, grpc_job_submit_event_source]   # Add more, such as GRPC event source here
+    event_sources = [grpc_job_submit_event_source]# [sched_tick_event_source, grpc_job_submit_event_source]   # Add more, such as GRPC event source here
 
     # Pass learner bank and time series model to the scheduler =====================================
     starburst = StarburstScheduler(event_queue,
@@ -112,7 +112,10 @@ def custom_start(queue, conn, grpc_port=GRPC_PORT, sched_tick_time=SCHED_TICK_TI
                                     cloud_cluster_name=cloud_k8s_cluster_name,
                                     queue_policy_str=policy,
                                     wait_time=wait_time,
-                                    job_data=job_data)
+                                    job_data=job_data,
+                                    timestamp=timestamp,
+                                    run=index 
+                                    )
     
     if 'hyperparameters' in job_data: 
         logger.debug(f"Hyperparameters: {str(job_data['hyperparameters'])}")
@@ -122,7 +125,10 @@ def custom_start(queue, conn, grpc_port=GRPC_PORT, sched_tick_time=SCHED_TICK_TI
     for s in event_sources:
         event_loop.create_task(s.event_generator())
     try:
+        #event_loop.run_until_complete(starburst.log_ticks())
         event_loop.run_until_complete(starburst.scheduler_loop(queue, conn))
+        # TODO: Ensure ticks are properly logged
+        
     finally:
         event_loop.close()
 
@@ -137,55 +143,3 @@ def start_events(starburst, event_sources, event_loop):
         event_loop.run_until_complete(starburst.scheduler_loop())
     finally:
         event_loop.close()
-
-def custom_start_event_pair(queue, conn, grpc_port=GRPC_PORT, sched_tick_time=SCHED_TICK_TIME, onprem_k8s_cluster_name=ONPREM_K8S_CLUSTER_NAME, cloud_k8s_cluster_name=CLOUD_K8S_CLUSTER_NAME, policy=POLICY_STR, wait_time=0, job_data={}):
-    #global startburst_scheduler
-    '''
-    # Parse command line arguments =================================================================
-    parser.add_argument('--grpc_port', type=int, default=GRPC_PORT,
-                        help='GRPC port to listen on')
-    parser.add_argument('--sched_tick_time', type=int, default=SCHED_TICK_TIME,
-                        help='Time between scheduler ticks')
-    parser.add_argument('--onprem_k8s_cluster_name', type=str, default=ONPREM_K8S_CLUSTER_NAME,
-                        help='Name of on-prem K8s cluster')
-    parser.add_argument('--cloud_k8s_cluster_name', type=str, default=CLOUD_K8S_CLUSTER_NAME,
-                        help='Name of cloud K8s cluster')
-    parser.add_argument('--policy', type=str, default=POLICY_STR,
-                        help=`'Policy` to use. Currently supported - fifo_onprem_only')
-    args = parser.parse_args()
-    '''
-
-    # Create event queue, logger and sources ==================================================
-    event_queue = asyncio.Queue()
-    event_logger = SimpleEventLogger()
-    event_loop_retreive_jobs = asyncio.get_event_loop()
-    event_loop_process_queue = asyncio.get_event_loop()
-    # Create event sources
-    sched_tick_event_source = SchedTickEventSource(event_queue, sched_tick_time)
-    grpc_job_submit_event_source = JobSubmissionEventSource(event_queue, grpc_port)
-    event_sources = [sched_tick_event_source, grpc_job_submit_event_source]   # Add more, such as GRPC event source here
-
-    # Pass learner bank and time series model to the scheduler =====================================
-    starburst = StarburstScheduler(event_queue,
-                                    event_logger,
-                                    onprem_cluster_name=onprem_k8s_cluster_name,
-                                    cloud_cluster_name=cloud_k8s_cluster_name,
-                                    queue_policy_str=policy,
-                                    wait_time=wait_time,
-                                    job_data=job_data)
-    
-    if 'hyperparameters' in job_data: 
-        logger.debug(f"Hyperparameters: {str(job_data['hyperparameters'])}")
-        #print(job_data['hyperparameters'])
-
-    #starburst_scheduler = starburst
-    for s in event_sources:
-        event_loop.create_task(s.event_generator())
-    try:
-        event_loop.run_until_complete(starburst.scheduler_loop(queue, conn))
-    finally:
-        event_loop.close()
-
-    #return starburst, event_sources, event_loop
-    #start_events()
-
