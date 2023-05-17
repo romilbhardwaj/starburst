@@ -53,7 +53,7 @@ def generate_jobs(hyperparameters):
 		if hp.uniform_submission: 
 			submit_time += hp.uniform_arrival
 		else: 
-			submit_time += max(0.05, np.random.exponential(scale=1/hp.arrival_rate))
+			submit_time += max(3, np.random.exponential(scale=1/hp.arrival_rate))
 		job_duration = np.random.exponential(scale=hp.mean_duration)
 		gpus = int(np.random.choice(hp.gpu_sizes, p=hp.gpu_dist)) #min(0, int(np.random.exponential(scale=2)))
 		cpus = 11 * gpus
@@ -64,6 +64,11 @@ def generate_jobs(hyperparameters):
 		job['job_duration'] = job_duration
 		workload = {"gpu": gpus, "cpu":cpus, "memory":memory}
 		job['workload'] = workload
+		job['image'] = hp.image
+		job['setup_script'] = hp.setup_script
+		job['sleep'] = hp.sleep
+
+
 		jobs[job_index] = job
 		arrivals.append((job_index, submit_time))
 		job_index += 1
@@ -121,19 +126,25 @@ def submit(jobs={}, arrivals=[], timestamp=None, index=None):
 
 	return 
 
+'''
 def execute(hyperparameters, repo, tag): 
 	jobs, arrivals = generate_jobs(hyperparameters)
 	save_jobs(jobs, repo, tag)
 	submit(jobs, arrivals)
+'''
 
 def generate_sampled_job_yaml(job_id=0, job=None):
 	""" 
 	Generalizes job submission to perform hyperparameter sweep 
 	# TODO: Finalize design
 	# TODO: Input the following value back into the yaml -- imagePullPolicy: Always
+	# TODO: Integrate skyburst yamls: https://github.com/michaelzhiluo/skyburst/tree/main/task_yamls
+	# TODO: Modify job object to support the following values: 
+	image=job['image']
+	setup_script=job['setup_script']
 	"""
-	sleep_time=job["job_duration"]
-	workload=job['workload']
+	
+	
 
 	output = ""
 	env = Environment(
@@ -141,8 +152,19 @@ def generate_sampled_job_yaml(job_id=0, job=None):
 		autoescape=select_autoescape()
 	)
 
-	template = env.get_template("sampled_job.yaml.jinja")
-	output += template.render({"job":str(job_id), "time":str(sleep_time)})
+	sleep_time=job["job_duration"]
+	workload=job['workload']
+	
+	image=job['image']
+	setup_script=job['setup_script']
+	sleep=job['sleep']
+
+	if sleep: 
+		template = env.get_template("sampled_job.yaml.jinja")
+		output += template.render({"job":str(job_id), "time":str(sleep_time)})
+	else:
+		template = env.get_template("train_job.yaml.jinja")
+		output += template.render({"job":str(job_id), "image":str(image), "setup_script":str(setup_script)})
 
 	set_limits = False
 
@@ -318,7 +340,7 @@ def reached_last_job(job_name=None, clusters={}):
 	return False 
 
 
-def run(hyperparameters, batch_repo, index):
+def run(hyperparameters, batch_repo, index, tick):
 	hp = Config(hyperparameters)
 	jobs, arrivals = generate_jobs(hyperparameters=hyperparameters)
 	logger.debug("JOBS SUBMITTED " + str(jobs))
@@ -348,7 +370,8 @@ def run(hyperparameters, batch_repo, index):
 		resp = onprem_api.create_namespaced_daemon_set(body=gpu_support, namespace="default") 
 		resp = cloud_api.create_namespaced_daemon_set(body=gpu_support, namespace="default") 
 	'''
-	p0 = mp.Process(target=driver.custom_start, args=(None, c2, grpc_port, 1, clusters['onprem'], clusters['cloud'], hp.waiting_policy, hp.wait_time, jobs))
+	sched_tick = tick #0.1
+	p0 = mp.Process(target=driver.custom_start, args=(None, c2, grpc_port, sched_tick, clusters['onprem'], clusters['cloud'], hp.waiting_policy, hp.wait_time, jobs, batch_repo, index))
 	p0.start()
 	
 	clear_logs(clusters=clusters)
@@ -384,9 +407,12 @@ def run(hyperparameters, batch_repo, index):
 
 		apis = [onprem_api_batch, cloud_api_batch]
 		for api in apis: 
+			#job_list = api.list_namespaced_job(namespace="default")
+			limit = None #50
+			continue_token = ""
+			job_list, _, _ = api.list_namespaced_job_with_http_info(namespace="default", limit=limit, _continue=continue_token)
 			for job in submitted_jobs: 
 				try: 
-					job_list = api.list_namespaced_job(namespace="default")
 					curr_job = find_job_with_substring(job_list.items, "sleep-" + str(job))
 					if curr_job.status.succeeded == 1:
 						submitted_jobs[job] = True 
@@ -410,7 +436,11 @@ def run(hyperparameters, batch_repo, index):
 			p1.terminate()
 			p2.terminate()
 			break 
+		check_start = time.perf_counter()
+		logger.debug("Checking State...")
 		submitted_jobs = check_submitted(submitted_jobs=submitted_jobs)
+		check_end = time.perf_counter()
+		logger.debug("Check Time (seconds): " + str(check_end - check_start))
 	'''
 	# Keep running until last job is completed
 	last_job = len(jobs) - 2
@@ -450,8 +480,12 @@ def run(hyperparameters, batch_repo, index):
 	
 	return 0 
 
-def run_sweep(sweep={}):
-	sweep_timestamp =  str(int(datetime.now().timestamp()))
+def run_sweep(sweep={}, sweep_timestamp=None):
+	if not sweep_timestamp: 
+		sweep_timestamp = str(int(datetime.now().timestamp()))
+	else: 
+		sweep_timestamp = str(sweep_timestamp)
+
 	sweep_dir = "../logs/archive/" + sweep_timestamp + "/"
 	if not os.path.exists(sweep_dir):
 		os.mkdir(sweep_dir)
@@ -462,15 +496,16 @@ def run_sweep(sweep={}):
 
 	for i in range(len(sweep) - 2):
 		hp = sweep[i]
-		run(hp, sweep_timestamp, str(i))
+		tick = sweep['fixed_values']['sched_tick']
+		run(hp, sweep_timestamp, str(i), tick)
 
 	return sweep_timestamp
 
-def submit_sweep(sweep=None):
+def submit_sweep(sweep=None, timestamp=None):
 	fixed_values = OrderedDict(sweep['fixed_values'])
 	varying_values = OrderedDict(sweep['varying_values'])
 	sweep = generate_sweep(fixed_values=fixed_values, varying_values=varying_values)
-	time_stamp = run_sweep(sweep)
+	time_stamp = run_sweep(sweep=sweep, sweep_timestamp=timestamp)
 	return time_stamp 
 
 def generate_sweep(fixed_values=OrderedDict(), varying_values=OrderedDict()): 
@@ -525,7 +560,7 @@ def delete_cluster(cluster=None):
 	client = container_v1.ClusterManagerClient() 
 	operation = client.delete_cluster(project_id=cluster['project_id'], zone=cluster['zone'], cluster_id=cluster['name'])
 
-def main(arg1, arg2):
+def main(arg1, arg2, arg3):
 	"""
 	Runs sweep of runs on starburst
 	TODO: Integrate cluster creation and deletion code before and after call to submit_sweep()
@@ -572,13 +607,13 @@ def main(arg1, arg2):
 
 	if arg1 == 'run': 
 		#create_cluster(cluster_config)
-		submit_sweep(sweep=sweep)
+		submit_sweep(sweep=sweep, timestamp=arg3)
 		#delete_cluster(cluster_config)
 
 	return
 
 if __name__ == '__main__':
-    main(arg1=sys.argv[1], arg2=sys.argv[2])
+    main(arg1=sys.argv[1], arg2=sys.argv[2], arg3=sys.argv[3])
 	#pass
 
 """
