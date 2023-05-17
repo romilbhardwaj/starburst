@@ -8,8 +8,7 @@ spec:
       containers: 
       - name: sleep
         image: gcr.io/deeplearning-platform-release/pytorch-gpu.1-12
-        imagePullPolicy: Always
         command: ["/bin/sh", "-c"]
         args:
         - |
-          nvidia-smi --query-gpu=index --format=csv,noheader && sleep {{time}}
+          nvidia-smi --query-gpu=uuid --format=csv,noheader && sleep {{time}}
