@@ -17,7 +17,7 @@ A hybrid cloud scheduler that enables you to run your k8s workloads on-prem and 
    ```
 3. You can now submit k8s jobs to starburst. We have an example job in `examples/example_job.yaml`. In a new terminal, submit the job to starburst.
    ```console
-   python3 -m starburst.drivers.submit_job --job-yaml examples/example_job.yaml
+   python3 -m starburst.drivers.submit_job --job-yaml examples/default/example_job.yaml
    ```
 4. If you have chosen the `fifo_onprem_only` policy, your job should now be running on the onprem cluster! 🥳 You should see an output like:
     ```console
