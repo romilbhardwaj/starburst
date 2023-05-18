@@ -125,10 +125,13 @@ class FIFOWaitPolicy(BasePolicy):
                 # TODO: Compute job timeout values in parallel 
                 loop_time = time.time()
                 #if time.time() - job.job_submit_time > self.wait_threshold:
+                
+                # COMPUTE WAIT
+                # runtime * resources * ---- Michael 
                 if loop_time - job.job_submit_time > self.wait_threshold:
                     curr_time = time.time()
                     logger.debug(f"SUBMIT - CLOUD {job.job_name} ### Delta (Loop) {loop_time - job.job_submit_time} Timeout {self.wait_threshold}")
-                    logger.debug(f"SUBMIT - CLOUD {job.job_name} ### Delta (Curr) {curr_time - job.job_submit_time} Timeout {self.wait_threshold}")
+                    #logger.debug(f"SUBMIT - CLOUD {job.job_name} ### Delta (Curr) {curr_time - job.job_submit_time} Timeout {self.wait_threshold}")
                     logger.debug(f"SUBMIT - CLOUD ### Queue {job_queue}")
                     logger.debug(f"SUBMIT - CLOUD ### Looptime {loop_time} Currtime {curr_time} Submitime {job.job_submit_time}")
                     # Submit to cloud
@@ -177,7 +180,8 @@ class FIFOWaitPolicy(BasePolicy):
                     logger.debug("Looking for job ^^^ " +  str(self.prevJobName))
                 logger.debug("prevJobName " +  str(self.prevJobName))
                 logger.debug("prevJobStatus " +  str(self.prevJobStatus))
-                if self.onprem_manager.can_fit(job) and (self.prevJobName == None or self.prevJobStatus == None or self.prevJobStatus == 1): 
+                # Added: time.time() - job.job_submit_time <= self.wait_threshold 
+                if time.time() - job.job_submit_time <= self.wait_threshold and self.onprem_manager.can_fit(job) and (self.prevJobName == None or self.prevJobStatus == None or self.prevJobStatus == 1): 
                     logger.debug("REACHED @@@ CAN FIT " +  str(self.prevJobName))
                     if self.wait_until_scheduled:
                         self.currState, self.curr_pods = self.onprem_manager.get_allocatable_resources_per_node()
@@ -215,6 +219,8 @@ class FIFOWaitPolicy(BasePolicy):
                     waited_time = time.time() - job.job_submit_time
                     logger.debug(
                         f"Waiting - Onprem cluster cannot fit {job}. Been waiting for {waited_time} seconds.")
+                    
+                    
                     if self.loop: 
                         pass
                     else: 
@@ -230,7 +236,8 @@ class FIFOWaitPolicy(BasePolicy):
 
             return
 
-
+# ComputeWaitPolicy
+# Starburst
 class LinearTimeWaitPolicy(BasePolicy):
     """ Implements FIFO submission to only onprem. If job has been waiting longer than a threshold, submit to cloud. """
 
