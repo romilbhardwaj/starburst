@@ -8,6 +8,8 @@ DEFAULT_IP = 'localhost'
 DEFAULT_PORT = 30000 #9999 #50051 #10000 #50051 
 JOB_YAML_PATH = 'examples/default/example_job.yaml'
 
+logger = logging.getLogger(__name__)
+
 def parseargs():
     parser = argparse.ArgumentParser(description='Starburst Job Submission client that sends jobs to the scheduler.')
     parser.add_argument('--job-yaml', '-j', type=str, default=JOB_YAML_PATH, help='Path to k8s job YAML to submit')
@@ -28,6 +30,7 @@ def run_client(ip, port, job_yaml_path):
         #if args.kubeflow: 
         #    stub.SubmitJob
         #else: 
+        logger.debug(f'CLIENT READ AT {ip}:{port} with {channel}')
         with open(args.job_yaml, 'r') as f:
             job_yaml = f.read()
         print(job_yaml)
