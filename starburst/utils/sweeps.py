@@ -65,7 +65,7 @@ SWEEPS = {
     },
     "31": { # Testing small and large batches for onprem only and cloud spillover
 		"fixed_values": {
-            "batch_time": 60, 
+            "batch_time": 120, 
             "mean_duration": 15,
             "waiting_policy": "fifo_wait",
             "cpu_sizes":[0.1, 0.1, 0.1, 0.1],
@@ -73,7 +73,7 @@ SWEEPS = {
             "gpu_dist": [0.7, 0.15, 0.1, 0.05],
 	        "cpu_sizes": [i * 11 for i in [1, 2, 4, 8]],
             "uniform_submission": True, 
-            "uniform_arrival": 0.5,
+            "uniform_arrival": 3,
             "onprem_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu',
             "cloud_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu-cloud',
             "cluster_size": 1,
@@ -83,7 +83,7 @@ SWEEPS = {
         },
 	    "varying_values": {	
             "arrival_rate": [3], #TODO: Figure out the optimal values
-            "wait_time": [60],
+            "wait_time": [0, 1, 2],
             "arrival_rate": [1],
             #"setup_script": "/tasks/*.sh"
         }
