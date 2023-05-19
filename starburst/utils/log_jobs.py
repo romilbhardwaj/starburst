@@ -20,7 +20,7 @@ import numpy as np
 # TODO: Include accurate cloud specific costs (e.g. network, disk, instance type)
 # TODO: Submit cloud quotas requests
 """
-
+SIGNAL_FILE = ""
 GCP_PRICES = {
 	"e2-medium": 0.038795,
 	"e2-standard-8": 0.31036,
@@ -423,7 +423,7 @@ def read_submission_data(submission_log_path=None):
 		return loaded_data
 	return {}
 
-def write_cluster_event_data(batch_repo=None, cluster_event_data=None, tag=None, loop=False, onprem_cluster="", cloud_cluster=""):
+def write_cluster_event_data(batch_repo=None, cluster_event_data=None, tag=None, loop=False, onprem_cluster="", cloud_cluster="", index=None):
 	'''
 	Store relevant event data in a dictionary to disk with periodic calls
 
@@ -435,6 +435,7 @@ def write_cluster_event_data(batch_repo=None, cluster_event_data=None, tag=None,
 	Normal  Pulled     52m   kubelet            Successfully pulled image "alpine:latest" in 118.522763ms
 	Normal  Created    52m   kubelet            Created container sleep
 	Normal  Started    52m   kubelet            Started container sleep
+	Normal  Completed  52m   kubelet            Job completed
 
 	# TODO: Write experiment metadata to job events metadata
 	# TODO: Move existing logs to archive
@@ -469,6 +470,7 @@ def write_cluster_event_data(batch_repo=None, cluster_event_data=None, tag=None,
 		else: 
 			current_log_path = log_path + "event_data_" + str(int(datetime.datetime.now().timestamp())) + ".json"
 
+	# TODO Verify if they will interfere
 	config.load_kube_config(context=onprem_cluster)
 	onprem_api = client.CoreV1Api()
 
@@ -488,11 +490,13 @@ def write_cluster_event_data(batch_repo=None, cluster_event_data=None, tag=None,
 				print("Logs cleared successfully.")
 				break
 
+	end = False 
 	while True:
 		clusters = {"onprem": onprem_api, "cloud": cloud_api}
 		for type in clusters:
 			api = clusters[type]
 			if api is not None:
+				# TODO: Rate Limitted 
 				events = api.list_event_for_all_namespaces()
 				event_data = cluster_event_data[type]
 				# TODO: Determine what to do with message data - item.message
@@ -542,12 +546,15 @@ def write_cluster_event_data(batch_repo=None, cluster_event_data=None, tag=None,
 						if involved_object.kind == 'Pod': 
 							pod_name = involved_object.name 
 							message = item.message
+							event_data['scheduled_nodes'][pod_name] = message
+							'''
 							match = re.search(r"Successfully assigned (\S+) to (\S+)", message) #e.g. "Successfully assigned default/sleep-1-541823-wkbz7 to gke-starburst-default-pool-8bec73e3-81j81"
 							if match:
 								_ = match.group(1)
 								node_name = match.group(2)
 								# TODO: Save pod scheduled time
 								event_data['scheduled_nodes'][pod_name] = node_name
+							'''
 					elif event_reason == 'SuccessfulCreate':
 						#TODO: Determine difference between job metrics and pod metrics
 						involved_object = item.involved_object 
@@ -568,13 +575,33 @@ def write_cluster_event_data(batch_repo=None, cluster_event_data=None, tag=None,
 							job_name = involved_object.name 
 							job_completion_time = item.first_timestamp
 							event_data['job_completion_times'][job_name] = int(job_completion_time.timestamp())
+							logger.debug(f'Logged Job Completion Time for job {job_name} at time {job_completion_time}')
 		# TODO: Save job hyperparameters directly into job events metadata	
 		with open(current_log_path, "w") as f:
 			json.dump(cluster_event_data, f)
-		if not loop: 
-			break 
+		#if not loop: 
+		#	break 
 		# Retrieve data each second 
 		time.sleep(log_frequency)
+
+		p1_log = "../logs/archive/" + batch_repo + '/' + 'p1.log'
+		with open(p1_log, "a") as f:
+			f.write("retrieved event p1 " + str(index) + '\n')
+
+		if end: 
+			with open(p1_log, "a") as f:
+				f.write("reached end of p1 " + str(index) + '\n')
+			return 0
+
+		signal_file = "../logs/archive/"+ batch_repo + '/signal.lock' 
+		if os.path.exists(signal_file):
+			# TODO: Loop one last time
+			end = True 
+			#with open(p1_log, "a") as f:
+			#	f.write("reached end of p1 " + str(index) + '\n')
+			#return 0
+		
+		
 	
 	return 0
 
