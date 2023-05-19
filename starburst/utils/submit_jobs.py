@@ -92,12 +92,14 @@ def save_jobs(jobs, repo, tag):
 	with open(current_log_path, "w") as f:
 		json.dump(jobs, f)
 
-def submit(jobs={}, arrivals=[], timestamp=None, index=None):
+def submit(jobs={}, arrivals=[], timestamp=None, index=None, clusters=None):
 	start_time = time.time()
 	curr_time = time.time()
 	job_index = 0 #1
 	total_jobs = len(arrivals) #len(jobs)
 	submit_times = {}
+	p2_log = "../logs/archive/" + timestamp + '/' + 'p2.log'
+
 	
 	while True:
 		curr_time = time.time()
@@ -110,6 +112,8 @@ def submit(jobs={}, arrivals=[], timestamp=None, index=None):
 			submit_time = time.time()
 			submit_times[job_index] = submit_time
 			job_index += 1
+			with open(p2_log, "a") as f:
+				f.write("Submitting job " + str(job) + '\n')
 		#TODO: Improve stop condition -- wait until last job completes
 		if job_index >= total_jobs: 
 			break
@@ -125,7 +129,68 @@ def submit(jobs={}, arrivals=[], timestamp=None, index=None):
 
 	with open(trial_data_path, "w") as f:
 		json.dump(job_data, f)
+
+	def all_submitted(submitted_jobs):
+		for submission_state in submitted_jobs.values():
+			if submission_state == False: 
+				return False 
+		return True
 	
+	def check_submitted(submitted_jobs):
+		def find_job_with_substring(jobs, substring):
+			for job in jobs:
+				if substring in job.metadata.name:
+					return job
+			return None
+
+		config.load_kube_config(context=clusters['onprem'])
+		onprem_api_batch = client.BatchV1Api()
+
+		config.load_kube_config(context=clusters['cloud'])
+		cloud_api_batch = client.BatchV1Api()
+
+		apis = [onprem_api_batch, cloud_api_batch]
+		for api in apis: 
+			#job_list = api.list_namespaced_job(namespace="default")
+			limit = None #50
+			continue_token = ""
+			job_list, _, _ = api.list_namespaced_job_with_http_info(namespace="default", limit=limit, _continue=continue_token)
+			for job in submitted_jobs: 
+				try: 
+					curr_job = find_job_with_substring(job_list.items, "sleep-" + str(job))
+					if curr_job.status.succeeded == 1:
+						submitted_jobs[job] = True 
+				except Exception as e:
+					pass
+		return submitted_jobs
+	
+	# TODO: Verify if jobs is accesible
+	submitted_jobs = {}
+	for job in jobs:
+		if job == 'hyperparameters':
+			continue
+		submitted_jobs[job] = False
+
+	
+
+	while not all_submitted(submitted_jobs=submitted_jobs):
+		logger.debug("Running ...")
+		with open(p2_log, "a") as f:
+			f.write("Submitted Jobs State: " + str(submitted_jobs) + '\n')
+
+		check_start = time.perf_counter()
+		logger.debug("Checking State...")
+		submitted_jobs = check_submitted(submitted_jobs=submitted_jobs)
+		check_end = time.perf_counter()
+
+		with open(p2_log, "a") as f:
+			f.write("Check Time (seconds): " + str(check_end - check_start) + '\n')
+
+		time.sleep(1)
+
+	with open(p2_log, "a") as f:
+		f.write("reached end of p2 " + str(index) + '\n')
+
 	return 
 '''
 def execute(hyperparameters, repo, tag): 
@@ -260,9 +325,9 @@ def clear_logs(clusters={}):
 				continue 
 	print("Completed Clearing Logs...")
 
-def log(tag=None, batch_repo=None, loop=True, onprem_cluster="", cloud_cluster=""):
+def log(tag=None, batch_repo=None, loop=True, onprem_cluster="", cloud_cluster="", index=None):
 	cluster_event_data = log_jobs.event_data_dict()
-	log_jobs.write_cluster_event_data(batch_repo=batch_repo, cluster_event_data=cluster_event_data, tag=tag, loop=loop, onprem_cluster=onprem_cluster, cloud_cluster=cloud_cluster)
+	log_jobs.write_cluster_event_data(batch_repo=batch_repo, cluster_event_data=cluster_event_data, tag=tag, loop=loop, onprem_cluster=onprem_cluster, cloud_cluster=cloud_cluster, index=index)
 
 def empty_cluster(clusters={}):
 	"""Function returns true if there are any running pods in the cluster"""
@@ -364,24 +429,7 @@ def run(hyperparameters, batch_repo, index, tick):
 		"cloud": hp.cloud_cluster
 	}
 	
-	'''
-	config.load_kube_config(context=clusters['onprem'])
-	onprem_api = client.AppsV1Api()
-
-	config.load_kube_config(context=clusters['cloud'])
-	cloud_api = client.AppsV1Api()
-	'''
-	#client.V1DaemonSet()
-	'''
-	if hp.gpu_workload:
-		url = "https://raw.githubusercontent.com/GoogleCloudPlatform/container-engine-accelerators/master/nvidia-driver-installer/cos/daemonset-preloaded.yaml"
-		r = requests.get(url)
-		open('gpu_plugin.yaml', 'wb').write(r.content)
-		gpu_support = yaml.safe_load('gpu_plugin.yaml')
-		resp = onprem_api.create_namespaced_daemon_set(body=gpu_support, namespace="default") 
-		resp = cloud_api.create_namespaced_daemon_set(body=gpu_support, namespace="default") 
-	'''
-	sched_tick = tick #0.1
+	sched_tick = tick
 	p0 = mp.Process(target=driver.custom_start, args=(None, c2, grpc_port, sched_tick, clusters['onprem'], clusters['cloud'], hp.waiting_policy, hp.wait_time, jobs, batch_repo, index))
 	p0.start()
 	
@@ -390,79 +438,28 @@ def run(hyperparameters, batch_repo, index, tick):
 		print("Cleaning Logs and Cluster....")
 		time.sleep(1)
 	clear_logs(clusters=clusters)
-	
+	signal_path = ''
+	# TODO: Delete file
+	signal_file = "../logs/archive/"+ batch_repo + '/signal.lock' 
+	try:
+		os.unlink(signal_file)
+	except Exception as e: 
+		pass 
+
+
 	tag = str(index)
-	p1 = mp.Process(target=log, args=(tag, batch_repo, True, clusters['onprem'], clusters['cloud']))
-	p2 = mp.Process(target=submit, args=(jobs, arrivals, batch_repo, index))
+	p1 = mp.Process(target=log, args=(tag, batch_repo, True, clusters['onprem'], clusters['cloud'], index))
+	p2 = mp.Process(target=launch_submit, args=(jobs, arrivals, batch_repo, index, clusters))
 	p1.start()
 	p2.start()
+	p2.join()
+	# TODO: Write file 
+	with open(signal_file, "w") as f:
+		pass
+	p1.join()
 
-	def all_submitted(submitted_jobs):
-		for submission_state in submitted_jobs.values():
-			if submission_state == False: 
-				return False 
-		return True
 	
-	def check_submitted(submitted_jobs):
-		def find_job_with_substring(jobs, substring):
-			for job in jobs:
-				if substring in job.metadata.name:
-					return job
-			return None
-
-		config.load_kube_config(context=clusters['onprem'])
-		onprem_api_batch = client.BatchV1Api()
-
-		config.load_kube_config(context=clusters['cloud'])
-		cloud_api_batch = client.BatchV1Api()
-
-		apis = [onprem_api_batch, cloud_api_batch]
-		for api in apis: 
-			#job_list = api.list_namespaced_job(namespace="default")
-			limit = None #50
-			continue_token = ""
-			job_list, _, _ = api.list_namespaced_job_with_http_info(namespace="default", limit=limit, _continue=continue_token)
-			for job in submitted_jobs: 
-				try: 
-					curr_job = find_job_with_substring(job_list.items, "sleep-" + str(job))
-					if curr_job.status.succeeded == 1:
-						submitted_jobs[job] = True 
-				except Exception as e:
-					pass
-		return submitted_jobs
-	
-	submitted_jobs = {}
-	for job in jobs:
-		if job == 'hyperparameters':
-			continue
-		submitted_jobs[job] = False
-
-	# TODO: Keep a dictionary that continously gets updated with information about each generated job
-	while True: 
-		logger.debug("Running ...")
-		logger.debug("Submitted Jobs State: " + str(submitted_jobs))
-		if all_submitted(submitted_jobs=submitted_jobs):
-			logger.debug("Last job completed $$$")
-			p1.terminate()
-			p2.terminate()
-			break 
-		check_start = time.perf_counter()
-		logger.debug("Checking State...")
-		submitted_jobs = check_submitted(submitted_jobs=submitted_jobs)
-		check_end = time.perf_counter()
-		logger.debug("Check Time (seconds): " + str(check_end - check_start))
 	'''
-	# Keep running until last job is completed
-	last_job = len(jobs) - 2
-	while True:
-		logger.debug("Running ...")
-		if reached_last_job(job_name="sleep-" + str(last_job), clusters=clusters):
-			logger.debug("Last job completed $$$")
-			p1.terminate()
-			p2.terminate()
-			break 
-	'''
-
 	logger.debug("Starting Final Logging...")
 	p1 = mp.Process(target=log, args=(tag, batch_repo, False, clusters['onprem'], clusters['cloud']))
 	p1.start()
@@ -471,26 +468,24 @@ def run(hyperparameters, batch_repo, index, tick):
 		print("p1 alive status: " + str(p1.is_alive()))
 		time.sleep(1)
 	'''
-	submitted_jobs = {}
-	for job in jobs:
-		if job == 'hyperparameters':
-			continue
-		submitted_jobs[job] = False
-	while True: 
-		# TODO: Ensure one complete set of logs are executed to completion
-		logger.debug("Running ...")
-		logger.debug("Submitted Jobs State: " + str(submitted_jobs))
-		submitted_jobs = check_submitted(submitted_jobs=submitted_jobs)
-		if all_submitted(submitted_jobs=submitted_jobs):
-			logger.debug("Last job completed $$$")
-			p1.terminate()
-			break
-	'''
+	
 	logger.debug("Completed Final Logging...")
 	p0.terminate()
 	logger.debug("Terminated Scheduler...")
 	
 	return 0 
+
+def launch_submit(jobs={}, arrivals=[], timestamp=None, index=None, clusters=None):
+	try: 
+		submit(jobs=jobs, arrivals=arrivals, timestamp=timestamp, index=index, clusters=clusters)
+	except Exception as e:
+		import traceback
+		t = traceback.format_exc()
+		p2_log = "../logs/archive/" + timestamp + '/' + 'p2.log'
+		with open(p2_log, "a") as f:
+			f.write("p2 failed \n " + t + '\n')
+		pass 
+
 
 def run_sweep(sweep={}, sweep_timestamp=None):
 	if not sweep_timestamp: 
