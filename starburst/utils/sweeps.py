@@ -38,6 +38,153 @@ def generate_interval(min=0, max=10, intervals=10):
 	return np.linspace(min, max, num=intervals+1).tolist()
 
 SWEEPS = {
+	"32": { # Real world workload
+		"fixed_values": {
+			"image": "gcr.io/sky-burst/skyburst:latest",
+            "batch_time": 180, 
+            "mean_duration": 15,
+            "waiting_policy": "fifo_wait",
+            "cpu_sizes":[0.1, 0.1, 0.1, 0.1],
+            "gpu_sizes": [1, 2, 4, 8],
+            "gpu_dist": [0.7, 0.15, 0.1, 0.05],
+	        "cpu_sizes": [i * 11 for i in [1, 2, 4, 8]],
+            "uniform_submission": True, 
+            "uniform_arrival": 0.5,
+            "onprem_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu',
+            "cloud_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu-cloud',
+            "cluster_size": 1,
+            "gpu_workload": True,
+	        "gpus_per_node": 8,
+            "sched_tick": 0.1
+        },
+	    "varying_values": {	
+            "arrival_rate": [3], #TODO: Figure out the optimal values
+            "wait_time": [10],
+            "arrival_rate": [1] 
+        }
+    },
+    "31": { # Testing small and large batches for onprem only and cloud spillover
+		"fixed_values": {
+            "batch_time": 60, 
+            "mean_duration": 15,
+            "waiting_policy": "fifo_wait",
+            "cpu_sizes":[0.1, 0.1, 0.1, 0.1],
+            "gpu_sizes": [1, 2, 4, 8],
+            "gpu_dist": [0.7, 0.15, 0.1, 0.05],
+	        "cpu_sizes": [i * 11 for i in [1, 2, 4, 8]],
+            "uniform_submission": True, 
+            "uniform_arrival": 0.5,
+            "onprem_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu',
+            "cloud_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu-cloud',
+            "cluster_size": 1,
+            "gpu_workload": True,
+	        "gpus_per_node": 8,
+            "sched_tick": 0.1
+        },
+	    "varying_values": {	
+            "arrival_rate": [3], #TODO: Figure out the optimal values
+            "wait_time": [60],
+            "arrival_rate": [1],
+            #"setup_script": "/tasks/*.sh"
+        }
+    },
+	"30": { # Testing small and large batches for onprem only and cloud spillover
+		"fixed_values": {
+            "batch_time": 180, 
+            "mean_duration": 15,
+            "waiting_policy": "fifo_wait",
+            "cpu_sizes":[0.1, 0.1, 0.1, 0.1],
+            "gpu_sizes": [1, 2, 4, 8],
+            "gpu_dist": [0.7, 0.15, 0.1, 0.05],
+	        "cpu_sizes": [i * 11 for i in [1, 2, 4, 8]],
+            "uniform_submission": True, 
+            "uniform_arrival": 0.5,
+            "onprem_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu',
+            "cloud_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu-cloud',
+            "cluster_size": 1,
+            "gpu_workload": True,
+	        "gpus_per_node": 8,
+            "sched_tick": 0.1
+        },
+	    "varying_values": {	
+            "arrival_rate": [3], #TODO: Figure out the optimal values
+            "wait_time": [10],
+            "arrival_rate": [1],
+            #"setup_script": "/tasks/*.sh"
+        }
+    },
+	"29": { #8 GPU, Multi gpu node test without cluster congestion
+		"fixed_values": {
+            "batch_time": 180, 
+            "mean_duration": 15,
+            "waiting_policy": "fifo_wait",
+            "cpu_sizes":[0.1, 0.1, 0.1, 0.1],
+            "gpu_sizes": [1, 2, 4, 8],
+            "gpu_dist": [0.7, 0.15, 0.1, 0.05],
+	        "cpu_sizes": [i * 11 for i in [1, 2, 4, 8]],
+            "uniform_submission": True, 
+            "uniform_arrival": 0.5,
+            "onprem_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu',
+            "cloud_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu-cloud',
+            "cluster_size": 1,
+            "gpu_workload": True,
+	        "gpus_per_node": 8,
+            "sched_tick": 0.1
+        },
+	    "varying_values": {	
+            "arrival_rate": [3], #TODO: Figure out the optimal values
+            "wait_time": [10],
+            "arrival_rate": [1] 
+        }
+    },
+	"28": { #8 GPU, Multi gpu node test without cluster congestion
+		"fixed_values": {
+            "batch_time": 180, 
+            "mean_duration": 15,
+            "waiting_policy": "fifo_wait",
+            "cpu_sizes":[0.1, 0.1, 0.1, 0.1],
+            "gpu_sizes": [1, 2, 4, 8],
+            "gpu_dist": [0.7, 0.15, 0.1, 0.05],
+	        "cpu_sizes": [i * 11 for i in [1, 2, 4, 8]],
+            "uniform_submission": True, 
+            "uniform_arrival": 0.5,
+            "onprem_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu',
+            "cloud_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu-cloud',
+            "cluster_size": 1,
+            "gpu_workload": True,
+	        "gpus_per_node": 8,
+            "sched_tick": 0.1
+        },
+	    "varying_values": {	
+            "arrival_rate": [3], #TODO: Figure out the optimal values
+            "wait_time": [10],
+            "arrival_rate": [1] 
+        }
+    },
+	"27": { #8 GPU, Multi gpu node test without cluster congestion
+		"fixed_values": {
+            "batch_time": 180, 
+            "mean_duration": 15,
+            "waiting_policy": "fifo_wait",
+            "cpu_sizes":[0.1, 0.1, 0.1, 0.1],
+            "gpu_sizes": [1, 2, 4, 8],
+            "gpu_dist": [0.7, 0.15, 0.1, 0.05],
+	        "cpu_sizes": [i * 11 for i in [1, 2, 4, 8]],
+            "uniform_submission": True, 
+            "uniform_arrival": 2,
+            "onprem_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu',
+            "cloud_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu-cloud',
+            "cluster_size": 1,
+            "gpu_workload": True,
+	        "gpus_per_node": 8,
+            "sched_tick": 0.1
+        },
+	    "varying_values": {	
+            "arrival_rate": [3], #TODO: Figure out the optimal values
+            "wait_time": [2, 5, 10],
+            "arrival_rate": [1] 
+        }
+    },
 	"26": { #8 GPU, Multi gpu node test without cluster congestion
 		"fixed_values": {
             "batch_time": 180, 
