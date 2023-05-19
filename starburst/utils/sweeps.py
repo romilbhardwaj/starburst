@@ -38,6 +38,31 @@ def generate_interval(min=0, max=10, intervals=10):
 	return np.linspace(min, max, num=intervals+1).tolist()
 
 SWEEPS = {
+	"33": { # Testing small and large batches for onprem only and cloud spillover
+		"fixed_values": {
+            "batch_time": 120, 
+            "mean_duration": 30,
+            "waiting_policy": "fifo_wait",
+            "cpu_sizes":[0.1, 0.1, 0.1, 0.1],
+            "gpu_sizes": [1, 2, 4, 8],
+            "gpu_dist": [0.7, 0.15, 0.1, 0.05],
+	        "cpu_sizes": [i * 11 for i in [1, 2, 4, 8]],
+            "uniform_submission": True, 
+            "uniform_arrival": 3,
+            "onprem_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu',
+            "cloud_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu-cloud',
+            "cluster_size": 1,
+            "gpu_workload": True,
+	        "gpus_per_node": 8,
+            "sched_tick": 0.1
+        },
+	    "varying_values": {	
+            "arrival_rate": [3], #TODO: Figure out the optimal values
+            "wait_time": [2, 3, 5, 10],
+            "arrival_rate": [1],
+            #"setup_script": "/tasks/*.sh"
+        }
+    },
 	"32": { # Real world workload
 		"fixed_values": {
 			"image": "gcr.io/sky-burst/skyburst:latest",
@@ -83,7 +108,7 @@ SWEEPS = {
         },
 	    "varying_values": {	
             "arrival_rate": [3], #TODO: Figure out the optimal values
-            "wait_time": [0, 1, 2],
+            "wait_time": [0, 5, 10, 15],
             "arrival_rate": [1],
             #"setup_script": "/tasks/*.sh"
         }
