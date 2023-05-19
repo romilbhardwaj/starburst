@@ -128,7 +128,9 @@ class FIFOWaitPolicy(BasePolicy):
                 
                 # COMPUTE WAIT
                 # runtime * resources * ---- Michael 
+                #if False: # TODO: REPLACE THIS AFTER DEBUGGING SCHEDULED NODES ERROR
                 if loop_time - job.job_submit_time > self.wait_threshold:
+                #if True: 
                     curr_time = time.time()
                     logger.debug(f"SUBMIT - CLOUD {job.job_name} ### Delta (Loop) {loop_time - job.job_submit_time} Timeout {self.wait_threshold}")
                     #logger.debug(f"SUBMIT - CLOUD {job.job_name} ### Delta (Curr) {curr_time - job.job_submit_time} Timeout {self.wait_threshold}")
@@ -143,7 +145,8 @@ class FIFOWaitPolicy(BasePolicy):
             cloud_end_time = time.time()
             logger.debug(f"TIME TO PROCESS QUEUE CLOUD ### TIME DIFF {cloud_end_time - cloud_start_time}")
             # TODO: Figure out why the above doesn't work as intended     
-            onprem_start_time = time.time()    
+            onprem_start_time = time.time() 
+            #if False:    
             for job in job_queue:
                 curr_time = time.perf_counter()
                 logger.debug("Job(" + str(job_id) + ") " + "Next job on queue : ~~~ --- " + str(curr_time-start_time))
@@ -181,7 +184,9 @@ class FIFOWaitPolicy(BasePolicy):
                 logger.debug("prevJobName " +  str(self.prevJobName))
                 logger.debug("prevJobStatus " +  str(self.prevJobStatus))
                 # Added: time.time() - job.job_submit_time <= self.wait_threshold 
-                if time.time() - job.job_submit_time <= self.wait_threshold and self.onprem_manager.can_fit(job) and (self.prevJobName == None or self.prevJobStatus == None or self.prevJobStatus == 1): 
+                # TODO: Testing fixed submission to only cloud
+                
+                if self.onprem_manager.can_fit(job) and (self.prevJobName == None or self.prevJobStatus == None or self.prevJobStatus == 1): 
                     logger.debug("REACHED @@@ CAN FIT " +  str(self.prevJobName))
                     if self.wait_until_scheduled:
                         self.currState, self.curr_pods = self.onprem_manager.get_allocatable_resources_per_node()
