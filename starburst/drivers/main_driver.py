@@ -103,7 +103,7 @@ def custom_start(queue, conn, grpc_port=None, sched_tick_time=SCHED_TICK_TIME, o
     # Create event sources
     sched_tick_event_source = SchedTickEventSource(event_queue, sched_tick_time)
     grpc_job_submit_event_source = JobSubmissionEventSource(event_queue, grpc_port)
-    event_sources = [grpc_job_submit_event_source]#[sched_tick_event_source, grpc_job_submit_event_source]   # Add more, such as GRPC event source here
+    event_sources = [grpc_job_submit_event_source] #[sched_tick_event_source, grpc_job_submit_event_source]   # Add more, such as GRPC event source here
 
     # Pass learner bank and time series model to the scheduler =====================================
     starburst = StarburstScheduler(event_queue,
