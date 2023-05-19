@@ -104,7 +104,9 @@ def submit(jobs={}, arrivals=[], timestamp=None, index=None):
 		if job_index < total_jobs and curr_time > arrivals[job_index][1] + start_time:
 			job = jobs[job_index]
 			generate_sampled_job_yaml(job_id=job_index, job=job)
-			subprocess.run(['python3', '-m', 'starburst.drivers.submit_job', '--job-yaml', '../../examples/sampled/sampled_job.yaml'])
+			submit_time = time.time()
+			subprocess.run(['python3', '-m', 'starburst.drivers.submit_job', '--job-yaml', '../../examples/sampled/sampled_job.yaml', '--submit-time', str(submit_time)])
+			#logger.debug(f'****** Job {job_index} submission time {time.time()}')
 			submit_time = time.time()
 			submit_times[job_index] = submit_time
 			job_index += 1
@@ -123,9 +125,8 @@ def submit(jobs={}, arrivals=[], timestamp=None, index=None):
 
 	with open(trial_data_path, "w") as f:
 		json.dump(job_data, f)
-
+	
 	return 
-
 '''
 def execute(hyperparameters, repo, tag): 
 	jobs, arrivals = generate_jobs(hyperparameters)
@@ -225,7 +226,9 @@ def clear_logs(clusters={}):
 				)
 
 				jobs_list = api_batch.list_namespaced_job(namespace='default')
+				#logger.debug(f'Jobs Running {jobs_list}')
 				for job in jobs_list.items:
+					logger.debug(f'Attempting to Delete {job.metadata.name}')
 					api_batch.delete_namespaced_job(
 						name=job.metadata.name, 
 						namespace='default', 
@@ -234,6 +237,10 @@ def clear_logs(clusters={}):
 							grace_period_seconds=0
 							)
 					)
+
+				jobs_list = api_batch.list_namespaced_job(namespace='default')
+				for job in jobs_list.items:
+					logger.debug(f'Remaining Jobs {job.metadata.name}')
 
 				# TODO: Debug code that deletes all pods from previous runs 
 				pods = api.list_namespaced_pod(namespace='default')
@@ -245,8 +252,12 @@ def clear_logs(clusters={}):
 			print("Re-executing code...")
 			continue
 		else:
-			print("Logs cleared successfully.")
-			break	
+			jobs_list = api_batch.list_namespaced_job(namespace='default')
+			if len(jobs_list.items) == 0: 
+				print("No remaining jobs to delete...")
+				break	
+			else: 
+				continue 
 	print("Completed Clearing Logs...")
 
 def log(tag=None, batch_repo=None, loop=True, onprem_cluster="", cloud_cluster=""):
@@ -427,7 +438,6 @@ def run(hyperparameters, batch_repo, index, tick):
 		submitted_jobs[job] = False
 
 	# TODO: Keep a dictionary that continously gets updated with information about each generated job
-	# TODO: Array
 	while True: 
 		logger.debug("Running ...")
 		logger.debug("Submitted Jobs State: " + str(submitted_jobs))
@@ -452,6 +462,8 @@ def run(hyperparameters, batch_repo, index, tick):
 			p2.terminate()
 			break 
 	'''
+
+	logger.debug("Starting Final Logging...")
 	p1 = mp.Process(target=log, args=(tag, batch_repo, False, clusters['onprem'], clusters['cloud']))
 	p1.start()
 	while (p1.is_alive()):
@@ -464,7 +476,6 @@ def run(hyperparameters, batch_repo, index, tick):
 		if job == 'hyperparameters':
 			continue
 		submitted_jobs[job] = False
-	
 	while True: 
 		# TODO: Ensure one complete set of logs are executed to completion
 		logger.debug("Running ...")
@@ -475,8 +486,9 @@ def run(hyperparameters, batch_repo, index, tick):
 			p1.terminate()
 			break
 	'''
-		
+	logger.debug("Completed Final Logging...")
 	p0.terminate()
+	logger.debug("Terminated Scheduler...")
 	
 	return 0 
 
@@ -605,12 +617,23 @@ def main(arg1, arg2, arg3):
 	
 	
 
+
 	if arg1 == 'run': 
 		#create_cluster(cluster_config)
 		submit_sweep(sweep=sweep, timestamp=arg3)
 		#delete_cluster(cluster_config)
 
 	return
+
+def run_trace():
+	'''
+	Performs a single run() where the input jobs are run from a specific job dictionary
+
+
+	# TODO: Add support to run a specifc trace again 
+	'''
+	
+	
 
 if __name__ == '__main__':
     main(arg1=sys.argv[1], arg2=sys.argv[2], arg3=sys.argv[3])
