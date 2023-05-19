@@ -98,6 +98,8 @@ class StarburstScheduler:
         self.job_queue.append(event.job)
         _end_process_event_time = time.perf_counter()
         logger.debug("QUEUEADD TIME (()) " + str(_end_process_event_time - _start_process_event_time))
+        logger.debug(f'***** Job Retrieved in Event Queue -- Job {event.job} at time {_end_process_event_time}')
+        logger.debug(f'DIFF TIMES {time.time()} or {time.perf_counter()}')
 
     '''
     async def log_ticks(self): 
@@ -121,8 +123,6 @@ class StarburstScheduler:
 
         #TODO: Ensure any two consequtive calls to SchedEventTick are limited by 
         while True: 
-            
-
             _start_time = time.perf_counter()
             _start_await_time = time.perf_counter()
             event = None
@@ -167,8 +167,8 @@ class StarburstScheduler:
             _interloop_end_time = time.perf_counter()
             logger.debug("INTERLOOP TIME (()) " + str(_interloop_end_time - _start_time))
             if self.prev_loop_time:
-                logger.debug("LOOP TIME (()) " + str(_end_time - self.prev_loop_time))#str(_end_time - _start_time))
-            self.prev_loop_time = _end_time
+                logger.debug("LOOP TIME (()) " + str(_interloop_end_time - self.prev_loop_time))#str(_end_time - _start_time))
+            self.prev_loop_time = _interloop_end_time
                 
             
         '''
