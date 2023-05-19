@@ -43,6 +43,8 @@ class JobSubmissionServicer(job_submit_pb2_grpc.JobSubmissionServicer):
         if 'nvidia.com/gpu' in job_dict['spec']['template']['spec']['containers'][0]['resources']['limits']:
             gpu = job_dict['spec']['template']['spec']['containers'][0]['resources']['limits']['nvidia.com/gpu']
         
+        name = job_dict['metadata']['name']
+        logger.debug(f'****** Job Submitted to Event Queue -- Job {name} at Time {time.time()}')
         job = Job(job_name=job_dict['metadata']['name'],#"MyJob",
                   # TODO: Parse out job_name and save it locally
                   job_submit_time=time.time(),
