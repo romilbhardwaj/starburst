@@ -95,6 +95,7 @@ class StarburstScheduler:
     def processor_job_add_event(self, event: JobAddEvent):
         """ Process an add job event. This is where you probably want to add job to your queue"""
         _start_process_event_time = time.perf_counter()
+        event.job.job_event_queue_add_time = time.time()
         self.job_queue.append(event.job)
         _end_process_event_time = time.perf_counter()
         logger.debug("QUEUEADD TIME (()) " + str(_end_process_event_time - _start_process_event_time))
