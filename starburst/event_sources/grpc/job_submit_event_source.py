@@ -45,7 +45,7 @@ class JobSubmissionServicer(job_submit_pb2_grpc.JobSubmissionServicer):
         
         name = job_dict['metadata']['name']
         logger.debug(f'****** Job Submitted to Event Queue -- Job {name} at Time {time.time()}')
-        job = Job(job_name=job_dict['metadata']['name'],#"MyJob",
+        job = Job(job_name=str(job_dict['metadata']['name']),#"MyJob",
                   # TODO: Parse out job_name and save it locally
                   job_submit_time=time.time(),
                   job_start_time=0,
