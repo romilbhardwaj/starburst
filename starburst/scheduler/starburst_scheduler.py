@@ -28,7 +28,8 @@ class StarburstScheduler:
                  wait_time: int = 0,
                  job_data: dict = {},
                  timestamp: int = 0,
-                 run: int = 0):
+                 run: int = 0,
+                 policy: str = 'fixed'):
         """
         Main Starburst scheduler class. Responsible for processing events in the provided event queue.
         :param event_queue: Main event queue
@@ -55,9 +56,10 @@ class StarburstScheduler:
         self.cloud_cluster_manager = KubernetesManager(self.cloud_cluster_name)
 
         # Set up policy
+        logger.debug(f'all job data inputted {job_data}')
         queue_policy_class = queue_policies.get_policy(queue_policy_str)
         if queue_policy_str == "fifo_wait":
-            self.queue_policy = queue_policy_class(self.onprem_cluster_manager, self.cloud_cluster_manager, wait_threshold=wait_time)
+            self.queue_policy = queue_policy_class(self.onprem_cluster_manager, self.cloud_cluster_manager, wait_threshold=wait_time, job_data=job_data, policy=policy, batch_repo=timestamp, index=run)
         elif queue_policy_str == "time_estimator":
             self.queue_policy = queue_policy_class(self.onprem_cluster_manager, self.cloud_cluster_manager, wait_threshold=wait_time, job_data=job_data)
         else: 
@@ -128,6 +130,7 @@ class StarburstScheduler:
             _start_await_time = time.perf_counter()
             event = None
             try: 
+                # TODO: Added all events from event queue onto process queue within a tick
                 event = self.event_queue.get_nowait()
                 #event = await self.event_queue.get()
             except Exception as e: 
