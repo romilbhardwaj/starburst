@@ -3,6 +3,7 @@ import logging
 import time
 from typing import Iterable, List
 import heapq 
+import os 
 
 from starburst.cluster_managers.kubernetes_manager import KubernetesManager
 from starburst.types.job import Job
@@ -71,8 +72,10 @@ class FIFOWaitPolicy(BasePolicy):
                  loop: bool = False,
                  preempt_cpu: bool = False,
                  linear_wait_constant: int = 1,
-                 policy: str = 'constant_wait',
+                 policy: str = 'fixed',
                  job_data: dict = {},
+                 batch_repo: int = 0,
+                 index: int = 0, 
                  ):
         
         self.wait_threshold = wait_threshold
@@ -86,21 +89,66 @@ class FIFOWaitPolicy(BasePolicy):
                         "gpu": 0,
                         #"nvidia.com/gpu": 0
                     }
+        
+
         self.previous_function_call_time = 0
         self.prevJobName = None,
         self.prevJobStatus = None,
         self.onprem_only = False, 
         self.cloud_only = False, 
-        self.job_data = job_data,
-        self.total_workload_volume = 0
-        self.total_jobs = 0 
-        for job in self.job_data:
-            if job == 'hyperparameter': 
-                continue 
-            self.total_workload_volume += job['job_duration'] * job['workload']['gpu']
-            self.total_jobs += 1
-        self.optimal_coefficient = (self.linear_wait_constant * self.total_jobs) / self.total_workload_volume
+        if isinstance(job_data, tuple):
+            self.job_data = self.job_data[0]
+        else: 
+            self.job_data = job_data
 
+        self.total_workload_volume = 0
+        self.total_workload_time = 0
+        self.total_workload_surface_area = 0
+        self.total_jobs = 0 
+        logger.debug(f'all jobs data {self.job_data}')
+        for job_id in self.job_data:
+            if job_id == 'hyperparameters': 
+                continue 
+
+            job = self.job_data[job_id]
+            logger.debug(f'job data {job}')
+            self.total_jobs += 1
+            self.total_workload_time += job['job_duration']
+            self.total_workload_surface_area += job['workload']['gpu']
+            self.total_workload_volume += job['job_duration'] * job['workload']['gpu']
+
+        self.max_tolerance = 0.25 #Increase in JCT they want over No-Wait
+        
+        # TODO: Recompute compute wait coefficient -> use gpu_sizes, gpu_dist from hyperparameters value
+        # TODO: Improve terminology 
+        self.constant_wait_coefficient = self.max_tolerance * (self.total_workload_time) / self.total_jobs
+
+        self.runtime_wait_coefficient = (self.linear_wait_constant * self.total_jobs) / self.total_workload_time # TODO: Computing incorrect value
+        self.resource_wait_coefficient = (self.linear_wait_constant * self.total_jobs) / self.total_workload_surface_area # TODO: Computing incorrect value
+        self.compute_wait_coefficient = (self.linear_wait_constant * self.total_jobs) / self.total_workload_volume # TODO: Computing incorrect value
+        
+        self.avg_job_size = self.total_workload_surface_area/self.total_jobs
+        
+        self.compute_wait_coefficient = self.max_tolerance/self.avg_job_size
+
+        #self.onprem_only = self.job_data['hyperparameters']['onprem_only']
+
+        self.spilled_jobs_path = f'../logs/archive/{batch_repo}/events/{index}.log'
+        # TODO: Create this file at the beginning of each run
+        #p2_log = "../logs/archive/" + timestamp + '/' + 'p2.log'
+        event_path = f'../logs/archive/{batch_repo}/events/'
+        if not os.path.exists(event_path):
+            os.mkdir(event_path)
+        self.spill_to_cloud = self.job_data['hyperparameters']['spill_to_cloud'] # TODO: Verify if this works as intended
+        with open(self.spilled_jobs_path, "a") as f:
+            f.write("Scheduler spun up! \n")
+        
+
+
+        # TODO: Compute average job_size directly from input distribution jobs['hyperparameters']['gpu_dist'] *  jobs['hyperparameters']['gpu_sizes']
+        
+        logger.debug(f'Optimal coefficients || constant wait coefficient {self.constant_wait_coefficient} | runtime wait coefficient {self.runtime_wait_coefficient} | resource wait coefficient {self.resource_wait_coefficient} | compute wait coefficient {self.compute_wait_coefficient}')
+        
         super().__init__(onprem_manager, cloud_manager)
     '''
     Cluster state updates:
@@ -135,22 +183,44 @@ class FIFOWaitPolicy(BasePolicy):
         self.previous_function_call_time = time.perf_counter()
         if job_queue:
             cloud_start_time = time.time()
+            
             for job in job_queue:
+                if self.policy == 'onprem_only': 
+                    break 
                 # if self.cloud_only # TODO: Include option for submission to onprem only
                 loop_time = time.time()
                 event_wait_time = loop_time - job.job_event_queue_add_time
                 wait_time = loop_time - job.job_submit_time
-                if self.policy == 'constant_wait': 
-                    time_out = wait_time > self.wait_threshold
-                elif self.policy == 'linear_wait': 
-                    time_out = wait_time * self.linear_wait_constant > self.wait_threshold
-                elif self.policy == 'compute_wait': 
-                    time_out = wait_time * job.resources['gpus'] > self.wait_threshold
-                logger.debug(f'Cloud Timeout Submission Check || time out {time_out} | wait threshold {self.wait_threshold} | wait time {wait_time} | event queue wait time {event_wait_time} | curr time {loop_time} | submission time {job.job_submit_time} | event added time {job.job_event_queue_add_time}')
-                if time_out:
-                    logger.debug(f'Cloud Timeout Submission Entered || job {job.job_name} | queue {job_queue}')
-                    self.cloud_manager.submit_job(job)
+                job_id = int(job.job_name[4:])
+                job_duration = self.job_data[job_id]['job_duration']
+                job_resource = job.resources['gpu']
+                timeout = 0
+                job_timed_out = False
+                if self.policy == 'constant': 
+                    timeout = self.wait_threshold
+                    job_timed_out = wait_time > timeout
+                elif self.policy == 'constant_optimal': 
+                    timeout = self.constant_wait_coefficient
+                    job_timed_out = wait_time > timeout
+                elif self.policy == 'runtime_optimal':
+                    timeout = job_duration * self.runtime_wait_coefficient
+                    job_timed_out = wait_time > timeout #self.wait_threshold * self.linear_wait_constant 
+                elif self.policy == 'resource_optimal': 
+                    timeout = job.resources['gpu'] * self.resource_wait_coefficient
+                    job_timed_out = wait_time > timeout #self.wait_threshold * self.linear_wait_constant
+                elif self.policy == 'compute_optimal' or self.policy == 'starburst': 
+                    timeout = job_duration * job.resources['gpu'] * self.compute_wait_coefficient
+                    job_timed_out = wait_time > timeout #self.wait_threshold * job.resources['gpus']
+                logger.debug(f'Cloud Timeout Submission Check || policy {self.policy} | job timed out {job_timed_out} | timeout value {timeout} | wait threshold {self.wait_threshold} | wait time {wait_time} | event queue wait time {event_wait_time} | curr time {loop_time} | submission time {job.job_submit_time} | event added time {job.job_event_queue_add_time} | input job duration {job_duration} | input job resources {str(job_resource)} | input job name {str(job_id)}')
+                if job_timed_out:
+                    logger.debug(f'Cloud Timeout Submission Entered || job {job.job_name} | spilling to cloud  {self.spill_to_cloud} | queue {job_queue}')
+                    if self.spill_to_cloud:
+                        self.cloud_manager.submit_job(job)
                     job_queue.remove(job)
+                    # TODO: Share and save job runtimes for cloud jobs when spill over begins 
+                    # TODO: Log jobs name and time job reaches this condition
+                    with open(self.spilled_jobs_path, "a") as f:
+                        f.write(f'Cloud Job || job id {job_id} | job name {job.job_name} | estimated cloud start time {time.time()} | estimated job duration {job_duration} | submission time {job.job_event_queue_add_time} | gpus {job_resource} \n')
 
             cloud_end_time = time.time()
             logger.debug(f"Looped through queue for cloud timeout || processing time {cloud_end_time - cloud_start_time}")
@@ -162,11 +232,11 @@ class FIFOWaitPolicy(BasePolicy):
                     self.prevJobName = self.prevJobName[0]
                 if isinstance(self.prevJobStatus, tuple):
                     self.prevJobStatus = self.prevJobStatus[0]
-                logger.debug(f'prev job name {str(self.prevJobName)} | prev job status {str(self.prevJobStatus)}')
+                logger.debug(f'prev job name {str(self.prevJobName)} | prev job status {str(self.prevJobStatus)} | type {type(self.prevJobName)}')
 
                 if self.prevJobName:     
                     self.prevJobStatus = self.onprem_manager.job_running(job_name=self.prevJobName, namespace='default')
-                    logger.debug(f'Updated Previous Job Status || prev job name {str(self.prevJobName)} | prev job status {str(self.prevJobStatus)}')
+                    logger.debug(f'Updated Previous Job Status || prev job name {str(self.prevJobName)} | prev job status {str(self.prevJobStatus)} | type {type(self.prevJobName)}')
                 
                 # TODO: Pre-emption conditional -- time.time() - job.job_submit_time <= self.wait_threshold 
                 # if self.cloud_only # TODO: Include option for submission to cloud only
