@@ -24,7 +24,7 @@ from google.cloud import container_v1
 import sys 
 import yaml 
 import requests
-
+TRAINING_JOBS = sweeps.TRAINING_JOBS
 DEFAULT_HYPERPARAMETERS = sweeps.DEFAULT_HYPERPARAMETERS
 
 logger = logging.getLogger(__name__)
@@ -43,6 +43,39 @@ def generate_jobs(hyperparameters):
 
 	job_index = 0 #1
 	submit_time = 0
+	if hyperparameters['collect_runtimes']: 
+		for model in hyperparameters["train_names"]:
+			for gpu in TRAINING_JOBS[model]['gpu_runtimes']:
+				for epoch in TRAINING_JOBS[model]['epochs']:
+					#for gpu in [1, 2, 4, 8]:
+					job = {}
+					gpus = gpu
+					cpus = 11 * gpus
+					memory = 0
+					job['submit_time'] = submit_time
+					job['scheduler_submit_time'] = None
+					job['job_duration'] = 0
+					workload = {"gpu": gpus, "cpu":cpus, "memory":memory}
+					job['workload'] = workload
+					job['image'] = hp.image
+					
+					job['setup_script'] = hp.setup_script
+					job['job_type'] = hp.job_type
+					if hp.job_type == 'train':
+						#train_config = hp.train_names[0]
+						train_job = TRAINING_JOBS[model]
+						#job['setup_script'] = train_job['train_script']
+						setup_script = ""
+						setup_script = train_job['train_script']
+						if epoch >= 1: 
+							setup_script += f' --num_train_epochs {epoch}'
+						job['setup_script'] = setup_script
+						job['job_duration'] = train_job['estimated_training_runtime']
+					jobs[job_index] = job
+					arrivals.append((job_index, submit_time))
+					job_index += 1
+					submit_time += 10
+		return jobs, arrivals
 
 	while True:
 		if hp.time_constrained == True and submit_time > hp.batch_time:
@@ -54,7 +87,9 @@ def generate_jobs(hyperparameters):
 			submit_time += hp.uniform_arrival
 		else: 
 			submit_time += max(3, np.random.exponential(scale=1/hp.arrival_rate))
-		job_duration = np.random.exponential(scale=hp.mean_duration)
+		job_duration = max(30, np.random.exponential(scale=hp.mean_duration))
+		# TODO: Implement training -- include estimate runtime 
+
 		gpus = int(np.random.choice(hp.gpu_sizes, p=hp.gpu_dist)) #min(0, int(np.random.exponential(scale=2)))
 		cpus = 11 * gpus
 		#cpus = int(np.random.choice(hp.cpu_sizes, p=hp.cpu_dist))
@@ -66,8 +101,13 @@ def generate_jobs(hyperparameters):
 		job['workload'] = workload
 		job['image'] = hp.image
 		job['setup_script'] = hp.setup_script
-		job['sleep'] = hp.sleep
-
+		#job['sleep'] = hp.sleep
+		job['job_type'] = hp.job_type
+		if hp.job_type == 'train':
+			train_config = np.random.choice(hp.train_names, p=hp.train_dist)
+			train_job = TRAINING_JOBS[train_config]
+			job['setup_script'] = train_job['train_script']
+			job['job_duration'] = train_job['estimated_training_runtime']
 
 		jobs[job_index] = job
 		arrivals.append((job_index, submit_time))
@@ -157,7 +197,7 @@ def submit(jobs={}, arrivals=[], timestamp=None, index=None, clusters=None):
 			job_list, _, _ = api.list_namespaced_job_with_http_info(namespace="default", limit=limit, _continue=continue_token)
 			for job in submitted_jobs: 
 				try: 
-					curr_job = find_job_with_substring(job_list.items, "sleep-" + str(job))
+					curr_job = find_job_with_substring(job_list.items, "job-" + str(job))#"sleep-" + str(job))
 					if curr_job.status.succeeded == 1:
 						submitted_jobs[job] = True 
 				except Exception as e:
@@ -192,12 +232,6 @@ def submit(jobs={}, arrivals=[], timestamp=None, index=None, clusters=None):
 		f.write("reached end of p2 " + str(index) + '\n')
 
 	return 
-'''
-def execute(hyperparameters, repo, tag): 
-	jobs, arrivals = generate_jobs(hyperparameters)
-	save_jobs(jobs, repo, tag)
-	submit(jobs, arrivals)
-'''
 
 def generate_sampled_job_yaml(job_id=0, job=None):
 	""" 
@@ -209,9 +243,6 @@ def generate_sampled_job_yaml(job_id=0, job=None):
 	image=job['image']
 	setup_script=job['setup_script']
 	"""
-	
-	
-
 	output = ""
 	env = Environment(
 		loader=FileSystemLoader("../../examples/sampled/templates"),
@@ -223,12 +254,13 @@ def generate_sampled_job_yaml(job_id=0, job=None):
 	
 	image=job['image']
 	setup_script=job['setup_script']
-	sleep=job['sleep']
+	#sleep=job['sleep']
+	job_type=job['job_type']
 
-	if sleep: 
+	if job_type == 'sleep': 
 		template = env.get_template("sampled_job.yaml.jinja")
 		output += template.render({"job":str(job_id), "time":str(sleep_time)})
-	else:
+	elif job_type == 'train':
 		template = env.get_template("train_job.yaml.jinja")
 		output += template.render({"job":str(job_id), "image":str(image), "setup_script":str(setup_script)})
 
@@ -310,8 +342,12 @@ def clear_logs(clusters={}):
 				# TODO: Debug code that deletes all pods from previous runs 
 				pods = api.list_namespaced_pod(namespace='default')
 				for pod in pods.items:
-					print(f"Deleting pod {pod.metadata.name} in namespace {pod.metadata.namespace}")
-					api.delete_namespaced_pod(name=pod.metadata.name, namespace=pod.metadata.namespace, body=client.V1DeleteOptions())
+					if "chakra" not in pod.metadata.name and "prepull" not in pod.metadata.name:  
+						print(f"Deleting pod {pod.metadata.name} in namespace {pod.metadata.namespace}")
+						api.delete_namespaced_pod(name=pod.metadata.name, namespace=pod.metadata.namespace, body=client.V1DeleteOptions())
+					else:
+						print(f"Skipping deletion of pod {pod.metadata.name} in namespace {pod.metadata.namespace}")
+
 		except Exception as e:
 			print(f"Caught an exception: {e}")
 			print("Re-executing code...")
@@ -359,16 +395,44 @@ def empty_cluster(clusters={}):
 	cluster_apis = [(onprem_api, onprem_api_batch), (cloud_api, cloud_api_batch)]
 	namespace="default"
 
+	cluster_apis =  [(onprem_api, onprem_api_batch)]#, (cloud_api, cloud_api_batch)]
 	for apis in cluster_apis:
 		api, api_batch = apis
 		pods = api.list_namespaced_pod(namespace)
-		running_pods = [pod for pod in pods.items if pod.status.phase == "Running"]
+		logger.debug(f'Running pods {[pod.metadata.name for pod in pods.items]}')
+		running_pods = []
+		for pod in pods.items:
+			count = 0
+			if (pod.status.phase == "Running"):
+				if "chakra" in pod.metadata.name:
+					#logger.debug(f'{pod.metadata.name}')
+					count += 1
+				if "prepull"in pod.metadata.name:
+					#logger.debug(f'{pod.metadata.name}')
+					count += 1
+				if count == 0: 
+					running_pods.append(pod.metadata.name)
+				#elif "prepull" not in pod.metadata.name:
+				#	running_pods.append(pod.metadata.name)
+		#running_pods = [pod.metadata.name for pod in pods.items if (pod.status.phase == "Running") and ("chakra" not in pod.metadata.name) and ("prepull" not in pod.metadata.name))]
+		logger.debug(f'Pending deletion pods {running_pods}')
 		if running_pods:
 			return False
 		
 		jobs = api_batch.list_job_for_all_namespaces()
-		unsucceedful_jobs = [job.status.succeeded for job in jobs.items if job.status.succeeded != 1]
-		if unsucceedful_jobs:
+		#unsuccessful_jobs = [job.status.succeeded for job in jobs.items if (("prepull" not in job.metadata.name) and job.status.succeeded != 1)]
+		unsuccessful_jobs = []
+		for job in jobs.items:
+			#count = 0 
+			logger.debug(f'Job name {job.metadata.name}')
+			if "prepull" in job.metadata.name:
+				#count += 1
+				continue 
+			if job.status.succeeded != 1:
+				unsuccessful_jobs.append(job.status.succeeded)
+		
+		logger.debug(f'Pending job deletions {unsuccessful_jobs}')
+		if unsuccessful_jobs:
 			return False 
 
 	return True 
@@ -429,15 +493,19 @@ def run(hyperparameters, batch_repo, index, tick):
 		"cloud": hp.cloud_cluster
 	}
 	
+	logger.debug(f'Running policy: {hp.policy}')
 	sched_tick = tick
-	p0 = mp.Process(target=driver.custom_start, args=(None, c2, grpc_port, sched_tick, clusters['onprem'], clusters['cloud'], hp.waiting_policy, hp.wait_time, jobs, batch_repo, index))
+	p0 = mp.Process(target=driver.custom_start, args=(None, c2, grpc_port, sched_tick, clusters['onprem'], clusters['cloud'], hp.waiting_policy, hp.wait_time, jobs, batch_repo, index, hp.policy))
 	p0.start()
 	
+	logger.debug(f'Started cleaning cluster pods, jobs, and event logs...')
 	clear_logs(clusters=clusters)
 	while not empty_cluster(clusters=clusters):
+		logger.debug(f'Cleaning...')
 		print("Cleaning Logs and Cluster....")
 		time.sleep(1)
 	clear_logs(clusters=clusters)
+	logger.debug(f'Completed cleaning cluster pods, jobs, and event logs...')
 	signal_path = ''
 	# TODO: Delete file
 	signal_file = "../logs/archive/"+ batch_repo + '/signal.lock' 
