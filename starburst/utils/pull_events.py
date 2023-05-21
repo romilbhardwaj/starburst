@@ -6,7 +6,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def save_events(onprem_cluster="gke_sky-burst_us-central1-c_skyburst-gpu", cloud_cluster="gke_sky-burst_us-central1-c_skyburst-gpu-cloud"):
+def save_events(onprem_cluster="", cloud_cluster=""):
     config.load_kube_config(context=onprem_cluster)
     onprem_api = client.CoreV1Api()
 
