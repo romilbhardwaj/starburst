@@ -52,6 +52,7 @@ def event_data_dict():
 	job_pods = {}
 	node_instances = {}
 	gpu_index = {}
+	node_name = {}
 
 	event_data = {
 		'container_creation_times': container_creation_times,
@@ -64,7 +65,8 @@ def event_data_dict():
 		'job_completion_times': job_completion_times,
 		'job_pods': job_pods, 
 		'node_instances': node_instances,
-		'gpu_index': gpu_index
+		'gpu_index': gpu_index,
+		'node_name': node_name
 		#'job_to_pod'
 	}
 
@@ -508,8 +510,13 @@ def write_cluster_event_data(batch_repo=None, cluster_event_data=None, tag=None,
 					pod_list = api.list_namespaced_pod(namespace="default")
 					for gpu_pod in pod_list.items:
 						gpu_pod_name = gpu_pod.metadata.name
-						gpu_index = api.read_namespaced_pod_log(name=gpu_pod_name, namespace="default")
-						event_data['gpu_index'][gpu_pod_name] = gpu_index
+						if "chakra" not in gpu_pod_name and "prepull" not in gpu_pod_name:
+							gpu_index = api.read_namespaced_pod_log(name=gpu_pod_name, namespace="default")
+							event_data['gpu_index'][gpu_pod_name] = gpu_index
+							#pod = api.read_namespaced_pod(name=pod_name, namespace="default")
+							# TODO: Verify node_name is parsed properly 
+							event_data['node_name'][gpu_pod_name] = gpu_pod.spec.node_name
+
 				except Exception as e: 
 					logger.debug("POD LOG ERROR CAUGHT: " + str(e))
 				for item in events.items:
