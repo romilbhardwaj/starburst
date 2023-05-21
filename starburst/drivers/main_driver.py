@@ -79,7 +79,7 @@ if __name__ == '__main__':
     main()
 
 
-def custom_start(queue, conn, grpc_port=None, sched_tick_time=SCHED_TICK_TIME, onprem_k8s_cluster_name=ONPREM_K8S_CLUSTER_NAME, cloud_k8s_cluster_name=CLOUD_K8S_CLUSTER_NAME, policy=POLICY_STR, wait_time=0, job_data={}, timestamp=None, index=None):
+def custom_start(queue, conn, grpc_port=None, sched_tick_time=SCHED_TICK_TIME, onprem_k8s_cluster_name=ONPREM_K8S_CLUSTER_NAME, cloud_k8s_cluster_name=CLOUD_K8S_CLUSTER_NAME, waiting_policy=POLICY_STR, wait_time=0, job_data={}, timestamp=None, index=None, policy='fixed'):
     #global startburst_scheduler
     '''
     # Parse command line arguments =================================================================
@@ -110,11 +110,12 @@ def custom_start(queue, conn, grpc_port=None, sched_tick_time=SCHED_TICK_TIME, o
                                     event_logger,
                                     onprem_cluster_name=onprem_k8s_cluster_name,
                                     cloud_cluster_name=cloud_k8s_cluster_name,
-                                    queue_policy_str=policy,
+                                    queue_policy_str=waiting_policy,
                                     wait_time=wait_time,
                                     job_data=job_data,
                                     timestamp=timestamp,
-                                    run=index 
+                                    run=index,
+                                    policy = policy
                                     )
     
     if 'hyperparameters' in job_data: 
