@@ -24,15 +24,44 @@ from google.cloud import container_v1
 import sys 
 import yaml 
 import requests
+
 import re
+
+import math 
+import training_dataset
+
 TRAINING_JOBS = sweeps.TRAINING_JOBS
 DEFAULT_HYPERPARAMETERS = sweeps.DEFAULT_HYPERPARAMETERS
+ESTIMATED_TIMES = training_dataset.ESTIMATED_TIMES
 
 logger = logging.getLogger(__name__)
 
 class Config:
     def __init__(self, config_dict):
         self.__dict__.update(config_dict)
+
+def get_training_jobs(gpu):
+	"""returns list of runtimes and jobs with specified number of gpus"""
+	valid_jobs = []
+	for job in ESTIMATED_TIMES: 
+		if job[2] == gpu: 
+			valid_jobs.append((job[1], job[3]))
+	return valid_jobs
+
+def sample_training_job(gpu, runtime):
+	"return script the closest fils gpu runtime pair"
+	jobs = get_training_jobs(gpu)
+	#id = 0
+	min_delta = math.inf
+	min_id = 0  
+	for i in range(len(jobs)):
+		job = jobs[i]
+		delta = abs(jobs[i][0] - runtime)
+		if delta <= min_delta: 
+			min_delta = delta
+			min_id = i
+	logger.debug(f'exponentially distributed time {runtime} -- mapped time {jobs[min_id][0]} -- gpu {gpu}')
+	return jobs[min_id]
 
 def generate_jobs(hyperparameters): 
 	jobs = {}
@@ -41,6 +70,12 @@ def generate_jobs(hyperparameters):
 	jobs['hyperparameters'] = hyperparameters
 	arrivals = []
 	np.random.seed(hp.random_seed)
+
+	#if hyperparameters['sample_real_workloads']:
+	#	arrivals.append((job_index, submit_time))
+	#				job_index += 1
+	#				submit_time += 10
+	#	return jobs, arrivals
 
 	job_index = 0 #1
 	submit_time = 0
@@ -85,33 +120,47 @@ def generate_jobs(hyperparameters):
 		elif hp.time_constrained == False and job_index >= hp.total_jobs:
 			break
 		job = {}
-		if hp.uniform_submission: 
+		gpus = int(np.random.choice(hp.gpu_sizes, p=hp.gpu_dist)) #min(0, int(np.random.exponential(scale=2)))
+		cpus = 11 * gpus
+		memory = min(0, int(np.random.exponential(scale=50)))
+		workload = {"gpu": gpus, "cpu":cpus, "memory":memory}
+		job['workload'] = workload
+
+		if hp.uniform_submission:
 			submit_time += hp.uniform_arrival
 		else: 
 			submit_time += max(3, np.random.exponential(scale=1/hp.arrival_rate))
-		job_duration = max(30, np.random.exponential(scale=hp.mean_duration))
-		# TODO: Implement training -- include estimate runtime 
 
-		gpus = int(np.random.choice(hp.gpu_sizes, p=hp.gpu_dist)) #min(0, int(np.random.exponential(scale=2)))
-		#cpus = 11 * gpus
-		cpus = 0
-		#cpus = int(np.random.choice(hp.cpu_sizes, p=hp.cpu_dist))
-		memory = min(0, int(np.random.exponential(scale=50)))
-		job['submit_time'] = submit_time
-		job['scheduler_submit_time'] = None
-		job['job_duration'] = job_duration
-		workload = {"gpu": gpus, "cpu":cpus, "memory":memory}
-		job['workload'] = workload
-		job['image'] = hp.image
-		job['setup_script'] = hp.setup_script
-		#job['sleep'] = hp.sleep
-		job['job_type'] = hp.job_type
-		if hp.job_type == 'train':
+		job_duration = max(30, np.random.exponential(scale=hp.mean_duration))
+		job_duration = min(job_duration, 10000) # Set upperbound
+
+		# TODO: Implement training -- include estimate runtime
+		if hp.sample_real_workloads:
+			logger.debug(f'sampling real world workloads')
+			estimated_runtime, training_job_script = sample_training_job(gpus, job_duration)
+			job['setup_script'] = training_job_script
+			job['job_duration'] = estimated_runtime #train_job['estimated_training_runtime'] 
+		elif hp.job_type == 'train':
+			logger.debug(f'sampling train jobs')
 			train_config = np.random.choice(hp.train_names, p=hp.train_dist)
 			train_job = TRAINING_JOBS[train_config]
 			job['setup_script'] = train_job['train_script']
 			job['job_duration'] = train_job['estimated_training_runtime']
+		else:
+			job['setup_script'] = hp.setup_script
+			job['job_duration'] = job_duration
 
+
+		# TODO: First find set of all jobs with same # of gpus
+		# TODO: Find job with closest time given gpu distribution 
+
+		#cpus = int(np.random.choice(hp.cpu_sizes, p=hp.cpu_dist))
+		
+		job['submit_time'] = submit_time
+		job['scheduler_submit_time'] = None
+		job['image'] = hp.image
+		#job['sleep'] = hp.sleep
+		job['job_type'] = hp.job_type
 		jobs[job_index] = job
 		arrivals.append((job_index, submit_time))
 		job_index += 1
