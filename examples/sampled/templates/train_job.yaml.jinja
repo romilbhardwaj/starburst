@@ -1,14 +1,24 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: train-{{job}}
+  name: job-{{job}}
+  label: 
+    track: train
 spec: 
   template: 
     spec: 
+      volumes: 
+      - name: dshm
+        emptyDir: 
+          medium: Memory
+      schedulerName: chakra
       containers: 
       - name: train
         image: {{image}}
-        command: ["/bin/sh", "-c"]
+        volumeMounts: 
+        - name: dshm
+          mountPath: /dev/shm
+        command: ["/bin/bash", "-c"]
         args:
         - |
-          nvidia-smi --query-gpu=uuid --format=csv,noheader && {{setup_script}}
+          nvidia-smi --query-gpu=uuid --format=csv,noheader && echo "||" && python {{setup_script}}
