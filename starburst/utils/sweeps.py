@@ -1481,7 +1481,90 @@ SWEEPS = {
             "wait_time": [0.1, 2.5, 5, 10],
             "arrival_rate": [1/i for i in generate_interval(0.1, 3, 4)],
         }
-    }
+    },
+
+	"2a": { # High System Util - nowait, constant wait, compute wait, starburst
+		"fixed_values": {
+			"image": "gcr.io/sky-burst/skyburst:latest",
+            "batch_time": 900, 
+            "mean_duration": 30,
+            "waiting_policy": "fifo_wait",
+            "cpu_dist":[0.25, 0.25, 0.25, 0.25],
+	        "cpu_sizes": [i * 11 for i in [1, 2, 4, 8]],
+		    "gpu_dist": [0.7, 0.15, 0.1, 0.05],
+            "gpu_sizes": [1, 2, 4, 8],
+            "uniform_submission": False, 
+            "uniform_arrival": 4,
+            "onprem_cluster": 'gke_sky-burst_us-central1-c_starburst-sleep',
+            "cloud_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu-cloud',
+            "cluster_size": 1,
+            "gpu_workload": True,
+	        "gpus_per_node": 8,
+            "sched_tick": 0.1,
+	        "wait_time": 3,
+		    "spill_to_cloud": False,
+		    "arrival_rate": 0.75, 
+        },
+	    "varying_values": {	
+		    "policy": ['constant', 'starburst', 'constant_optimal'], # Computes the optimal values
+            "arrival_rate": [0.25],
+	        "wait_time": [3],
+        }
+    },
+    "1a": { # High System Util - nowait, constant wait, compute wait, starburst
+		"fixed_values": {
+			"image": "gcr.io/sky-burst/skyburst:latest",
+            "batch_time": 60, 
+            "mean_duration": 60,
+            "waiting_policy": "fifo_wait",
+            "cpu_dist":[0.25, 0.25, 0.25, 0.25],
+	        "cpu_sizes": [i * 11 for i in [1, 2, 4, 8]],
+		    "gpu_dist": [0.7, 0.15, 0.1, 0.05],
+            "gpu_sizes": [1, 2, 4, 8],
+            "uniform_submission": False, #True, 
+            "uniform_arrival": 4,
+            "onprem_cluster": 'gke_sky-burst_us-central1-c_starburst-sleep',
+            "cloud_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu-cloud',
+            "cluster_size": 1,
+            "gpu_workload": True,
+	        "gpus_per_node": 8,
+            "sched_tick": 0.1,
+	        "wait_time": 3,
+		    "spill_to_cloud": False,
+		    "arrival_rate": 0.75, 
+        },
+	    "varying_values": {	
+		    "policy": ['constant', 'starburst', 'constant_optimal'], # Computes the optimal values
+            "wait_time": [3],
+            "arrival_rate": [0.75] 
+        }
+    },
+    "0a": { # Philly trace sweep - nowait, constant wait, compute wait, starburst
+		"fixed_values": {
+			"image": "gcr.io/sky-burst/skyburst:latest",
+            "batch_time": 120, 
+            "mean_duration": 120,
+            "waiting_policy": "fifo_wait",
+            "cpu_dist":[0.25, 0.25, 0.25, 0.25],
+	        "cpu_sizes": [i * 11 for i in [1, 2, 4, 8]],
+		    "gpu_dist": [0.7, 0.15, 0.1, 0.05],
+            "gpu_sizes": [1, 2, 4, 8],
+            "uniform_submission": False, #True, 
+            "uniform_arrival": 4,
+            "cluster_size": 1,
+            "gpu_workload": True,
+	        "gpus_per_node": 8,
+            "sched_tick": 0.1,
+	        "wait_time": 3,
+		    "spill_to_cloud": False,
+		    "arrival_rate": 0.75, 
+        },
+	    "varying_values": {	
+		    "policy": ['starburst', 'constant', 'constant_optimal'], # Computes the optimal values
+            "wait_time": [3],
+            "arrival_rate": [0.75] 
+        }
+    },
 }
 
 cluster = {
