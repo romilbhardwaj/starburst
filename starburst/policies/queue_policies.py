@@ -242,6 +242,7 @@ class FIFOWaitPolicy(BasePolicy):
                 # if self.cloud_only # TODO: Include option for submission to cloud only
                 can_fit = self.onprem_manager.can_fit(job)
                 logger.debug(f'Onprem Submission Check || Can fit: {can_fit} | Prev Job Name: {self.prevJobName} | Prev Job Status: {self.prevJobStatus}')
+                # TODO: Set previous job completed instead of previous job scheduled -- ERROR  
                 if can_fit and (self.prevJobName == None or self.prevJobStatus == None or self.prevJobStatus == 1): 
                     logger.debug(f'Onprem Submission Entered || job {job.job_name} | queue {job_queue} | submission time {job.job_submit_time} | debug time {debug_time}' )                    
                     job_queue.remove(job)
