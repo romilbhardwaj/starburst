@@ -38,6 +38,7 @@ DEFAULT_HYPERPARAMETERS = {
     "spill_to_cloud": True,
     "onprem_only": False,
     "collect_runtimes": False,
+    "sample_real_workloads": False 
 }
 
 def generate_interval(min=0, max=10, intervals=10):
@@ -60,6 +61,7 @@ python $SCRIPT_DIR/huggingface-bert-wikitext.py \
 --num_attention_heads 4 \
 --num_train_epochs 1
 '''
+TRAINING_TIMES = [(0, 181, 4, '/tasks/huggingface-bert-wikitext.py --dataset wikitext-2 --per_device_train_batch_size 16 --hidden_size 128 --num_hidden_layers 2 --num_attention_heads 4 --gradient_accumulation_steps 2'), (1, 182, 8, '/tasks/huggingface-bert-wikitext.py --dataset wikitext-2 --per_device_train_batch_size 16 --hidden_size 128 --num_hidden_layers 2 --num_attention_heads 4 --gradient_accumulation_steps 2'), (2, 197, 4, '/tasks/huggingface-bert-wikitext.py --dataset wikitext-2 --per_device_train_batch_size 16 --hidden_size 128 --num_hidden_layers 2 --num_attention_heads 4'), (3, 188, 8, '/tasks/huggingface-bert-wikitext.py --dataset wikitext-2 --per_device_train_batch_size 16 --hidden_size 128 --num_hidden_layers 2 --num_attention_heads 4'), (4, 226, 4, '/tasks/huggingface-bert-wikitext.py --dataset wikitext-2 --per_device_train_batch_size 8 --hidden_size 512 --num_hidden_layers 4 --num_attention_heads 8'), (5, 235, 8, '/tasks/huggingface-bert-wikitext.py --dataset wikitext-2 --per_device_train_batch_size 8 --hidden_size 512 --num_hidden_layers 4 --num_attention_heads 8'), (6, 4821, 4, '/tasks/huggingface-bert-wikitext.py --dataset wikitext-103 --per_device_train_batch_size 16 --hidden_size 128 --num_hidden_layers 2 --num_attention_heads 4 --gradient_accumulation_steps 2'), (7, 7383, 8, '/tasks/huggingface-bert-wikitext.py --dataset wikitext-103 --per_device_train_batch_size 16 --hidden_size 128 --num_hidden_layers 2 --num_attention_heads 4 --gradient_accumulation_steps 2'), (8, 8505, 4, '/tasks/huggingface-bert-wikitext.py --dataset wikitext-103 --per_device_train_batch_size 16 --hidden_size 256 --num_hidden_layers 4 --num_attention_heads 4'), (9, 7760, 8, '/tasks/huggingface-bert-wikitext.py --dataset wikitext-103 --per_device_train_batch_size 16 --hidden_size 256 --num_hidden_layers 4 --num_attention_heads 4'), (10, 11972, 4, '/tasks/huggingface-bert-wikitext.py --dataset wikitext-103 --per_device_train_batch_size 8 --hidden_size 512 --num_hidden_layers 4 --num_attention_heads 8'), (12, 330, 4, '/tasks/huggingface-gpt-wikitext.py --dataset wikitext-2 --per_device_train_batch_size 8 --n_embd 256 --n_layer 4 --n_head 4  --gradient_accumulation_steps 2'), (14, 531, 4, '/tasks/huggingface-gpt-wikitext.py --dataset wikitext-2 --per_device_train_batch_size 8 --n_embd 512 --n_layer 8 --n_head 8'), (16, 15342, 4, '/tasks/huggingface-gpt-wikitext.py --dataset wikitext-103 --per_device_train_batch_size 8 --n_embd 256 --n_layer 4 --n_head 4 --gradient_accumulation_steps 2'), (18, 28825, 4, '/tasks/huggingface-gpt-wikitext.py --dataset wikitext-103 --per_device_train_batch_size 8 --n_embd 512 --n_layer 8 --n_head 8'), (11, 9751, 8, '/tasks/huggingface-bert-wikitext.py --dataset wikitext-103 --per_device_train_batch_size 8 --hidden_size 512 --num_hidden_layers 4 --num_attention_heads 8'), (15, 417, 8, '/tasks/huggingface-gpt-wikitext.py --dataset wikitext-2 --per_device_train_batch_size 8 --n_embd 512 --n_layer 8 --n_head 8'), (22, 6523, 4, '/tasks/huggingface-gpt-wmt16.py --language_pair fi-en --per_device_train_batch_size 8 --n_embd 256 --n_layer 4 --n_head 4 --gradient_accumulation_steps 2'), (13, 299, 8, '/tasks/huggingface-gpt-wikitext.py --dataset wikitext-2 --per_device_train_batch_size 8 --n_embd 256 --n_layer 4 --n_head 4  --gradient_accumulation_steps 2'), (17, 11920, 8, '/tasks/huggingface-gpt-wikitext.py --dataset wikitext-103 --per_device_train_batch_size 8 --n_embd 256 --n_layer 4 --n_head 4 --gradient_accumulation_steps 2'), (24, 8522, 4, '/tasks/huggingface-gpt-wmt16.py --language_pair fi-en --per_device_train_batch_size 8 --n_embd 512 --n_layer 8 --n_head 8'), (26, 114, 1, '/tasks/pytorch-cifar10-efficientnet_v2_m.py --num_train_epochs 1'), (28, 98, 2, '/tasks/pytorch-cifar10-efficientnet_v2_m.py --num_train_epochs 1'), (27, 234, 1, '/tasks/pytorch-cifar10-efficientnet_v2_m.py --num_train_epochs 2'), (30, 84, 4, '/tasks/pytorch-cifar10-efficientnet_v2_m.py --num_train_epochs 1'), (19, 18116, 8, '/tasks/huggingface-gpt-wikitext.py --dataset wikitext-103 --per_device_train_batch_size 8 --n_embd 512 --n_layer 8 --n_head 8'), (31, 137, 4, '/tasks/pytorch-cifar10-efficientnet_v2_m.py --num_train_epochs 2'), (29, 180, 2, '/tasks/pytorch-cifar10-efficientnet_v2_m.py --num_train_epochs 2'), (34, 67, 1, '/tasks/pytorch-cifar10-mobilenet_v3_small.py --num_train_epochs 1'), (36, 53, 2, '/tasks/pytorch-cifar10-mobilenet_v3_small.py --num_train_epochs 1'), (38, 48, 4, '/tasks/pytorch-cifar10-mobilenet_v3_small.py --num_train_epochs 1'), (23, 5554, 8, '/tasks/huggingface-gpt-wmt16.py --language_pair fi-en --per_device_train_batch_size 8 --n_embd 256 --n_layer 4 --n_head 4 --gradient_accumulation_steps 2'), (37, 90, 2, '/tasks/pytorch-cifar10-mobilenet_v3_small.py --num_train_epochs 2'), (35, 127, 1, '/tasks/pytorch-cifar10-mobilenet_v3_small.py --num_train_epochs 2'), (39, 76, 4, '/tasks/pytorch-cifar10-mobilenet_v3_small.py --num_train_epochs 2'), (25, 10889, 8, '/tasks/huggingface-gpt-wmt16.py --language_pair fi-en --per_device_train_batch_size 8 --n_embd 512 --n_layer 8 --n_head 8'), (42, 89, 1, '/tasks/pytorch-cifar10-resnet101.py --num_train_epochs 1'), (44, 75, 2, '/tasks/pytorch-cifar10-resnet101.py --num_train_epochs 1'), (46, 64, 4, '/tasks/pytorch-cifar10-resnet101.py --num_train_epochs 1'), (32, 93, 8, '/tasks/pytorch-cifar10-efficientnet_v2_m.py --num_train_epochs 1'), (45, 129, 2, '/tasks/pytorch-cifar10-resnet101.py --num_train_epochs 2'), (43, 160, 1, '/tasks/pytorch-cifar10-resnet101.py --num_train_epochs 2'), (47, 102, 4, '/tasks/pytorch-cifar10-resnet101.py --num_train_epochs 2'), (33, 150, 8, '/tasks/pytorch-cifar10-efficientnet_v2_m.py --num_train_epochs 2'), (50, 72, 1, '/tasks/pytorch-cifar10-resnet50.py --num_train_epochs 1'), (40, 62, 8, '/tasks/pytorch-cifar10-mobilenet_v3_small.py --num_train_epochs 1'), (52, 62, 2, '/tasks/pytorch-cifar10-resnet50.py --num_train_epochs 1'), (54, 55, 4, '/tasks/pytorch-cifar10-resnet50.py --num_train_epochs 1'), (51, 133, 1, '/tasks/pytorch-cifar10-resnet50.py --num_train_epochs 2'), (55, 83, 4, '/tasks/pytorch-cifar10-resnet50.py --num_train_epochs 2'), (41, 88, 8, '/tasks/pytorch-cifar10-mobilenet_v3_small.py --num_train_epochs 2'), (53, 106, 2, '/tasks/pytorch-cifar10-resnet50.py --num_train_epochs 2'), (58, 76, 1, '/tasks/pytorch-cifar10-resnext50_32x4d.py --num_train_epochs 1'), (48, 73, 8, '/tasks/pytorch-cifar10-resnet101.py --num_train_epochs 1'), (60, 66, 2, '/tasks/pytorch-cifar10-resnext50_32x4d.py --num_train_epochs 1'), (62, 56, 4, '/tasks/pytorch-cifar10-resnext50_32x4d.py --num_train_epochs 1'), (59, 149, 1, '/tasks/pytorch-cifar10-resnext50_32x4d.py --num_train_epochs 2'), (63, 85, 4, '/tasks/pytorch-cifar10-resnext50_32x4d.py --num_train_epochs 2'), (61, 109, 2, '/tasks/pytorch-cifar10-resnext50_32x4d.py --num_train_epochs 2'), (49, 106, 8, '/tasks/pytorch-cifar10-resnet101.py --num_train_epochs 2'), (66, 72, 1, '/tasks/pytorch-cifar10-vgg11.py --num_train_epochs 1'), (56, 66, 8, '/tasks/pytorch-cifar10-resnet50.py --num_train_epochs 1'), (68, 55, 2, '/tasks/pytorch-cifar10-vgg11.py --num_train_epochs 1'), (67, 150, 1, '/tasks/pytorch-cifar10-vgg11.py --num_train_epochs 2'), (69, 93, 2, '/tasks/pytorch-cifar10-vgg11.py --num_train_epochs 2'), (57, 89, 8, '/tasks/pytorch-cifar10-resnet50.py --num_train_epochs 2'), (64, 63, 8, '/tasks/pytorch-cifar10-resnext50_32x4d.py --num_train_epochs 1'), (70, 79, 4, '/tasks/pytorch-cifar10-vgg11.py --num_train_epochs 1'), (65, 91, 8, '/tasks/pytorch-cifar10-resnext50_32x4d.py --num_train_epochs 2'), (71, 109, 4, '/tasks/pytorch-cifar10-vgg11.py --num_train_epochs 2'), (72, 73, 8, '/tasks/pytorch-cifar10-vgg11.py --num_train_epochs 1'), (73, 115, 8, '/tasks/pytorch-cifar10-vgg11.py --num_train_epochs 2')]
 
 TRAINING_JOBS = {
 	# TODO: make sure to specify the gpu size per models 
@@ -336,8 +338,38 @@ all_vision_models = ["efficientnet-v2", "mobilenet-v3", "resnet-101", "resnet-50
 language_models_modified = ["bert-tiny-wikitext-2", "bert-mini-wikitext-2", "bert-small-wikitext-2", "bert-tiny-wikitext-103", "bert-mini-wikitext-103", "bert-small-wikitext-103", "gpt2-tiny-wikitext-2", "gpt2-mini-wikitext-2", "gpt2-tiny-wikitext-103", "gpt2-mini-wikitext-103", "gpt2-small-wikitext-103", "gpt2-tiny-wmt-16", "gpt2-mini-wmt-16"]
 
 all_models = language_models_modified + all_vision_models
-
+# PHILLY - 0.7 * 1 + 0.15 * 2 + 0.1 * 4 + 0.05 * 8 = 1.8
 SWEEPS = {
+	"48": { # Final Sweep -- high sys. util 
+		"fixed_values": {
+            "batch_time": 4 * 60 * 60, 
+            "mean_duration": 45 * 60,
+            "waiting_policy": "fifo_wait",
+            "cpu_dist":[0.25, 0.25, 0.25, 0.25],
+	        "cpu_sizes": [i * 11 for i in [1, 2, 4, 8]],
+		    "gpu_dist": [0.7, 0.15, 0.1, 0.05], #Philly Distribution
+            "gpu_sizes": [1, 2, 4, 8],
+            "uniform_submission": False, #True, 
+            "uniform_arrival": 4,
+            "onprem_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu',
+            "cloud_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu-cloud',
+            "cluster_size": 1,
+            "gpu_workload": True,
+	        "gpus_per_node": 8,
+            "sched_tick": 0.1,
+	        "wait_time": 5, 
+		    "spill_to_cloud": False,
+		    "arrival_rate": 0.75, # Maxes at 4k jobs bc 3 second interarrival rate
+		    "sample_real_workloads": True,
+		    "job_type": "train",
+		    "image": "gcr.io/sky-burst/skyburst:latest",
+        },
+	    "varying_values": {	
+		    "policy": ['starburst', 'constant', 'constant_optimal'], # Computes the optimal values
+            "wait_time": [5],
+            "arrival_rate": [30/(60*60)] # job/second ~ 45 minutes per job jobs per hour / 32 gpu cluster  -- system util 75 -- 32 jobs ~ 1.3 jobs * 32 jobs = 41jobs (1 gpu ~ 45min per job) -- 41 / 2 ~ 21 jobs per hour 
+        }
+    },
 	"47": { # Philly trace sweep - nowait, constant wait, compute wait, starburst
 		"fixed_values": {
 			"image": "gcr.io/sky-burst/skyburst:latest",
