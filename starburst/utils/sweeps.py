@@ -340,9 +340,9 @@ language_models_modified = ["bert-tiny-wikitext-2", "bert-mini-wikitext-2", "ber
 all_models = language_models_modified + all_vision_models
 # PHILLY - 0.7 * 1 + 0.15 * 2 + 0.1 * 4 + 0.05 * 8 = 1.8
 SWEEPS = {
-	"48": { # Final Sweep -- high sys. util 
+	"48": { # Final Sweep -- HIGH SYS UTIL
 		"fixed_values": {
-            "batch_time": 4 * 60 * 60, 
+            "batch_time": 8 * 60 * 60, 
             "mean_duration": 45 * 60,
             "waiting_policy": "fifo_wait",
             "cpu_dist":[0.25, 0.25, 0.25, 0.25],
@@ -365,9 +365,9 @@ SWEEPS = {
 		    "image": "gcr.io/sky-burst/skyburst:latest",
         },
 	    "varying_values": {	
-		    "policy": ['starburst', 'constant', 'constant_optimal'], # Computes the optimal values
+		    "policy": ['constant', 'starburst', 'constant_optimal'], # Computes the optimal values
             "wait_time": [5],
-            "arrival_rate": [30/(60*60)] # job/second ~ 45 minutes per job jobs per hour / 32 gpu cluster  -- system util 75 -- 32 jobs ~ 1.3 jobs * 32 jobs = 41jobs (1 gpu ~ 45min per job) -- 41 / 2 ~ 21 jobs per hour 
+            "arrival_rate": [12/(60*60)] # job/second ~ 45 minutes per job jobs per hour / 32 gpu cluster  -- system util 75 -- 32 jobs ~ 1.3 jobs * 32 jobs = 41jobs (1 gpu ~ 45min per job) -- 41 / 2 ~ 21 jobs per hour 
         }
     },
 	"47": { # Philly trace sweep - nowait, constant wait, compute wait, starburst
