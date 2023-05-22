@@ -344,7 +344,7 @@ def retrieve_node_instance(api):
 	return instance_types
 
 def retrieve_raw_events():
-	config.load_kube_config(context="gke_sky-burst_us-central1-c_starburst")
+	config.load_kube_config(context="")
 	api = client.CoreV1Api()
 	events = api.list_event_for_all_namespaces()
 	text_file = open("../../local/artifacts/raw_logs.txt", "w")

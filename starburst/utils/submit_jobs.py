@@ -24,6 +24,7 @@ from google.cloud import container_v1
 import sys 
 import yaml 
 import requests
+import re
 TRAINING_JOBS = sweeps.TRAINING_JOBS
 DEFAULT_HYPERPARAMETERS = sweeps.DEFAULT_HYPERPARAMETERS
 
@@ -50,7 +51,8 @@ def generate_jobs(hyperparameters):
 					#for gpu in [1, 2, 4, 8]:
 					job = {}
 					gpus = gpu
-					cpus = 11 * gpus
+					cpus = 0
+					#cpus = 11 * gpus
 					memory = 0
 					job['submit_time'] = submit_time
 					job['scheduler_submit_time'] = None
@@ -91,7 +93,8 @@ def generate_jobs(hyperparameters):
 		# TODO: Implement training -- include estimate runtime 
 
 		gpus = int(np.random.choice(hp.gpu_sizes, p=hp.gpu_dist)) #min(0, int(np.random.exponential(scale=2)))
-		cpus = 11 * gpus
+		#cpus = 11 * gpus
+		cpus = 0
 		#cpus = int(np.random.choice(hp.cpu_sizes, p=hp.cpu_dist))
 		memory = min(0, int(np.random.exponential(scale=50)))
 		job['submit_time'] = submit_time
@@ -140,7 +143,6 @@ def submit(jobs={}, arrivals=[], timestamp=None, index=None, clusters=None):
 	submit_times = {}
 	p2_log = "../logs/archive/" + timestamp + '/' + 'p2.log'
 
-	
 	while True:
 		curr_time = time.time()
 		if job_index < total_jobs and curr_time > arrivals[job_index][1] + start_time:
@@ -183,6 +185,18 @@ def submit(jobs={}, arrivals=[], timestamp=None, index=None, clusters=None):
 					return job
 			return None
 
+		def parse_jobs():
+			with open(f'../logs/archive/{timestamp}/events/{index}.log', "r") as f:
+				cloud_log_list = f.read().split('\n')
+			log_jobs = []
+			for log in cloud_log_list[1:-1]:
+				match = re.search(r"Cloud Job \|\| job id (\S+) \| (\S+)", log)
+				match = match.groups()
+				if match:
+					job = int(match[0])
+					log_jobs.append(job)
+			return log_jobs
+		
 		config.load_kube_config(context=clusters['onprem'])
 		onprem_api_batch = client.BatchV1Api()
 
@@ -195,6 +209,7 @@ def submit(jobs={}, arrivals=[], timestamp=None, index=None, clusters=None):
 			limit = None #50
 			continue_token = ""
 			job_list, _, _ = api.list_namespaced_job_with_http_info(namespace="default", limit=limit, _continue=continue_token)
+			 
 			for job in submitted_jobs: 
 				try: 
 					curr_job = find_job_with_substring(job_list.items, "job-" + str(job))#"sleep-" + str(job))
@@ -202,6 +217,12 @@ def submit(jobs={}, arrivals=[], timestamp=None, index=None, clusters=None):
 						submitted_jobs[job] = True 
 				except Exception as e:
 					pass
+		
+		if jobs['hyperparameters']['spill_to_cloud'] == False:
+			cloud_jobs = parse_jobs()
+			for job in cloud_jobs: 
+				submitted_jobs[job] = True 
+			
 		return submitted_jobs
 	
 	# TODO: Verify if jobs is accesible
@@ -706,7 +727,7 @@ if __name__ == '__main__':
 UTIL + MISC FUNCTIONS
 """
 
-def start_scheduler(policy="fifo_onprem_only", onprem_cluster="gke_sky-burst_us-central1-c_starburst", cloud_cluster="gke_sky-burst_us-central1-c_starburst-cloud"):
+def start_scheduler(policy="fifo_onprem_only", onprem_cluster="", cloud_cluster=""):
 	os.system('python3 -m starburst.drivers.main_driver --policy {} --onprem_k8s_cluster_name {} --cloud_k8s_cluster_name {}'.format(policy, onprem_cluster, cloud_cluster))
 	#subprocess.run(['python3', '-m', 'starburst.drivers.main_driver' '--policy', policy, '--onprem_k8s_cluster_name', onprem_cluster,'--cloud_k8s_cluster_name', cloud_cluster])
 	return
