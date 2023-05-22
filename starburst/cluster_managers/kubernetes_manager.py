@@ -238,7 +238,8 @@ class KubernetesManager(object):
         
         limit = None
         continue_token = ""
-        job_list, _, _ = self.batch_v1.list_namespaced_job_with_http_info(namespace="default", limit=limit, _continue=continue_token)        
+        job_list, _, _ = self.batch_v1.list_namespaced_job_with_http_info(namespace="default", limit=limit, _continue=continue_token)      
+        #logger.debug(f'job name submitted {job_name}')  
         real_job_name = find_job_with_substring(job_list.items, job_name)
         logger.debug("FINDING JOB " +  str(job_name) + " Found: " + str(real_job_name))
         if real_job_name: 
@@ -318,7 +319,7 @@ class KubernetesManager(object):
             # Create a Kubernetes job object from the dictionary
             k8s_job = models.V1Job()
             # Append random string to job name to avoid name collision
-            k8s_job.metadata = models.V1ObjectMeta(name=job_dict['metadata']['name'] + '-' + job.job_id)
+            k8s_job.metadata = models.V1ObjectMeta(name=str(job_dict['metadata']['name']))# + '-' + job.job_id)
             k8s_job.spec = models.V1JobSpec(template=job_dict['spec']['template'])
             #import pdb; pdb.set_trace()
             self.batch_v1.create_namespaced_job(namespace="default", body=k8s_job)
