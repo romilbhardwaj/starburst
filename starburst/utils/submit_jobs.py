@@ -185,6 +185,21 @@ def save_jobs(jobs, repo, tag):
 		json.dump(jobs, f)
 
 def submit(jobs={}, arrivals=[], timestamp=None, index=None, clusters=None):
+	def update_scheduler_submit_times(submit_times=None, timestamp=timestamp, index=index, arrivals=arrivals): 
+		trial_data_path = "../logs/archive/" + str(timestamp) + "/jobs/" + str(index) + ".json"
+		job_data = {}
+		# TODO: Figure out the bug for why schedule submit time fails 
+		with open(trial_data_path, "r") as f:
+			job_data = json.load(f)
+
+		for i in range(len(arrivals)):
+			# TODO: add scheduler_submit_time value in addition to submit_time 
+			if i in submit_times: 
+				job_data[str(i)]['scheduler_submit_time'] = submit_times[i] 
+
+		with open(trial_data_path, "w") as f:
+			json.dump(job_data, f)
+
 	start_time = time.time()
 	curr_time = time.time()
 	job_index = 0 #1
@@ -205,21 +220,13 @@ def submit(jobs={}, arrivals=[], timestamp=None, index=None, clusters=None):
 			job_index += 1
 			with open(p2_log, "a") as f:
 				f.write("Submitting job " + str(job) + '\n')
+			update_scheduler_submit_times(submit_times=submit_times)
 		#TODO: Improve stop condition -- wait until last job completes
 		if job_index >= total_jobs: 
 			break
 	
-	trial_data_path = "../logs/archive/" + str(timestamp) + "/jobs/" + str(index) + ".json"
-	job_data = {}
-	with open(trial_data_path, "r") as f:
-		job_data = json.load(f)
-
-	for i in range(len(arrivals)):
-		# TODO: add scheduler_submit_time value in addition to submit_time 
-		job_data[str(i)]['scheduler_submit_time'] = submit_times[i] 
-
-	with open(trial_data_path, "w") as f:
-		json.dump(job_data, f)
+	update_scheduler_submit_times(submit_times=submit_times)
+	
 
 	def all_submitted(submitted_jobs):
 		for submission_state in submitted_jobs.values():
