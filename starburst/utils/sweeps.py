@@ -340,9 +340,9 @@ language_models_modified = ["bert-tiny-wikitext-2", "bert-mini-wikitext-2", "ber
 all_models = language_models_modified + all_vision_models
 # PHILLY - 0.7 * 1 + 0.15 * 2 + 0.1 * 4 + 0.05 * 8 = 1.8
 SWEEPS = {
-	"48": { # Final Sweep -- HIGH SYS UTIL
+	"48": { # Final Sweep -- OVERLOADED util 
 		"fixed_values": {
-            "batch_time": 8 * 60 * 60, 
+            "batch_time": 5 * 60 * 60, 
             "mean_duration": 45 * 60,
             "waiting_policy": "fifo_wait",
             "cpu_dist":[0.25, 0.25, 0.25, 0.25],
@@ -351,8 +351,8 @@ SWEEPS = {
             "gpu_sizes": [1, 2, 4, 8],
             "uniform_submission": False, #True, 
             "uniform_arrival": 4,
-            "onprem_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu',
-            "cloud_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu-cloud',
+            "onprem_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu-cloud',
+            "cloud_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu',
             "cluster_size": 1,
             "gpu_workload": True,
 	        "gpus_per_node": 8,
@@ -366,8 +366,9 @@ SWEEPS = {
         },
 	    "varying_values": {	
 		    "policy": ['constant', 'starburst', 'constant_optimal'], # Computes the optimal values
-            "wait_time": [15],
-            "arrival_rate": [24/(60*60)] #24 # Moved to 12 to 24 #job/second ~ 45 minutes per job jobs per hour / 32 gpu cluster  -- system util 75 -- 32 jobs ~ 1.3 jobs * 32 jobs = 41jobs (1 gpu ~ 45min per job) -- 41 / 2 ~ 21 jobs per hour 
+
+            "wait_time": [15], # TODO: Specify 10~15 seconds wait -- moved from 5 to 15 
+            "arrival_rate": [32/(60*60)] # Moved from 20 to 32 -- job/second ~ 45 minutes per job jobs per hour / 32 gpu cluster  -- system util 75 -- 32 jobs ~ 1.3 jobs * 32 jobs = 41jobs (1 gpu ~ 45min per job) -- 41 / 2 ~ 21 jobs per hour 
         }
     },
 	"47": { # Philly trace sweep - nowait, constant wait, compute wait, starburst
