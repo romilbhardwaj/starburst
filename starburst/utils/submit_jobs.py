@@ -387,7 +387,7 @@ def clear_logs(clusters={}):
 	cloud_api = client.CoreV1Api()
 	cloud_api_batch = client.BatchV1Api()
 
-	cluster_apis = [(onprem_api, onprem_api_batch), (cloud_api, cloud_api_batch)]
+	cluster_apis = [(onprem_api, onprem_api_batch)]#, (cloud_api, cloud_api_batch)]
 
 	while True:
 		try:
