@@ -114,6 +114,48 @@ def generate_jobs(hyperparameters):
 					submit_time += 10
 		return jobs, arrivals
 
+	# TODO: Add 10 jobs at the very beginning separated by 10 seconds seach 
+	
+	#i = 0 
+	while True:
+		if job_index >= 5:
+			break
+		job = {}
+		gpus = int(np.random.choice(hp.gpu_sizes, p=hp.gpu_dist)) #min(0, int(np.random.exponential(scale=2)))
+		cpus = 11 * gpus
+		memory = min(0, int(np.random.exponential(scale=50)))
+		workload = {"gpu": gpus, "cpu":cpus, "memory":memory}
+		job['workload'] = workload
+		submit_time += 30
+		job_duration = max(30, np.random.exponential(scale=hp.mean_duration))
+		job_duration = min(job_duration, 10000) # Set upperbound
+
+		# TODO: Implement training -- include estimate runtime
+		if hp.sample_real_workloads:
+			logger.debug(f'sampling real world workloads')
+			estimated_runtime, training_job_script = sample_training_job(gpus, job_duration)
+			job['setup_script'] = training_job_script
+			job['job_duration'] = estimated_runtime #train_job['estimated_training_runtime'] 
+		elif hp.job_type == 'train':
+			logger.debug(f'sampling train jobs')
+			train_config = np.random.choice(hp.train_names, p=hp.train_dist)
+			train_job = TRAINING_JOBS[train_config]
+			job['setup_script'] = train_job['train_script']
+			job['job_duration'] = train_job['estimated_training_runtime']
+		else:
+			job['setup_script'] = hp.setup_script
+			job['job_duration'] = job_duration
+		# TODO: First find set of all jobs with same # of gpus
+		# TODO: Find job with closest time given gpu distribution 
+		job['submit_time'] = submit_time
+		job['scheduler_submit_time'] = None
+		job['image'] = hp.image
+		#job['sleep'] = hp.sleep
+		job['job_type'] = hp.job_type
+		jobs[job_index] = job
+		arrivals.append((job_index, submit_time))
+		job_index += 1
+	
 	while True:
 		if hp.time_constrained == True and submit_time > hp.batch_time:
 			break
@@ -149,7 +191,6 @@ def generate_jobs(hyperparameters):
 		else:
 			job['setup_script'] = hp.setup_script
 			job['job_duration'] = job_duration
-
 
 		# TODO: First find set of all jobs with same # of gpus
 		# TODO: Find job with closest time given gpu distribution 
