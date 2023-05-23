@@ -366,8 +366,8 @@ SWEEPS = {
         },
 	    "varying_values": {	
 		    "policy": ['constant', 'starburst', 'constant_optimal'], # Computes the optimal values
-            "wait_time": [5],
-            "arrival_rate": [12/(60*60)] # job/second ~ 45 minutes per job jobs per hour / 32 gpu cluster  -- system util 75 -- 32 jobs ~ 1.3 jobs * 32 jobs = 41jobs (1 gpu ~ 45min per job) -- 41 / 2 ~ 21 jobs per hour 
+            "wait_time": [15],
+            "arrival_rate": [24/(60*60)] #24 # Moved to 12 to 24 #job/second ~ 45 minutes per job jobs per hour / 32 gpu cluster  -- system util 75 -- 32 jobs ~ 1.3 jobs * 32 jobs = 41jobs (1 gpu ~ 45min per job) -- 41 / 2 ~ 21 jobs per hour 
         }
     },
 	"47": { # Philly trace sweep - nowait, constant wait, compute wait, starburst
