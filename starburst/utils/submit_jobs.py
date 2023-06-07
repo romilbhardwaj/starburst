@@ -115,10 +115,10 @@ def generate_jobs(hyperparameters):
 		return jobs, arrivals
 
 	# TODO: Add 10 jobs at the very beginning separated by 10 seconds seach 
-	
+	"""
 	#i = 0 
 	while True:
-		if job_index >= 5:
+		if job_index >= 20:
 			break
 		job = {}
 		gpus = int(np.random.choice(hp.gpu_sizes, p=hp.gpu_dist)) #min(0, int(np.random.exponential(scale=2)))
@@ -155,7 +155,8 @@ def generate_jobs(hyperparameters):
 		jobs[job_index] = job
 		arrivals.append((job_index, submit_time))
 		job_index += 1
-	
+	"""
+
 	while True:
 		if hp.time_constrained == True and submit_time > hp.batch_time:
 			break
@@ -164,14 +165,14 @@ def generate_jobs(hyperparameters):
 		job = {}
 		gpus = int(np.random.choice(hp.gpu_sizes, p=hp.gpu_dist)) #min(0, int(np.random.exponential(scale=2)))
 		cpus = 11 * gpus
-		memory = min(0, int(np.random.exponential(scale=50)))
+		memory = 0 #min(0, int(np.random.exponential(scale=50)))
 		workload = {"gpu": gpus, "cpu":cpus, "memory":memory}
 		job['workload'] = workload
 
 		if hp.uniform_submission:
 			submit_time += hp.uniform_arrival
 		else: 
-			submit_time += max(3, np.random.exponential(scale=1/hp.arrival_rate))
+			submit_time += max(3, np.random.exponential(scale=1/hp.arrival_rate)) # TODO: Normalize this value 
 
 		job_duration = max(30, np.random.exponential(scale=hp.mean_duration))
 		job_duration = min(job_duration, 10000) # Set upperbound
