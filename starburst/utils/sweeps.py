@@ -16,7 +16,7 @@ DEFAULT_HYPERPARAMETERS = {
 	"gpus_per_node": 8, 
 	"cloud_cluster_nodes": 4, 
 	"cloud_cpu_per_node": 8,  
-	"random_seed": 0,
+	"random_seed": 13, #7, #0,
 	'total_jobs': 125,
 	"batch_time": 300,
 	"wait_time": 0,
@@ -340,6 +340,36 @@ language_models_modified = ["bert-tiny-wikitext-2", "bert-mini-wikitext-2", "ber
 all_models = language_models_modified + all_vision_models
 # PHILLY - 0.7 * 1 + 0.15 * 2 + 0.1 * 4 + 0.05 * 8 = 1.8
 SWEEPS = {
+	"60": { # True overloaded -- VERIFIED 
+		"fixed_values": {
+            "batch_time": 3 * 60 * 60, 
+            "mean_duration": 45 * 60,
+            "waiting_policy": "fifo_wait",
+            "cpu_dist":[0.25, 0.25, 0.25, 0.25],
+	        "cpu_sizes": [i * 11 for i in [1, 2, 4, 8]],
+		    "gpu_dist": [0.7, 0.15, 0.1, 0.05], #Philly Distribution
+            "gpu_sizes": [1, 2, 4, 8],
+            "uniform_submission": False, #True, 
+            "uniform_arrival": 4,
+            "onprem_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu',
+            "cloud_cluster": 'gke_sky-burst_us-central1-c_skyburst-gpu-cloud',
+            "cluster_size": 1,
+            "gpu_workload": True,
+	        "gpus_per_node": 8,
+            "sched_tick": 0.1,
+	        "wait_time": 5, 
+		    "spill_to_cloud": False,
+		    "arrival_rate": 0.75, # Maxes at 4k jobs bc 3 second interarrival rate
+		    "sample_real_workloads": True,
+		    "job_type": "train",
+		    "image": "gcr.io/sky-burst/skyburst:latest",
+        },
+	    "varying_values": {	
+		    "policy": ['constant', 'starburst', 'constant_optimal'], # Computes the optimal values
+            "wait_time": [15],
+            "arrival_rate": [32/(60*60)] # job/second ~ 45 minutes per job jobs per hour / 32 gpu cluster  -- system util 75 -- 32 jobs ~ 1.3 jobs * 32 jobs = 41jobs (1 gpu ~ 45min per job) -- 41 / 2 ~ 21 jobs per hour 
+        }
+    },
 	"49": { # Final Sweep -- OVERLOADED util 
 		"fixed_values": {
             "batch_time": 5 * 60 * 60, 
@@ -371,10 +401,10 @@ SWEEPS = {
             "arrival_rate": [32/(60*60)] # Moved from 20 to 32 -- job/second ~ 45 minutes per job jobs per hour / 32 gpu cluster  -- system util 75 -- 32 jobs ~ 1.3 jobs * 32 jobs = 41jobs (1 gpu ~ 45min per job) -- 41 / 2 ~ 21 jobs per hour 
         }
     },
-	"48": { # Final Sweep -- HIGH SYS UTIL
+	"48": { # True overloaded
 
 		"fixed_values": {
-            "batch_time": 8 * 60 * 60, 
+            "batch_time": 5 * 60 * 60, 
             "mean_duration": 45 * 60,
             "waiting_policy": "fifo_wait",
             "cpu_dist":[0.25, 0.25, 0.25, 0.25],
@@ -399,7 +429,7 @@ SWEEPS = {
 	    "varying_values": {	
 		    "policy": ['constant', 'starburst', 'constant_optimal'], # Computes the optimal values
             "wait_time": [5],
-            "arrival_rate": [24/(60*60)] # job/second ~ 45 minutes per job jobs per hour / 32 gpu cluster  -- system util 75 -- 32 jobs ~ 1.3 jobs * 32 jobs = 41jobs (1 gpu ~ 45min per job) -- 41 / 2 ~ 21 jobs per hour 
+            "arrival_rate": [32/(60*60)] # job/second ~ 45 minutes per job jobs per hour / 32 gpu cluster  -- system util 75 -- 32 jobs ~ 1.3 jobs * 32 jobs = 41jobs (1 gpu ~ 45min per job) -- 41 / 2 ~ 21 jobs per hour 
         }
     },
 	"47": { # Philly trace sweep - nowait, constant wait, compute wait, starburst
