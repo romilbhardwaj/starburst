@@ -198,19 +198,19 @@ class FIFOWaitPolicy(BasePolicy):
                 job_timed_out = False
                 if self.policy == 'constant': 
                     timeout = self.wait_threshold
-                    job_timed_out = wait_time > timeout
+                    job_timed_out = wait_time > max(timeout, 15) #timeout
                 elif self.policy == 'constant_optimal': 
                     timeout = self.constant_wait_coefficient
-                    job_timed_out = wait_time > timeout
+                    job_timed_out = wait_time >  max(timeout, 15) # timeout
                 elif self.policy == 'runtime_optimal':
                     timeout = job_duration * self.runtime_wait_coefficient
-                    job_timed_out = wait_time > timeout #self.wait_threshold * self.linear_wait_constant 
+                    job_timed_out = wait_time >  max(timeout, 15) # timeout #self.wait_threshold * self.linear_wait_constant 
                 elif self.policy == 'resource_optimal': 
                     timeout = job.resources['gpu'] * self.resource_wait_coefficient
-                    job_timed_out = wait_time > timeout #self.wait_threshold * self.linear_wait_constant
+                    job_timed_out = wait_time >  max(timeout, 15) #timeout #self.wait_threshold * self.linear_wait_constant
                 elif self.policy == 'compute_optimal' or self.policy == 'starburst': 
                     timeout = job_duration * job.resources['gpu'] * self.compute_wait_coefficient
-                    job_timed_out = wait_time > timeout #self.wait_threshold * job.resources['gpus']
+                    job_timed_out = wait_time >  max(timeout, 15) #timeout #self.wait_threshold * job.resources['gpus']
                 logger.debug(f'Cloud Timeout Submission Check || policy {self.policy} | job timed out {job_timed_out} | timeout value {timeout} | wait threshold {self.wait_threshold} | wait time {wait_time} | event queue wait time {event_wait_time} | curr time {loop_time} | submission time {job.job_submit_time} | event added time {job.job_event_queue_add_time} | input job duration {job_duration} | input job resources {str(job_resource)} | input job name {str(job_id)}')
                 if job_timed_out:
                     logger.debug(f'Cloud Timeout Submission Entered || job {job.job_name} | spilling to cloud  {self.spill_to_cloud} | queue {job_queue}')
