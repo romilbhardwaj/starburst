@@ -1,4 +1,4 @@
-# Starburst 🌟
+# Starburst 🌟: A Cost-aware Scheduler for Cloud Bursting
 
 A hybrid cloud scheduler that enables you to run your k8s workloads on-prem and in the cloud.
 
