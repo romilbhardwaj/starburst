@@ -11,7 +11,9 @@ if [ ! -d "$directory" ]; then
   echo "Log directory '$directory' created."
 fi
 
-python3 clean_processes.py
-sleep 3
+for i in 1 2 3
+do
+  python3 clean_processes.py
+done
 
 nohup python3 submit_jobs.py run $1 $current_time > ../sweep_logs/archive/$current_time/starburst.log 2>&1 &

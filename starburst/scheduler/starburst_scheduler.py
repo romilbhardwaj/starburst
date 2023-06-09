@@ -1,7 +1,6 @@
 """
 Starburst scheduler.
 """
-
 import asyncio
 import logging
 import os
@@ -104,21 +103,6 @@ class StarburstScheduler:
         logger.debug(f'***** Job Retrieved in Event Queue -- Job {event.job} at time {_end_process_event_time}')
         logger.debug(f'DIFF TIMES {time.time()} or {time.perf_counter()}')
 
-    '''
-    async def log_ticks(self): 
-        """Logs tick duration to reduce simulation and real world gap"""
-
-        tick_dir = "../logs/archive/" + str(self.timestamp) + "/ticks/"
-        if not os.path.exists(tick_dir):
-            os.mkdir(tick_dir)
-
-        while True: 
-            time.sleep(1)
-            tick_path = tick_dir + str(self.run) + ".json"
-            with open(tick_path, "w") as f:
-                json.dump(self.ticks, f)
-    '''
-
     async def scheduler_loop(self, queue, conn):
         """Main loop"""
         start_time = time.perf_counter()
@@ -173,74 +157,3 @@ class StarburstScheduler:
             if self.prev_loop_time:
                 logger.debug("LOOP TIME (()) " + str(_interloop_end_time - self.prev_loop_time))#str(_end_time - _start_time))
             self.prev_loop_time = _interloop_end_time
-                
-            
-        '''
-        while True:
-            curr_time = time.perf_counter()
-            logger.debug("Count(" + str(counter) + ") Loop start: ~~~ " + str(curr_time-start_time))
-            counter += 1
-            curr_time = time.perf_counter()
-            logger.debug("Start event processing: ~~~ " + str(curr_time-start_time))
-
-            # Fetch event
-            event = await self.event_queue.get()
-
-            # TODO: Spill out event queue until only one sched tick is left + any number of job add events -- don't congest the event queue
-            # TODO: Run process queue 
-
-            curr_time = time.perf_counter()
-            logger.debug("Fetched event: ~~~ " + str(curr_time-start_time))
-
-            logger.debug(str(event))
-            self.event_logger.log_event(event)
-
-            curr_time = time.perf_counter()
-            logger.debug("Logged event: ~~~ " + str(curr_time-start_time))
-            _start_time = time.perf_counter()
-            #if event.type == SchedTick: 
-
-            
-            #if event.event_type == EventTypes.SCHED_TICK:
-                #assert isinstance(event, SchedTick)
-                #if not self.prev_sched_tick_call:
-                    #self.prev_sched_tick_call = time.perf_counter()
-                    #self.process_event(event)
-                #else: 
-                    #curr_time = time.perf_counter()
-                    #while curr_time - self.prev_sched_tick_call < 0.5: 
-                        #curr_time = time.perf_counter()
-                        #time.sleep(0.0001)
-                    #self.prev_sched_tick_call = time.perf_counter()
-                    #self.process_event(event)
-            #else:
-                # Parse and handle event
-                #self.process_event(event)
-            
-            #self.process_event(event)
-            self.queue_policy.process_queue(self.job_queue)
-
-            curr_time = time.perf_counter()
-            logger.debug("End event processing and loop: ~~~ " + str(curr_time-start_time))
-
-            curr_time = time.perf_counter()
-            diff = curr_time - self.prev_tick
-            logger.debug("TICK TIME (()) " + str(diff) + " EVENT " + str(self.prev_event))
-            self.ticks.append((diff, self.prev_event))
-
-
-
-            self.prev_tick = curr_time
-            self.prev_event = event
-
-
-            _end_time = time.perf_counter()
-
-
-            logger.debug("LOOP TIME (()) " + str(_end_time))
-            scheduler_tick_interval = 0.5
-            if _end_time - _start_time > 0.5:
-                continue
-            else:
-                time.sleep(0.5 - (_end_time - _start_time)) 
-        '''

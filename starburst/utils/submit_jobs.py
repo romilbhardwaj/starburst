@@ -71,12 +71,6 @@ def generate_jobs(hyperparameters):
 	arrivals = []
 	np.random.seed(hp.random_seed)
 
-	#if hyperparameters['sample_real_workloads']:
-	#	arrivals.append((job_index, submit_time))
-	#				job_index += 1
-	#				submit_time += 10
-	#	return jobs, arrivals
-
 	job_index = 0 #1
 	submit_time = 0
 	if hyperparameters['collect_runtimes']: 
