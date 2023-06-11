@@ -38,7 +38,8 @@ DEFAULT_HYPERPARAMETERS = {
     "spill_to_cloud": True,
     "onprem_only": False,
     "collect_runtimes": False,
-    "sample_real_workloads": False 
+    "sample_real_workloads": False,
+    "workload_type": "cpu"
 }
 
 def generate_interval(min=0, max=10, intervals=10):
@@ -340,6 +341,37 @@ language_models_modified = ["bert-tiny-wikitext-2", "bert-mini-wikitext-2", "ber
 all_models = language_models_modified + all_vision_models
 # PHILLY - 0.7 * 1 + 0.15 * 2 + 0.1 * 4 + 0.05 * 8 = 1.8
 SWEEPS = {
+	"101": { # Testing CPU sleep jobs
+		"fixed_values": {
+			"workload_type": "cpu",
+            "batch_time": 3 * 60 * 60, 
+            "mean_duration": 45 * 60,
+            "waiting_policy": "fifo_wait",
+            "cpu_dist": [1], #[0.25, 0.25, 0.25, 0.25],
+	        "cpu_sizes": [1], #[0.1, 0.2, 0.4, 0.8],#[1, 2, 4, 8], #[i * 11 for i in [1, 2, 4, 8]],
+		    "gpu_dist": [0.7, 0.15, 0.1, 0.05], #Philly Distribution
+            "gpu_sizes": [1, 2, 4, 8],
+            "uniform_submission": False, #True, 
+            "uniform_arrival": 4,
+            "onprem_cluster": 'gke_sky-burst_us-central1-c_mluo-onprem',#'gke_sky-burst_us-central1-c_skyburst-gpu',
+            "cloud_cluster": 'gke_sky-burst_us-central1-c_mluo-cloud',#'gke_sky-burst_us-central1-c_skyburst-gpu-cloud',
+            "cluster_size": 1,
+            "gpu_workload": True, # TODO: Remove since not used
+	        "gpus_per_node": 8,
+            "sched_tick": 0.1,
+	        "wait_time": 5, 
+		    "spill_to_cloud": False,
+		    "arrival_rate": 0.75, # Maxes at 4k jobs bc 3 second interarrival rate
+		    "sample_real_workloads": False, #True,
+		    "job_type": "sleep", #"train",
+		    "image": "gcr.io/sky-burst/skyburst:latest",
+        },
+	    "varying_values": {	
+		    "policy": ['constant', 'starburst', 'constant_optimal'], # Computes the optimal values
+            "wait_time": [15],
+            "arrival_rate": [32/(60*60)] # job/second ~ 45 minutes per job jobs per hour / 32 gpu cluster  -- system util 75 -- 32 jobs ~ 1.3 jobs * 32 jobs = 41jobs (1 gpu ~ 45min per job) -- 41 / 2 ~ 21 jobs per hour 
+        }
+    },
 	"60": { # True overloaded -- VERIFIED 
 		"fixed_values": {
             "batch_time": 3 * 60 * 60, 
