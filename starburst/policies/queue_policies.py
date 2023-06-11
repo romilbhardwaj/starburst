@@ -105,6 +105,7 @@ class FIFOWaitPolicy(BasePolicy):
         self.total_workload_time = 0
         self.total_workload_surface_area = 0
         self.total_jobs = 0 
+        self.workload_type = self.job_data['hyperparameters']['workload_type']
         logger.debug(f'all jobs data {self.job_data}')
         for job_id in self.job_data:
             if job_id == 'hyperparameters': 
@@ -114,8 +115,14 @@ class FIFOWaitPolicy(BasePolicy):
             logger.debug(f'job data {job}')
             self.total_jobs += 1
             self.total_workload_time += job['job_duration']
-            self.total_workload_surface_area += job['workload']['gpu']
-            self.total_workload_volume += job['job_duration'] * job['workload']['gpu']
+            if self.workload_type == 'cpu':
+                self.total_workload_surface_area += job['workload']['cpu']
+                self.total_workload_volume += job['job_duration'] * job['workload']['cpu']
+            else: 
+                self.total_workload_surface_area += job['workload']['gpu']
+                self.total_workload_volume += job['job_duration'] * job['workload']['gpu']
+            cpus = job['workload']['cpu']
+            logger.debug(f'total cpu {cpus}')
 
         self.max_tolerance = 0.25 #Increase in JCT they want over No-Wait
         
@@ -130,6 +137,8 @@ class FIFOWaitPolicy(BasePolicy):
         self.avg_job_size = self.total_workload_surface_area/self.total_jobs
         
         self.compute_wait_coefficient = self.max_tolerance/self.avg_job_size
+
+        
 
         #self.onprem_only = self.job_data['hyperparameters']['onprem_only']
 
@@ -205,11 +214,17 @@ class FIFOWaitPolicy(BasePolicy):
                 elif self.policy == 'runtime_optimal':
                     timeout = job_duration * self.runtime_wait_coefficient
                     job_timed_out = wait_time >  max(timeout, 15) # timeout #self.wait_threshold * self.linear_wait_constant 
-                elif self.policy == 'resource_optimal': 
-                    timeout = job.resources['gpu'] * self.resource_wait_coefficient
+                elif self.policy == 'resource_optimal':
+                    if self.workload_type == 'cpu':
+                        timeout = job.resources['cpu'] * self.resource_wait_coefficient
+                    else: 
+                        timeout = job.resources['gpu'] * self.resource_wait_coefficient
                     job_timed_out = wait_time >  max(timeout, 15) #timeout #self.wait_threshold * self.linear_wait_constant
                 elif self.policy == 'compute_optimal' or self.policy == 'starburst': 
-                    timeout = job_duration * job.resources['gpu'] * self.compute_wait_coefficient
+                    if self.workload_type == 'cpu':
+                        timeout = job_duration * job.resources['cpu'] * self.resource_wait_coefficient
+                    else: 
+                        timeout = job_duration * job.resources['gpu'] * self.compute_wait_coefficient
                     job_timed_out = wait_time >  max(timeout, 15) #timeout #self.wait_threshold * job.resources['gpus']
                 logger.debug(f'Cloud Timeout Submission Check || policy {self.policy} | job timed out {job_timed_out} | timeout value {timeout} | wait threshold {self.wait_threshold} | wait time {wait_time} | event queue wait time {event_wait_time} | curr time {loop_time} | submission time {job.job_submit_time} | event added time {job.job_event_queue_add_time} | input job duration {job_duration} | input job resources {str(job_resource)} | input job name {str(job_id)}')
                 if job_timed_out:
