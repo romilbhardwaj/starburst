@@ -76,6 +76,8 @@ def generate_jobs(hyperparameters):
 	#				job_index += 1
 	#				submit_time += 10
 	#	return jobs, arrivals
+	
+	# TODO: Support cpu only jobs by retrieving workload type and limiting resources dictionary
 
 	job_index = 0 #1
 	submit_time = 0
@@ -89,6 +91,9 @@ def generate_jobs(hyperparameters):
 					cpus = 0
 					#cpus = 11 * gpus
 					memory = 0
+					if hp.workload_type == 'cpu':
+						gpus = 0
+						cpus = int(np.random.choice(hp.cpu_sizes, p=hp.cpu_dist))
 					job['submit_time'] = submit_time
 					job['scheduler_submit_time'] = None
 					job['job_duration'] = 0
@@ -165,6 +170,12 @@ def generate_jobs(hyperparameters):
 		job = {}
 		gpus = int(np.random.choice(hp.gpu_sizes, p=hp.gpu_dist)) #min(0, int(np.random.exponential(scale=2)))
 		cpus = 11 * gpus
+
+		logger.debug(f'workload type: {hp.workload_type}')
+		if hp.workload_type == 'cpu':
+			gpus = 0
+			cpus = np.random.choice(hp.cpu_sizes, p=hp.cpu_dist)
+
 		memory = 0 #min(0, int(np.random.exponential(scale=50)))
 		workload = {"gpu": gpus, "cpu":cpus, "memory":memory}
 		job['workload'] = workload
@@ -370,11 +381,11 @@ def generate_sampled_job_yaml(job_id=0, job=None):
 
 	sleep_time=job["job_duration"]
 	workload=job['workload']
-	
 	image=job['image']
 	setup_script=job['setup_script']
 	#sleep=job['sleep']
 	job_type=job['job_type']
+	#workload_type=job['workload_type']
 
 	if job_type == 'sleep': 
 		template = env.get_template("sampled_job.yaml.jinja")
@@ -385,20 +396,26 @@ def generate_sampled_job_yaml(job_id=0, job=None):
 
 	set_limits = False
 
+	# TODO: Merge all these for loops into one
+
+	#if workload_type == 'cpu':
+	#	if 'gpu' in workload:
+	#		workload.pop('gpu')
+			
 	for w in workload.values():
-		if w > 0: 
+		if w > 0:
 			set_limits = True
 			template = env.get_template("resource_limit.yaml.jinja")
 			output += "\n" + template.render()
-			break 
+			break
 	
-	for w in workload: 
-		if workload[w] > 0: 
+	for w in workload:
+		if workload[w] > 0:
 			template = env.get_template("{}_resource.yaml.jinja".format(w))
 			output += "\n" + template.render({w: workload[w]})
 
 	for w in workload.values():
-		if w > 0: 
+		if w > 0:
 			set_limits = True
 			template = env.get_template("resource_request.yaml.jinja")
 			output += "\n" + template.render()
