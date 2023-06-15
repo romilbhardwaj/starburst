@@ -341,6 +341,37 @@ language_models_modified = ["bert-tiny-wikitext-2", "bert-mini-wikitext-2", "ber
 all_models = language_models_modified + all_vision_models
 # PHILLY - 0.7 * 1 + 0.15 * 2 + 0.1 * 4 + 0.05 * 8 = 1.8
 SWEEPS = {
+	"102": { # Testing CPU sleep jobs
+		"fixed_values": {
+			"workload_type": "cpu",
+            "batch_time": 300, 
+            "mean_duration": 10,
+            "waiting_policy": "fifo_wait",
+            "cpu_dist": [1], #[0.25, 0.25, 0.25, 0.25],
+	        "cpu_sizes": [1], #[0.1, 0.2, 0.4, 0.8],#[1, 2, 4, 8], #[i * 11 for i in [1, 2, 4, 8]],
+		    "gpu_dist": [0.7, 0.15, 0.1, 0.05], #Philly Distribution
+            "gpu_sizes": [1, 2, 4, 8],
+            # Arrival distrubtionm 'arrival_dist': "uniform" or "exponential"
+            # Arrival rate/param 'arrival_param/rate': 10
+            "uniform_submission": True, #True, 
+            "uniform_arrival": 10,
+            "onprem_cluster": 'gke_sky-burst_us-central1-c_mluo-onprem', #'mluo-onprem',#'gke_sky-burst_us-central1-c_skyburst-gpu',
+            "cloud_cluster": 'gke_sky-burst_us-central1-c_mluo-cloud',#'mluo-cloud',#'gke_sky-burst_us-central1-c_skyburst-gpu-cloud',
+            "cluster_size": 2,
+	        "gpus_per_node": 8,
+            "sched_tick": 0.1,
+	        "wait_time": 5, 
+		    "spill_to_cloud": False,
+		    "sample_real_workloads": False,
+		    "job_type": "sleep",
+		    "image": "gcr.io/sky-burst/skyburst:latest",
+        },
+	    "varying_values": {	
+		    "policy": ['constant'], # Computes the optimal values
+            "wait_time": [15],
+            "arrival_rate": [10],
+        }
+    },
 	"101": { # Testing CPU sleep jobs
 		"fixed_values": {
 			"workload_type": "cpu",
