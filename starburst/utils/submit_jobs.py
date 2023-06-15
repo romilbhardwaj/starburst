@@ -101,6 +101,8 @@ def generate_jobs(hyperparameters):
 					job['workload'] = workload
 					job['image'] = hp.image
 					
+					job['workload_type'] = hp.workload_type
+
 					job['setup_script'] = hp.setup_script
 					job['job_type'] = hp.job_type
 					if hp.job_type == 'train':
@@ -174,11 +176,12 @@ def generate_jobs(hyperparameters):
 		logger.debug(f'workload type: {hp.workload_type}')
 		if hp.workload_type == 'cpu':
 			gpus = 0
-			cpus = np.random.choice(hp.cpu_sizes, p=hp.cpu_dist)
+			cpus = int(np.random.choice(hp.cpu_sizes, p=hp.cpu_dist))
 
 		memory = 0 #min(0, int(np.random.exponential(scale=50)))
 		workload = {"gpu": gpus, "cpu":cpus, "memory":memory}
 		job['workload'] = workload
+		job['workload_type'] = hp.workload_type
 
 		if hp.uniform_submission:
 			submit_time += hp.uniform_arrival
@@ -385,11 +388,17 @@ def generate_sampled_job_yaml(job_id=0, job=None):
 	setup_script=job['setup_script']
 	#sleep=job['sleep']
 	job_type=job['job_type']
-	#workload_type=job['workload_type']
+	workload_type=job['workload_type']
+
+	#nvidia-smi --query-gpu=uuid --format=csv,noheader && echo "||" && sleep {{time}}
 
 	if job_type == 'sleep': 
 		template = env.get_template("sampled_job.yaml.jinja")
-		output += template.render({"job":str(job_id), "time":str(sleep_time)})
+		if workload_type == 'cpu':
+			gpu_setup = 'echo "||"'
+		else:
+			gpu_setup == 'nvidia-smi --query-gpu=uuid --format=csv,noheader && echo "||"'
+		output += template.render({"job":str(job_id), "time":str(sleep_time), "gpu_script": gpu_setup})
 	elif job_type == 'train':
 		template = env.get_template("train_job.yaml.jinja")
 		output += template.render({"job":str(job_id), "image":str(image), "setup_script":str(setup_script)})
