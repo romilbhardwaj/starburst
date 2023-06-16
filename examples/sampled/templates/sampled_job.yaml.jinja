@@ -20,5 +20,5 @@ spec:
           mountPath: /dev/shm
         command: ["/bin/sh", "-c"]
         args:
-        - |
-          nvidia-smi --query-gpu=uuid --format=csv,noheader && echo "||" && sleep {{time}}
+        - |          
+          {{gpu_script}} && sleep {{time}}

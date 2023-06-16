@@ -83,6 +83,9 @@ def generate_jobs(hyperparameters):
 					cpus = 0
 					#cpus = 11 * gpus
 					memory = 0
+					if hp.workload_type == 'cpu':
+						gpus = 0
+						cpus = int(np.random.choice(hp.cpu_sizes, p=hp.cpu_dist))
 					job['submit_time'] = submit_time
 					job['scheduler_submit_time'] = None
 					job['job_duration'] = 0
@@ -90,6 +93,8 @@ def generate_jobs(hyperparameters):
 					job['workload'] = workload
 					job['image'] = hp.image
 					
+					job['workload_type'] = hp.workload_type
+
 					job['setup_script'] = hp.setup_script
 					job['job_type'] = hp.job_type
 					if hp.job_type == 'train':
@@ -109,10 +114,10 @@ def generate_jobs(hyperparameters):
 		return jobs, arrivals
 
 	# TODO: Add 10 jobs at the very beginning separated by 10 seconds seach 
-	
+	"""
 	#i = 0 
 	while True:
-		if job_index >= 5:
+		if job_index >= 20:
 			break
 		job = {}
 		gpus = int(np.random.choice(hp.gpu_sizes, p=hp.gpu_dist)) #min(0, int(np.random.exponential(scale=2)))
@@ -149,7 +154,8 @@ def generate_jobs(hyperparameters):
 		jobs[job_index] = job
 		arrivals.append((job_index, submit_time))
 		job_index += 1
-	
+	"""
+
 	while True:
 		if hp.time_constrained == True and submit_time > hp.batch_time:
 			break
@@ -158,14 +164,21 @@ def generate_jobs(hyperparameters):
 		job = {}
 		gpus = int(np.random.choice(hp.gpu_sizes, p=hp.gpu_dist)) #min(0, int(np.random.exponential(scale=2)))
 		cpus = 11 * gpus
-		memory = min(0, int(np.random.exponential(scale=50)))
+
+		logger.debug(f'workload type: {hp.workload_type}')
+		if hp.workload_type == 'cpu':
+			gpus = 0
+			cpus = int(np.random.choice(hp.cpu_sizes, p=hp.cpu_dist))
+
+		memory = 0 #min(0, int(np.random.exponential(scale=50)))
 		workload = {"gpu": gpus, "cpu":cpus, "memory":memory}
 		job['workload'] = workload
+		job['workload_type'] = hp.workload_type
 
 		if hp.uniform_submission:
 			submit_time += hp.uniform_arrival
 		else: 
-			submit_time += max(3, np.random.exponential(scale=1/hp.arrival_rate))
+			submit_time += max(3, np.random.exponential(scale=1/hp.arrival_rate)) # TODO: Normalize this value 
 
 		job_duration = max(30, np.random.exponential(scale=hp.mean_duration))
 		job_duration = min(job_duration, 10000) # Set upperbound
@@ -363,35 +376,46 @@ def generate_sampled_job_yaml(job_id=0, job=None):
 
 	sleep_time=job["job_duration"]
 	workload=job['workload']
-	
 	image=job['image']
 	setup_script=job['setup_script']
 	#sleep=job['sleep']
 	job_type=job['job_type']
+	workload_type=job['workload_type']
+
+	#nvidia-smi --query-gpu=uuid --format=csv,noheader && echo "||" && sleep {{time}}
 
 	if job_type == 'sleep': 
 		template = env.get_template("sampled_job.yaml.jinja")
-		output += template.render({"job":str(job_id), "time":str(sleep_time)})
+		if workload_type == 'cpu':
+			gpu_setup = 'echo "||"'
+		else:
+			gpu_setup == 'nvidia-smi --query-gpu=uuid --format=csv,noheader && echo "||"'
+		output += template.render({"job":str(job_id), "time":str(sleep_time), "gpu_script": gpu_setup})
 	elif job_type == 'train':
 		template = env.get_template("train_job.yaml.jinja")
 		output += template.render({"job":str(job_id), "image":str(image), "setup_script":str(setup_script)})
 
 	set_limits = False
+	# TODO: Merge all these for loops into one
 
+	#if workload_type == 'cpu':
+	#	if 'gpu' in workload:
+	#		workload.pop('gpu')
+			
 	for w in workload.values():
-		if w > 0: 
+		if w > 0:
 			set_limits = True
 			template = env.get_template("resource_limit.yaml.jinja")
 			output += "\n" + template.render()
-			break 
+			break
 	
-	for w in workload: 
-		if workload[w] > 0: 
+	for w in workload:
+		if workload[w] > 0:
 			template = env.get_template("{}_resource.yaml.jinja".format(w))
 			output += "\n" + template.render({w: workload[w]})
 
 	for w in workload.values():
-		if w > 0: 
+		if w > 0:
 			set_limits = True
 			template = env.get_template("resource_request.yaml.jinja")
 			output += "\n" + template.render()
