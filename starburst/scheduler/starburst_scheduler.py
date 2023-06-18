@@ -132,18 +132,7 @@ class StarburstScheduler:
                 self.process_event(event)
             _end_process_event_time = time.perf_counter()
             _end_time = time.perf_counter()
-            
-            #logger.debug("LOOP TIME (()) " + str(_end_time))
-            #logger.debug("LOOP TIME (()) " + str(_end_time))
-            #logger.debug("LOOP TIME (()) " + str(_end_time - _start_time))
-            
-            '''scheduler_tick_interval = 0.5
-            if _end_time - _start_time > 0.5:
-                logger.debug("LOOP TIME (()) " + str(_end_time - _start_time))
-                continue
-            else:
-                time.sleep(0.5 - (_end_time - _start_time))
-            '''
+
             logger.debug("AWAIT TIME (()) " + str(_end_await_time - _start_await_time))
             logger.debug("PROCESSQUEUE TIME (()) " + str(_end_process_queue_time - _start_process_queue_time))
             logger.debug("JOB QUEUE SIZE " + str(job_queue_len))

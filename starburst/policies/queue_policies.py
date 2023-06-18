@@ -142,10 +142,10 @@ class FIFOWaitPolicy(BasePolicy):
 
         #self.onprem_only = self.job_data['hyperparameters']['onprem_only']
 
-        self.spilled_jobs_path = f'../logs/archive/{batch_repo}/events/{index}.log'
+        self.spilled_jobs_path = f'../sweep_logs/archive/{batch_repo}/events/{index}.log'
         # TODO: Create this file at the beginning of each run
         #p2_log = "../logs/archive/" + timestamp + '/' + 'p2.log'
-        event_path = f'../logs/archive/{batch_repo}/events/'
+        event_path = f'../sweep_logs/archive/{batch_repo}/events/'
         if not os.path.exists(event_path):
             os.mkdir(event_path)
         self.spill_to_cloud = self.job_data['hyperparameters']['spill_to_cloud'] # TODO: Verify if this works as intended

@@ -84,9 +84,9 @@ def retrieve_events_df(event_number=None, avoid_congestion=False, only_dict=Fals
 	"""Turns all logs from sweep into a pandas dataframe for analysis"""
 	all_jobs = {}
 	if event_number:
-		cluster_data_path = "../logs/archive/" + str(event_number) + '/events/'
-		submission_data_path = "../logs/archive/" + str(event_number) + '/jobs/'
-		sweep_data_path = "../logs/archive/" + str(event_number) + "/sweep.json"
+		cluster_data_path = "../sweep_logs/archive/" + str(event_number) + '/events/'
+		submission_data_path = "../sweep_logs/archive/" + str(event_number) + '/jobs/'
+		sweep_data_path = "../sweep_logs/archive/" + str(event_number) + "/sweep.json"
 		
 
 		files = os.listdir(cluster_data_path)
@@ -363,10 +363,10 @@ def retrieve_df(event_number=None, avoid_congestion=False):
 	"""Turns all logs from sweep into a pandas dataframe for analysis"""
 	all_jobs = {}
 	if event_number:
-		cluster_data_path = "../logs/archive/" + str(event_number) + '/events/'
-		submission_data_path = "../logs/archive/" + str(event_number) + '/jobs/'
-		sweep_data_path = "../logs/archive/" + str(event_number) + "/sweep.json"
-		with open(sweep_data_path, "r") as f: #"../logs/event_data.json", "r") as f:
+		cluster_data_path = "../sweep_logs/archive/" + str(event_number) + '/events/'
+		submission_data_path = "../sweep_logs/archive/" + str(event_number) + '/jobs/'
+		sweep_data_path = "../sweep_logs/archive/" + str(event_number) + "/sweep.json"
+		with open(sweep_data_path, "r") as f: 
 			sweep = json.load(f)
 
 		files = os.listdir(cluster_data_path)
@@ -405,7 +405,7 @@ def retrieve_df(event_number=None, avoid_congestion=False):
 
 def read_cluster_event_data(cluster_log_path=None):
 	if not cluster_log_path: 
-		cluster_log_path = "../logs/"
+		cluster_log_path = "../sweep_logs/"
 		files = os.listdir(cluster_log_path)
 
 		for file in files:
@@ -448,9 +448,9 @@ def write_cluster_event_data(batch_repo=None, cluster_event_data=None, tag=None,
 	logger = logging.getLogger(__name__)
 	log_frequency = 1
 	
-	archive_path = "../logs/archive/"
+	archive_path = "../sweep_logs/archive/"
 
-	log_path = "../logs/"
+	log_path = "../sweep_logs/"
 	files = os.listdir(log_path)
 	for file in files:
 		if file.endswith(".json"):
@@ -591,7 +591,7 @@ def write_cluster_event_data(batch_repo=None, cluster_event_data=None, tag=None,
 		# Retrieve data each second 
 		time.sleep(log_frequency)
 
-		p1_log = "../logs/archive/" + batch_repo + '/' + 'p1.log'
+		p1_log = "../sweep_logs/archive/" + batch_repo + '/' + 'p1.log'
 		with open(p1_log, "a") as f:
 			f.write("retrieved event p1 " + str(index) + '\n')
 
@@ -600,7 +600,7 @@ def write_cluster_event_data(batch_repo=None, cluster_event_data=None, tag=None,
 				f.write("reached end of p1 " + str(index) + '\n')
 			return 0
 
-		signal_file = "../logs/archive/"+ batch_repo + '/signal.lock' 
+		signal_file = "../sweep_logs/archive/"+ batch_repo + '/signal.lock' 
 		if os.path.exists(signal_file):
 			# TODO: Loop one last time
 			end = True 
@@ -639,9 +639,9 @@ def pull_vm_scheduler_logs(event_number=0, force=True):
 	#TODO: Set local python path
 	'''
 	gcp_path = 'suryaven@sky-scheduler:/home/suryaven/test/starburst/starburst/logs/archive/{}/'.format(event_number)
-	local_path = '../logs/archive/'
+	local_path = '../sweep_logs/archive/'
 
-	plot_dirs = ["../logs/", "../logs/archive/"]
+	plot_dirs = ["../sweep_logs/", "../sweep_logs/archive/"]
 	for plot_dir in plot_dirs:
 		if not os.path.exists(plot_dir):
 			os.mkdir(plot_dir)

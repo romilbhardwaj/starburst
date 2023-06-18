@@ -1,3 +1,4 @@
+import argparse
 import numpy as np 
 import matplotlib.pyplot as plt
 import os 
@@ -24,15 +25,16 @@ from google.cloud import container_v1
 import sys 
 import yaml 
 import requests
-
+import psutil
+from typing import List
 import re
 
 import math 
 import training_dataset
 
-TRAINING_JOBS = sweeps.TRAINING_JOBS
 DEFAULT_HYPERPARAMETERS = sweeps.DEFAULT_HYPERPARAMETERS
 ESTIMATED_TIMES = training_dataset.ESTIMATED_TIMES
+LOG_DIRECTORY = '../sweep_logs/'
 
 logger = logging.getLogger(__name__)
 
@@ -73,88 +75,6 @@ def generate_jobs(hyperparameters):
 
 	job_index = 0 #1
 	submit_time = 0
-	if hyperparameters['collect_runtimes']: 
-		for model in hyperparameters["train_names"]:
-			for gpu in TRAINING_JOBS[model]['gpu_runtimes']:
-				for epoch in TRAINING_JOBS[model]['epochs']:
-					#for gpu in [1, 2, 4, 8]:
-					job = {}
-					gpus = gpu
-					cpus = 0
-					#cpus = 11 * gpus
-					memory = 0
-					if hp.workload_type == 'cpu':
-						gpus = 0
-						cpus = int(np.random.choice(hp.cpu_sizes, p=hp.cpu_dist))
-					job['submit_time'] = submit_time
-					job['scheduler_submit_time'] = None
-					job['job_duration'] = 0
-					workload = {"gpu": gpus, "cpu":cpus, "memory":memory}
-					job['workload'] = workload
-					job['image'] = hp.image
-					
-					job['workload_type'] = hp.workload_type
-
-					job['setup_script'] = hp.setup_script
-					job['job_type'] = hp.job_type
-					if hp.job_type == 'train':
-						#train_config = hp.train_names[0]
-						train_job = TRAINING_JOBS[model]
-						#job['setup_script'] = train_job['train_script']
-						setup_script = ""
-						setup_script = train_job['train_script']
-						if epoch >= 1: 
-							setup_script += f' --num_train_epochs {epoch}'
-						job['setup_script'] = setup_script
-						job['job_duration'] = train_job['estimated_training_runtime']
-					jobs[job_index] = job
-					arrivals.append((job_index, submit_time))
-					job_index += 1
-					submit_time += 10
-		return jobs, arrivals
-
-	# TODO: Add 10 jobs at the very beginning separated by 10 seconds seach 
-	"""
-	#i = 0 
-	while True:
-		if job_index >= 20:
-			break
-		job = {}
-		gpus = int(np.random.choice(hp.gpu_sizes, p=hp.gpu_dist)) #min(0, int(np.random.exponential(scale=2)))
-		cpus = 11 * gpus
-		memory = min(0, int(np.random.exponential(scale=50)))
-		workload = {"gpu": gpus, "cpu":cpus, "memory":memory}
-		job['workload'] = workload
-		submit_time += 30
-		job_duration = max(30, np.random.exponential(scale=hp.mean_duration))
-		job_duration = min(job_duration, 10000) # Set upperbound
-
-		# TODO: Implement training -- include estimate runtime
-		if hp.sample_real_workloads:
-			logger.debug(f'sampling real world workloads')
-			estimated_runtime, training_job_script = sample_training_job(gpus, job_duration)
-			job['setup_script'] = training_job_script
-			job['job_duration'] = estimated_runtime #train_job['estimated_training_runtime'] 
-		elif hp.job_type == 'train':
-			logger.debug(f'sampling train jobs')
-			train_config = np.random.choice(hp.train_names, p=hp.train_dist)
-			train_job = TRAINING_JOBS[train_config]
-			job['setup_script'] = train_job['train_script']
-			job['job_duration'] = train_job['estimated_training_runtime']
-		else:
-			job['setup_script'] = hp.setup_script
-			job['job_duration'] = job_duration
-		# TODO: First find set of all jobs with same # of gpus
-		# TODO: Find job with closest time given gpu distribution 
-		job['submit_time'] = submit_time
-		job['scheduler_submit_time'] = None
-		job['image'] = hp.image
-		#job['sleep'] = hp.sleep
-		job['job_type'] = hp.job_type
-		jobs[job_index] = job
-		arrivals.append((job_index, submit_time))
-		job_index += 1
-	"""
 
 	while True:
 		if hp.time_constrained == True and submit_time > hp.batch_time:
@@ -188,13 +108,7 @@ def generate_jobs(hyperparameters):
 			logger.debug(f'sampling real world workloads')
 			estimated_runtime, training_job_script = sample_training_job(gpus, job_duration)
 			job['setup_script'] = training_job_script
-			job['job_duration'] = estimated_runtime #train_job['estimated_training_runtime'] 
-		elif hp.job_type == 'train':
-			logger.debug(f'sampling train jobs')
-			train_config = np.random.choice(hp.train_names, p=hp.train_dist)
-			train_job = TRAINING_JOBS[train_config]
-			job['setup_script'] = train_job['train_script']
-			job['job_duration'] = train_job['estimated_training_runtime']
+			job['job_duration'] = estimated_runtime
 		else:
 			job['setup_script'] = hp.setup_script
 			job['job_duration'] = job_duration
@@ -216,10 +130,10 @@ def generate_jobs(hyperparameters):
 	return jobs, arrivals
 
 def save_jobs(jobs, repo, tag):
-	log_path = "../logs/"
+	log_path = "../sweep_logs/"
 	if not os.path.exists(log_path):
 		os.mkdir(log_path)
-	log_path = "../logs/archive/"
+	log_path = "../sweep_logs/archive/"
 	if not os.path.exists(log_path):
 		os.mkdir(log_path)
 	log_path += repo + "/"
@@ -234,7 +148,7 @@ def save_jobs(jobs, repo, tag):
 
 def submit(jobs={}, arrivals=[], timestamp=None, index=None, clusters=None):
 	def update_scheduler_submit_times(submit_times=None, timestamp=timestamp, index=index, arrivals=arrivals): 
-		trial_data_path = "../logs/archive/" + str(timestamp) + "/jobs/" + str(index) + ".json"
+		trial_data_path = "../sweep_logs/archive/" + str(timestamp) + "/jobs/" + str(index) + ".json"
 		job_data = {}
 		# TODO: Figure out the bug for why schedule submit time fails 
 		with open(trial_data_path, "r") as f:
@@ -253,7 +167,7 @@ def submit(jobs={}, arrivals=[], timestamp=None, index=None, clusters=None):
 	job_index = 0 #1
 	total_jobs = len(arrivals) #len(jobs)
 	submit_times = {}
-	p2_log = "../logs/archive/" + timestamp + '/' + 'p2.log'
+	p2_log = "../sweep_logs/archive/" + timestamp + '/' + 'p2.log'
 
 	while True:
 		curr_time = time.time()
@@ -290,7 +204,7 @@ def submit(jobs={}, arrivals=[], timestamp=None, index=None, clusters=None):
 			return None
 
 		def parse_jobs():
-			with open(f'../logs/archive/{timestamp}/events/{index}.log', "r") as f:
+			with open(f'../sweep_logs/archive/{timestamp}/events/{index}.log', "r") as f:
 				cloud_log_list = f.read().split('\n')
 			log_jobs = []
 			for log in cloud_log_list[1:-1]:
@@ -616,7 +530,8 @@ def reached_last_job(job_name=None, clusters={}):
 	return False 
 
 
-def run(hyperparameters, batch_repo, index, tick):
+def starburst_run(hyperparameters, batch_repo, index, tick):
+
 	hp = Config(hyperparameters)
 	jobs, arrivals = generate_jobs(hyperparameters=hyperparameters)
 	logger.debug("JOBS SUBMITTED " + str(jobs))
@@ -628,10 +543,9 @@ def run(hyperparameters, batch_repo, index, tick):
 		"onprem": hp.onprem_cluster,
 		"cloud": hp.cloud_cluster
 	}
-	
 	logger.debug(f'Running policy: {hp.policy}')
 	sched_tick = tick
-	p0 = mp.Process(target=driver.custom_start, args=(None, c2, grpc_port, sched_tick, clusters['onprem'], clusters['cloud'], hp.waiting_policy, hp.wait_time, jobs, batch_repo, index, hp.policy))
+	p0 = mp.Process(target=driver.custom_start, args=(grpc_port, sched_tick, clusters['onprem'], clusters['cloud'], hp.waiting_policy, hp.wait_time, jobs, batch_repo, index, hp.policy))
 	p0.start()
 	
 	logger.debug(f'Started cleaning cluster pods, jobs, and event logs...')
@@ -642,9 +556,8 @@ def run(hyperparameters, batch_repo, index, tick):
 		time.sleep(1)
 	clear_logs(clusters=clusters)
 	logger.debug(f'Completed cleaning cluster pods, jobs, and event logs...')
-	signal_path = ''
 	# TODO: Delete file
-	signal_file = "../logs/archive/"+ batch_repo + '/signal.lock' 
+	signal_file = "../sweep_logs/archive/"+ batch_repo + '/signal.lock' 
 	try:
 		os.unlink(signal_file)
 	except Exception as e: 
@@ -661,19 +574,6 @@ def run(hyperparameters, batch_repo, index, tick):
 	with open(signal_file, "w") as f:
 		pass
 	p1.join()
-
-	
-	'''
-	logger.debug("Starting Final Logging...")
-	p1 = mp.Process(target=log, args=(tag, batch_repo, False, clusters['onprem'], clusters['cloud']))
-	p1.start()
-	while (p1.is_alive()):
-		print("Saving last logs....")
-		print("p1 alive status: " + str(p1.is_alive()))
-		time.sleep(1)
-	'''
-	
-	logger.debug("Completed Final Logging...")
 	p0.terminate()
 	logger.debug("Terminated Scheduler...")
 	
@@ -685,19 +585,14 @@ def launch_submit(jobs={}, arrivals=[], timestamp=None, index=None, clusters=Non
 	except Exception as e:
 		import traceback
 		t = traceback.format_exc()
-		p2_log = "../logs/archive/" + timestamp + '/' + 'p2.log'
+		p2_log = "../sweep_logs/archive/" + timestamp + '/' + 'p2.log'
 		with open(p2_log, "a") as f:
 			f.write("p2 failed \n " + t + '\n')
 		pass 
 
 
 def run_sweep(sweep={}, sweep_timestamp=None):
-	if not sweep_timestamp: 
-		sweep_timestamp = str(int(datetime.now().timestamp()))
-	else: 
-		sweep_timestamp = str(sweep_timestamp)
-
-	sweep_dir = "../logs/archive/" + sweep_timestamp + "/"
+	sweep_dir = "../sweep_logs/archive/" + sweep_timestamp + "/"
 	if not os.path.exists(sweep_dir):
 		os.mkdir(sweep_dir)
 	sweep_path = sweep_dir + "sweep.json"
@@ -705,189 +600,118 @@ def run_sweep(sweep={}, sweep_timestamp=None):
 	with open(sweep_path, "w") as f:
 		json.dump(sweep, f)
 
-	for i in range(len(sweep) - 2):
+	for i in range(len(sweep)):
 		hp = sweep[i]
-		tick = sweep['fixed_values']['sched_tick']
-		run(hp, sweep_timestamp, str(i), tick)
+		tick = hp['sched_tick']
+		starburst_run(hp, sweep_timestamp, str(i), tick)
 
-	return sweep_timestamp
 
-def submit_sweep(sweep=None, timestamp=None):
-	fixed_values = OrderedDict(sweep['fixed_values'])
-	varying_values = OrderedDict(sweep['varying_values'])
-	sweep = generate_sweep(fixed_values=fixed_values, varying_values=varying_values)
-	time_stamp = run_sweep(sweep=sweep, sweep_timestamp=timestamp)
-	return time_stamp 
-
-def generate_sweep(fixed_values=OrderedDict(), varying_values=OrderedDict()): 
+def sweep_pipeline(sweep_config: str):
 	"""
-	Takes specified fixed values and generates grid of hyperparameters based on varying values
-	
-	# TODO: Integrate hpo tool (e.g. optuna)
-	# TODO: Specify grid search values, then plot them
+	Runs a hyperparameter sweep on the cluster.
+
+	Args:
+		sweep_config (str): Path to YAML file containing sweep configuration.
 	"""
-	sweep = {}
-	sweep["fixed_values"] = fixed_values
-	sweep["varying_values"] = varying_values
+	# 1) Clean Sweeps from prior runs.
+	clear_prior_sweeps(retry_limit=3)
 
-	# DEFAULT VALUES
-	hyperparameters = copy.deepcopy(DEFAULT_HYPERPARAMETERS)
-	
-	# FIXED VALUES
-	for key, value in fixed_values.items(): 
-		hyperparameters[key] = value
+	# 2) Load sweep config and generate runs.
+	sweep = load_yaml_file(sweep_config)
+	sweep_dict = generate_runs(sweep)
 
-	# VARYING VALUES
-	keys = []
-	values = []
-	for key, value in varying_values.items():
-		keys.append(key)
-		values.append(value)
+	# Create Log directories
+	current_timestamp = int(time.time())
+	directory_path = f"../sweep_logs/archive/{current_timestamp}"
+	absolute_path = os.path.abspath(directory_path)
+	os.makedirs(absolute_path, exist_ok=True)
 
-	#values = values[::-1]
-	grid_search = itertools.product(*values)
-	
-	for trial_index, trial in enumerate(grid_search):
-		for key_index, key in enumerate(keys):
-			hyperparameters[key] = trial[key_index]
-		sweep[trial_index] = copy.deepcopy(hyperparameters)
-	return sweep
-
-def generate_interval(min=0, max=10, intervals=10):
-	return np.linspace(min, max, num=intervals+1).tolist()
-
-def create_cluster(cluster=None):
-	"""
-	TODO: Wait till GKE cluster finishes creating
-	TODO: https://cloud.google.com/kubernetes-engine/docs/reference/rest/v1/projects.locations.clusters 
-	"""
-	client = container_v1.ClusterManagerClient() 
-	operation = client.create_cluster(project_id=cluster['project_id'], zone=cluster['zone'], cluster=cluster['cluster'])
-
-def delete_cluster(cluster=None):
-	"""
-	Wait until cluster finishes creating
-	"""
-	client = container_v1.ClusterManagerClient() 
-	operation = client.delete_cluster(project_id=cluster['project_id'], zone=cluster['zone'], cluster_id=cluster['name'])
-
-def main(arg1, arg2, arg3):
-	"""
-	Runs sweep of runs on starburst
-	TODO: Integrate cluster creation and deletion code before and after call to submit_sweep()
-	TODO: Create both onprem and cloud clusters before sweep
-	"""
-	sweep = sweeps.SWEEPS[arg2]
-	cluster = {
-		'name': "starburst_gpu",
-		'network': 'skypilot-vpc',
-		'initial_node_count': 1,
-		'master_auth': {
-			'username': "",
-			'password': ""
-		},
-		'node_config': {
-			'machine_type': 'n1-standard-96',
-			'disk_size_gb': 100,
-			'oauth_scopes': [
-				'https://www.googleapis.com/auth/compute',
-				'https://www.googleapis.com/auth/devstorage.read_write',
-				'https://www.googleapis.com/auth/logging.write',
-				'https://www.googleapis.com/auth/monitoring'
-			],
-			"accelerators": [
-                {
-                    "accelerator_count": 1,
-                    "accelerator_type": "nvidia-tesla-v100"
-                }
-            ]
-		},
-	}
-
-	cluster_config = {
-		"cluster_name": "starburst_gpu",
-		"project_id": 'sky-burst', 
-		"zone": 'us-central1-c', 
-		"cluster_prefix": 'parallel-exp',
-		"cluster": cluster
-	}
-
-	# TODO:: Automate adding the gpu device plugin: kubectl apply -f https://raw.githubusercontent.com/GoogleCloudPlatform/container-engine-accelerators/master/nvidia-driver-installer/cos/daemonset-preloaded.yaml 
-	
-	
-
-
-	if arg1 == 'run': 
-		#create_cluster(cluster_config)
-		submit_sweep(sweep=sweep, timestamp=arg3)
-		#delete_cluster(cluster_config)
-
-	return
-
-def run_trace():
-	'''
-	Performs a single run() where the input jobs are run from a specific job dictionary
-
-
-	# TODO: Add support to run a specifc trace again 
-	'''
-	
-	
+	run_sweep(sweep=sweep_dict, sweep_timestamp=current_timestamp)
 
 if __name__ == '__main__':
-    main(arg1=sys.argv[1], arg2=sys.argv[2], arg3=sys.argv[3])
-	#pass
+	parser = argparse.ArgumentParser(description='Submit a sweep of synthetically generated jobs.')
+	parser.add_argument(
+		'--config',
+		type=str,
+		default='../../scripts/cpu_sweep.yaml',
+		help='Input YAML config.')
+	args = parser.parse_args()
+	sweep_pipeline(sweep_config=args.config)
 
-"""
-UTIL + MISC FUNCTIONS
-"""
 
-def start_scheduler(policy="fifo_onprem_only", onprem_cluster="", cloud_cluster=""):
-	os.system('python3 -m starburst.drivers.main_driver --policy {} --onprem_k8s_cluster_name {} --cloud_k8s_cluster_name {}'.format(policy, onprem_cluster, cloud_cluster))
-	#subprocess.run(['python3', '-m', 'starburst.drivers.main_driver' '--policy', policy, '--onprem_k8s_cluster_name', onprem_cluster,'--cloud_k8s_cluster_name', cloud_cluster])
-	return
-
-def update_local_kube_config():
+def generate_runs(sweep_config: dict) -> List[dict]: 
 	"""
-	Update the local kubeconfig with the values of the newly created cluster
-	Use gcloud to update local kubeconfig values
+	Takes specified fixed values and generates grid of hyperparameters based on varying values
+
 	"""
+	list_type_args = ['cpu_sizes', 'cpu_dist', 'gpu_sizes', 'gpu_dist']
 
-def parallel_experiments(cluster_configs=None): #num_clusters=1, project_id='sky-burst', zone = 'us-central1-c', cluster_prefix='parallel-exp'):
-	'''
-	Creates cluster, submits job, deletes cluster
-	#TODO: Finalize design and implement this codebase 
-	#TODO: Don't create a new cluster if cluster already running
-	#TODO: Create a GPU GKE cluster then delete it
-	#TODO: Add created cluster name to local /.kube/config file to allow for automated authentication 
-	'''	
-	client = container_v1.ClusterManagerClient() 
-	# Use a ThreadPoolExecutor to create the clusters in parallel
-	with concurrent.futures.ThreadPoolExecutor() as executor:
-		# Submit the create_cluster function for each cluster to the executor
-		futures = [executor.submit(create_cluster, f'{cluster_prefix}-{i}') for i in range(num_clusters)]
-		# Wait for all the futures to complete
-		'''
-		for future in concurrent.futures.as_completed(futures):
-			try:
-				# Get the result of the future, if available
-				result = future.result()
-			except Exception as e:
-				# Handle any exceptions raised by the create_cluster function
-				print(f'Error creating cluster: {e}')
-		'''
+	# Split sweep_config into fixed and varied hyperparameters.
+	base_config = copy.deepcopy(sweeps.DEFAULT_HYPERPARAMETERS)
+	varied_config = {}
+	for key, value in sweep_config.items():
+		if not isinstance(value, list):
+			base_config[key] = value
+		elif isinstance(value, list) and key in list_type_args and not isinstance(value[0], list):
+			base_config[key] = value
+		else:
+			varied_config[key] = value
+	
+	# Generate carteisan production across varied hyperparameters.
+	keys = []
+	values = []
+	for key, value in varied_config.items():
+		keys.append(key)
+		values.append(value)
+	grid_search = itertools.product(*values)
 
-	# Use a ThreadPoolExecutor to delete the clusters in parallel
-	with concurrent.futures.ThreadPoolExecutor() as executor:
-		# Submit the delete_cluster function for each cluster to the executor
-		futures = [executor.submit(delete_cluster, f'{cluster_prefix}-{i}') for i in range(num_clusters)]
-		# Wait for all the futures to complete
-		'''
-		for future in concurrent.futures.as_completed(futures):
+	# Generate runs from cartesian product.
+	runs = {}
+	for run_index, trial in enumerate(grid_search):
+		for key_index, key in enumerate(keys):
+			base_config[key] = trial[key_index]
+		runs[run_index] = copy.deepcopy(base_config)
+	return runs
+
+def load_yaml_file(file_path: str) -> dict:
+	"""
+	Loads a YAML file from a specified file path.
+
+	Args:
+		file_path (str): Path to YAML file.
+	"""
+	file_path = os.path.abspath(file_path)
+	if not os.path.isfile(file_path):
+		raise FileNotFoundError(f"Sweep config YAML not found: {file_path}")
+	with open(file_path, 'r') as file:
+		data = yaml.safe_load(file)
+	return data
+
+
+def clear_prior_sweeps(retry_limit: int = 1) -> None:
+	"""
+	Deletes all prior sweeps from the cluster.
+
+	Args:
+		retry_limit (int): Number of times to retry deleting a sweep before giving up.
+	"""
+	# @TODO(Surya): Delete pods from prior sweeps.
+	current_pid = os.getpid()
+	for _ in range(retry_limit):
+		# Get a list of all processes.
+		processes = psutil.process_iter()
+		found_submit_process = False
+		for process in processes:
 			try:
-				# Get the result of the future, if available
-				result = future.result()
-			except Exception as e:
-				# Handle any exceptions raised by the delete_cluster function
-				print(f'Error deleting cluster: {e}')
-		'''
+				# Obtain process name and CMD line arguments.
+				name = process.name()
+				cmdline = process.cmdline()
+				# Check for prior sweeps and if the prior sweep is not this current sweep.
+				if name == 'python3' and 'submit_jobs.py' in cmdline and process.pid != current_pid:
+					# terminate the process
+					process.terminate()
+					found_submit_process = True
+			except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+				pass
+		if not found_submit_process:
+			break

@@ -79,7 +79,7 @@ if __name__ == '__main__':
     main()
 
 
-def custom_start(queue, conn, grpc_port=None, sched_tick_time=SCHED_TICK_TIME, onprem_k8s_cluster_name=ONPREM_K8S_CLUSTER_NAME, cloud_k8s_cluster_name=CLOUD_K8S_CLUSTER_NAME, waiting_policy=POLICY_STR, wait_time=0, job_data={}, timestamp=None, index=None, policy='fixed'):
+def custom_start(grpc_port=None, sched_tick_time=SCHED_TICK_TIME, onprem_k8s_cluster_name=ONPREM_K8S_CLUSTER_NAME, cloud_k8s_cluster_name=CLOUD_K8S_CLUSTER_NAME, waiting_policy=POLICY_STR, wait_time=0, job_data={}, timestamp=None, index=None, policy='fixed'):
     #global startburst_scheduler
     '''
     # Parse command line arguments =================================================================
@@ -120,27 +120,10 @@ def custom_start(queue, conn, grpc_port=None, sched_tick_time=SCHED_TICK_TIME, o
     
     if 'hyperparameters' in job_data: 
         logger.debug(f"Hyperparameters: {str(job_data['hyperparameters'])}")
-        #print(job_data['hyperparameters'])
 
-    #starburst_scheduler = starburst
     for s in event_sources:
         event_loop.create_task(s.event_generator())
     try:
-        #event_loop.run_until_complete(starburst.log_ticks())
-        event_loop.run_until_complete(starburst.scheduler_loop(queue, conn))
-        # TODO: Ensure ticks are properly logged
-        
-    finally:
-        event_loop.close()
-
-    #return starburst, event_sources, event_loop
-    #start_events()
-
-def start_events(starburst, event_sources, event_loop):
-    # Create event sources =========================================================================
-    for s in event_sources:
-        event_loop.create_task(s.event_generator())
-    try:
-        event_loop.run_until_complete(starburst.scheduler_loop())
+        event_loop.run_until_complete(starburst.scheduler_loop(None, None)) 
     finally:
         event_loop.close()
