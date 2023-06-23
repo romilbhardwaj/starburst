@@ -39,6 +39,36 @@ SCALED_COSTS = {
 	"K80:vCPU": 14, #x
 	"T4:vCPU": 7.5, #x
 }
+'''
+container_creation_times = {}
+container_start_times = {}
+image_pull_start_times = {}
+image_pull_end_times = {}
+scheduled_nodes = {}
+job_creation_times = {}
+job_completion_times = {}
+job_pods = {}
+node_instances = {}
+
+event_data = {
+	'container_creation_times': container_creation_times,
+	'container_start_times': container_start_times,
+	'image_pull_start_times': image_pull_start_times,
+	'image_pull_end_times': image_pull_end_times,
+	'scheduled_nodes': scheduled_nodes,
+	'job_creation_times': job_creation_times,
+	'job_completion_times': job_completion_times,
+	'job_pods': job_pods, 
+	'node_instances': node_instances
+	#'job_to_pod': 
+}
+
+# Global event data - updated when functions executed
+cluster_event_data = {
+	'onprem': copy.deepcopy(event_data),
+	'cloud': copy.deepcopy(event_data)
+}
+'''
 
 def event_data_dict():
 	container_creation_times = {}
@@ -76,45 +106,6 @@ def event_data_dict():
 	}
 	return cluster_event_data
 
-def retrieve_events_df(event_number=None, avoid_congestion=False, only_dict=False ):
-	'''
-	Offload all data cleaning to pandas, and none through python
-	'''
-	
-	"""Turns all logs from sweep into a pandas dataframe for analysis"""
-	all_jobs = {}
-	if event_number:
-		cluster_data_path = "../logs/archive/" + str(event_number) + '/events/'
-		submission_data_path = "../logs/archive/" + str(event_number) + '/jobs/'
-		sweep_data_path = "../logs/archive/" + str(event_number) + "/sweep.json"
-		
-
-		files = os.listdir(cluster_data_path)
-
-		for i in range(len(files)):
-			#import pdb; pdb.set_trace()
-			file = str(i) + ".json"
-			cluster_log_path = cluster_data_path + file
-			submission_log_path = submission_data_path + file
-
-			try: 
-				cluster_event_data = read_cluster_event_data(cluster_log_path=cluster_log_path)
-				submission_data = read_submission_data(submission_log_path=submission_log_path)
-				with open(sweep_data_path, "r") as f: #"../logs/event_data.json", "r") as f:
-					sweep_data = json.load(f)
-				#jobs, num_nodes, hps = parse_event_logs(cluster_event_data=cluster_event_data, submission_data=submission_data, avoid_congestion=avoid_congestion)
-			except Exception as e:
-				print(e)
-				continue 
-
-	if only_dict:
-		return cluster_event_data, submission_data, sweep_data
-
-	cluster_event_data_df = pd.DataFrame.from_dict(cluster_event_data)
-	submission_data_df = pd.DataFrame.from_dict(submission_data)
-	sweep_data_df = pd.DataFrame.from_dict(sweep_data)
-
-	return cluster_event_data_df, submission_data_df, sweep_data_df
 
 def parse_event_logs(cluster_event_data=None, submission_data=None, event_time=None, avoid_congestion=True):
 	'''
@@ -169,7 +160,8 @@ def parse_event_logs(cluster_event_data=None, submission_data=None, event_time=N
 	job_names = {}
 
 	jobs = {'idx':[], 'runtime':[], 'arrival':[], 'num_gpus':[], 'allocated_gpus':[], 'allocated_gpus_real':[], 'allocated_node':[], 'start':[], 'instance_type':[], 'node_index': [], 'node': [], 'cpus': [], 'submission_time': [], 'wait_times':[]}
-
+	#jobs = {'idx':[], 'runtime':[], 'arrival':[], 'num_gpus':[], 'allocated_gpus':[], 'start':[], 'instance_type':[], 'node_index': [], 'node': [], 'cpus': [], 'submission_time': [], 'wait_times':[]}
+	
 	all_nodes = set()
 	nodes = {}
 	node_id = 0
@@ -241,6 +233,12 @@ def parse_event_logs(cluster_event_data=None, submission_data=None, event_time=N
 				jobs['num_gpus'].append(1)
 				jobs['cpus'].append(submission_data[job_id]['workload']['cpu'])
 
+				if 'gpu_index' in cluster: 
+					gpu_index = cluster['gpu_index'][key]
+					#TODO: Parse the value of the index from an array of values
+					#TODO: Map the integers of the parsed value to the corresponding row 
+					jobs['allocated_gpus'].append({nodes[pod_nodes[job_pods[key]]]: []})
+					jobs['allocated_gpus'].append({})
 				if avoid_congestion:
 					submit_time = cluster['job_creation_times'][key] #Job start time
 				else:
@@ -358,6 +356,140 @@ def analyze_df(jobs_df):
 	#metrics[i] = {"cost": cost, "cost_density": cost_density, "system_utilization": system_utilization, "hyperparameters": hyperparameters}
 	"""
 	return jobs_df
+
+def retrieve_log_local(event_number=None):
+	if event_number:
+		sweep_data_path = "../logs/archive/" + str(event_number) + "/starburst.log"
+		df = pd.read_csv(sweep_data_path, delimiter='\t', header=None)
+		return df 
+
+
+def retrieve_events_df_remote(event_number=None, avoid_congestion=False, only_dict=False ):
+	'''
+	REMOTE VERSION of retrieve_events_df
+	Offload all data cleaning to pandas, and none through python
+	'''
+	
+	"""Turns all logs from sweep into a pandas dataframe for analysis"""
+	all_jobs = {}
+	if event_number:
+		cluster_data_path = "../logs/archive/" + str(event_number) + '/events/'
+		submission_data_path = "../logs/archive/" + str(event_number) + '/jobs/'
+		sweep_data_path = "../logs/archive/" + str(event_number) + "/sweep.json"
+		
+
+		files = os.listdir(cluster_data_path)
+
+		for i in range(len(files)):
+			#import pdb; pdb.set_trace()
+			file = str(i) + ".json"
+			cluster_log_path = cluster_data_path + file
+			submission_log_path = submission_data_path + file
+
+			try: 
+				cluster_event_data = read_cluster_event_data(cluster_log_path=cluster_log_path)
+				submission_data = read_submission_data(submission_log_path=submission_log_path)
+				with open(sweep_data_path, "r") as f: #"../logs/event_data.json", "r") as f:
+					sweep_data = json.load(f)
+				#jobs, num_nodes, hps = parse_event_logs(cluster_event_data=cluster_event_data, submission_data=submission_data, avoid_congestion=avoid_congestion)
+			except Exception as e:
+				print(e)
+				continue 
+
+	if only_dict:
+		return cluster_event_data, submission_data, sweep_data
+
+	cluster_event_data_df = pd.DataFrame.from_dict(cluster_event_data)
+	submission_data_df = pd.DataFrame.from_dict(submission_data)
+	sweep_data_df = pd.DataFrame.from_dict(sweep_data)
+	return cluster_event_data_df, submission_data_df, sweep_data_df
+	
+def retrieve_events_df_x(event_number=None, avoid_congestion=False, only_dict=False ):
+	'''
+	LOCAL VERSION of retrieve_events_df
+	Offload all data cleaning to pandas, and none through python
+	'''
+	
+	"""Turns all logs from sweep into a pandas dataframe for analysis"""
+	all_jobs = {}
+	if event_number:
+		cluster_data_path = "../logs/archive/" + str(event_number) + '/events/'
+		submission_data_path = "../logs/archive/" + str(event_number) + '/jobs/'
+		sweep_data_path = "../logs/archive/" + str(event_number) + "/sweep.json"
+		
+
+		files = os.listdir(cluster_data_path)
+
+		for i in range(len(files)):
+			#import pdb; pdb.set_trace()
+			file = str(i) + ".json"
+			cluster_log_path = cluster_data_path + file
+			submission_log_path = submission_data_path + file
+
+			try: 
+				cluster_event_data = read_cluster_event_data(cluster_log_path=cluster_log_path)
+				submission_data = read_submission_data(submission_log_path=submission_log_path)
+				with open(sweep_data_path, "r") as f: #"../logs/event_data.json", "r") as f:
+					sweep_data = json.load(f)
+				#jobs, num_nodes, hps = parse_event_logs(cluster_event_data=cluster_event_data, submission_data=submission_data, avoid_congestion=avoid_congestion)
+			except Exception as e:
+				print(e)
+				continue 
+
+	if only_dict:
+		return cluster_event_data, submission_data, sweep_data
+
+	cluster_event_data_df = pd.DataFrame.from_dict(cluster_event_data)
+	submission_data_df = pd.DataFrame.from_dict(submission_data)
+	sweep_data_df = pd.DataFrame.from_dict(sweep_data)
+
+	return cluster_event_data_df, submission_data_df, sweep_data_df
+
+def retrieve_events_df(event_number=None, avoid_congestion=False, only_dict=False):
+	'''
+	LOCAL AND REDACTED VERSION of retrieve_events_df
+	Offload all data cleaning to pandas, and none through python
+	'''
+	
+	"""Turns all logs from sweep into a pandas dataframe for analysis"""
+	events_dfs = {}
+	if event_number:
+		cluster_data_path = "../logs/archive/" + str(event_number) + '/events/'
+		submission_data_path = "../logs/archive/" + str(event_number) + '/jobs/'
+		sweep_data_path = "../logs/archive/" + str(event_number) + "/sweep.json"
+		with open(sweep_data_path, "r") as f:
+			sweep_data = json.load(f)
+		sweep_df = pd.DataFrame.from_dict(sweep_data)
+
+		files = os.listdir(cluster_data_path)
+
+		for i in range(len(files)):
+			#import pdb; pdb.set_trace()
+			log_file = file = str(i) + ".log"
+			file = str(i) + ".json"
+			cluster_log_path = cluster_data_path + file
+			submission_log_path = submission_data_path + file
+			cloud_log_path = cluster_data_path + log_file
+
+			try:
+				cluster_event_data = read_cluster_event_data(cluster_log_path=cluster_log_path)
+				submission_data = read_submission_data(submission_log_path=submission_log_path)
+			except Exception as e:
+				print(e)
+				continue
+			#cloud_log_df = pd.read_csv(cloud_log_path, delimiter='\n', sep=None, header=None)#sep=' ', header=None)
+			with open(cloud_log_path, "r") as f:
+				cloud_log_list = f.read().split('\n')
+
+			cluster_event_data_df = pd.DataFrame.from_dict(cluster_event_data)
+			submission_data_df = pd.DataFrame.from_dict(submission_data)
+
+			events_dfs[i] = (cluster_event_data_df, submission_data_df, cloud_log_list)
+
+	if only_dict: 
+		return cluster_event_data, sweep_data
+	#return cluster_event_data_df, submission_data_df, sweep_data_df
+	return events_dfs, sweep_df
 
 def retrieve_df(event_number=None, avoid_congestion=False):
 	"""Turns all logs from sweep into a pandas dataframe for analysis"""
@@ -632,13 +764,20 @@ def log_parser(log_file, new_file, strings):
 
 """Misc Utils"""
 
-def pull_vm_scheduler_logs(event_number=0, force=True):
+def pull_vm_scheduler_logs(event_number=0, force=True, vm=1):
 	'''
 	Pulls log data running a GCP VM running in the cloud to your local computer to analyze data in evaluation.ipynb 
 	#TODO: Generalize this function for different GKE clusters, acccounts, and filepaths
 	#TODO: Set local python path
 	'''
-	gcp_path = 'suryaven@sky-scheduler:/home/suryaven/test/starburst/starburst/logs/archive/{}/'.format(event_number)
+	#gcp_path = 'suryaven@sky-scheduler:/home/suryaven/test/starburst/starburst/logs/archive/{}/'.format(event_number)
+	VMS = {
+		1: 'surya@skyburst-scheduler:/home/surya/starburst/starburst/logs/archive/{}/'.format(event_number),
+		2: 'surya@skyburst-scheduler-2:/home/surya/starburst/starburst/logs/archive/{}/'.format(event_number)
+	}
+	#gcp_path = 'suryaven@sky-scheduler:/home/suryaven/test/starburst/starburst/logs/archive/{}/'.format(event_number)
+	gcp_path = VMS[vm]#'surya@skyburst-scheduler:/home/surya/starburst/starburst/logs/archive/{}/'.format(event_number)
+
 	local_path = '../logs/archive/'
 
 	plot_dirs = ["../logs/", "../logs/archive/"]
