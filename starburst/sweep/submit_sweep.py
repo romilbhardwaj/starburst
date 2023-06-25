@@ -3,29 +3,19 @@ import copy
 import itertools
 import logging
 import multiprocessing as mp
-import numpy as np 
 import os 
 import psutil
-import re
-import subprocess
-import tempfile
 import time
 from typing import Dict, List
 
-from kubernetes import client, config
-import yaml 
 
 import starburst.drivers.main_driver as driver 
-from  starburst.sweep import job_generator, log_jobs, sweep_logger, sweeps, utils
-from starburst.sweep.services import job_submission
+from  starburst.sweep import job_generator, sweep_logger, sweeps, utils
+from starburst.sweep.services import job_submission, event_logger
 
 DEFAULT_CONFIG = sweeps.DEFAULT_CONFIG
 
 logger = logging.getLogger(__name__)
-
-def logging_service(tag=None, batch_repo=None, loop=True, onprem_cluster="", cloud_cluster="", index=None):
-	cluster_event_data = log_jobs.event_data_dict()
-	log_jobs.write_cluster_event_data(batch_repo=batch_repo, cluster_event_data=cluster_event_data, tag=tag, loop=loop, onprem_cluster=onprem_cluster, cloud_cluster=cloud_cluster, index=index)
 
 def clear_prior_sweeps(retry_limit: int = 1) -> None:
 	"""
@@ -116,7 +106,7 @@ def launch_run(run_config: dict, sweep_name: str, run_index: int = 0):
 	except Exception as e: 
 		pass 
 
-	p1 = mp.Process(target=logging_service, args=(str(run_index), sweep_name, True, clusters['onprem'], clusters['cloud'], str(run_index)))
+	p1 = mp.Process(target=event_logger.logger_service, args=(str(run_index), sweep_name, clusters['onprem'], clusters['cloud'], str(run_index)))
 	p1.start()
 
 	job_submission_service = mp.Process(target=job_submission.job_submission_service, args=(jobs, clusters, sweep_name, run_index))

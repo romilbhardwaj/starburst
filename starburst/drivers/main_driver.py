@@ -80,21 +80,6 @@ if __name__ == '__main__':
 
 
 def custom_start(grpc_port=None, sched_tick_time=SCHED_TICK_TIME, onprem_k8s_cluster_name=ONPREM_K8S_CLUSTER_NAME, cloud_k8s_cluster_name=CLOUD_K8S_CLUSTER_NAME, waiting_policy=POLICY_STR, wait_time=0, job_data={}, timestamp=None, index=None, policy='fixed'):
-    #global startburst_scheduler
-    '''
-    # Parse command line arguments =================================================================
-    parser.add_argument('--grpc_port', type=int, default=GRPC_PORT,
-                        help='GRPC port to listen on')
-    parser.add_argument('--sched_tick_time', type=int, default=SCHED_TICK_TIME,
-                        help='Time between scheduler ticks')
-    parser.add_argument('--onprem_k8s_cluster_name', type=str, default=ONPREM_K8S_CLUSTER_NAME,
-                        help='Name of on-prem K8s cluster')
-    parser.add_argument('--cloud_k8s_cluster_name', type=str, default=CLOUD_K8S_CLUSTER_NAME,
-                        help='Name of cloud K8s cluster')
-    parser.add_argument('--policy', type=str, default=POLICY_STR,
-                        help=`'Policy` to use. Currently supported - fifo_onprem_only')
-    args = parser.parse_args()
-    '''
 
     # Create event queue, logger and sources ==================================================
     event_queue = asyncio.Queue()
