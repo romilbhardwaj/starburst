@@ -1,14 +1,55 @@
 import numpy as np
 
-DEFAULT_HYPERPARAMETERS = {
-	"job_type": "sleep", 
-	"image": "gcr.io/deeplearning-platform-release/pytorch-gpu.1-12",
-    "setup_script": "nvidia-smi --query-gpu=index --format=csv,noheader && sleep 1000",
-	"uniform_arrival": 1, 
-	"uniform_submission": False,
+DEFAULT_CONFIG = {
+    #====================================================================================================#
+	#                                            Sweep Parameters										 #
+	#====================================================================================================#
+    # Sweep currently supports 3 types of jobs: CPU sleep jobs ('cpu_sleep'), GPU sleep jobs ('gpu_sleep'), and
+	# real-life GPU training jobs ('gpu_train').
+    'workload_type': 'cpu_sleep',
+    # Total time (in seconds) where incoming jobs are submitted. After this time, no more jobs are submitted.
+	'submit_time': 300,
+    # Random seed for the job generator. This is used to generate the same set of jobs across different runs.
+	'random_seed': 13,
+    #====================================================================================================#
+	#                                       Job Generation Parameters									 #
+	#====================================================================================================#
+	# Job arrival distribution. Currently, we support two types of distributions: uniform and poisson.
+	'arrival_dist': 'uniform', # 'uniform', 'poisson'
+	# Job arrival parameter. This defines the average time between job arrivals.
+	'arrival_param': 10, 
+    # Minimum job arrival time. This is used to prevent jobs from being too close to each other.
+	# Note: Do not set it to be less than 3 seconds. Otherwise, the scheduler may not work properly.
+	'min_arrival_time': 3,
+	# Job duration distribution, which is assumed to be exponential.
+	'mean_duration': 30,
+    # Minimum job duration. This is used to prevent jobs from being too short.
+    'min_duration': 30,
+    # Maximum job duration. This is used to prevent jobs from being too long (to save cloud costs).
+	'max_duration': 10000,
+	# Distribution of CPU resources requested by jobs. Applies for `workload_type: cpu_sleep` 
+	# List of CPU sizes (in cores) that jobs can request.
+	'cpu_sizes': [1,2,4,8,16,32],
+	# List of probabilities for each CPU size. The length of cpu_dist must be equal to the length of cpu_sizes.
+	'cpu_dist': [0, 0.2, 0.2, 0.2, 0.2, 0.2], 
+    # Distribution of GPU resources requested by jobs. Applies for `workload_type: gpu_sleep, gpu_train` 
+	# List of GPU sizes that jobs can request. Multi-node jobs are not supported.
+	'gpu_sizes': [1,2,4,8],
+	# List of probabilities for each GPU size. The length of gpu_dist must be equal to the length of gpu_sizes.
+	# The default distribution follows the jobs in the Microsoft Philadelphia Deep Learning cluster.
+	'gpu_dist': [0.7, 0.15, 0.1, 0.05],
+    # Docker image for all jobs. Pods are launched with this docker image.
+    'image': 'gcr.io/deeplearning-platform-release/pytorch-gpu.1-12',
+	#====================================================================================================#
+	#                                           Cluster Parameters										 #
+	#====================================================================================================#
+	# GKE cluster name for on-prem cluster. This is used to submit jobs to the on-prem cluster.
+	'onprem_cluster': 'gke_sky-burst_us-central1-c_starburst',
+	# GKE cluster name for cloud cluster. This is used to submit jobs to the cloud cluster.
+    'cloud_cluster': 'gke_sky-burst_us-central1-c_starburst-cloud',
+    
 	"waiting_policy": "fifo_onprem_only", # ignore
 	"policy": "fixed", 
-	"time_constrained": True,
 	#"onprem_cluster_nodes": 4,
 	"cluster_size": 4,
 	#"onprem_cpu_per_node": 8,
@@ -16,25 +57,12 @@ DEFAULT_HYPERPARAMETERS = {
 	"gpus_per_node": 8, 
 	"cloud_cluster_nodes": 4, 
 	"cloud_cpu_per_node": 8,  
-	"random_seed": 13, #7, #0,
-	'total_jobs': 125,
-	"batch_time": 300,
 	"wait_time": 0,
 	"time_out": 5,
-	"mean_duration": 30,
-	"arrival_rate": 1,
-	"cpu_sizes": [1,2,4,8,16,32],
-	"cpu_dist": [0, 0.2, 0.2, 0.2, 0.2, 0.2], 
-	"gpu_sizes": [1,2,4,8],
-	"gpu_dist": [0.7, 0.15, 0.1, 0.05],
 	"use_new_cluster": True, 
-	"onprem_cluster": "gke_sky-burst_us-central1-c_starburst",
-    "cloud_cluster": "gke_sky-burst_us-central1-c_starburst-cloud",
     "gpu_workload": False,
     "spill_to_cloud": True,
     "onprem_only": False,
-    "sample_real_workloads": False,
-    "workload_type": "cpu"
 }
 
 # all_language_models = ["bert-tiny-wikitext-2", "bert-mini-wikitext-2", "bert-small-wikitext-2", "bert-tiny-wikitext-103", "bert-mini-wikitext-103", "bert-small-wikitext-103", "gpt2-tiny-wikitext-2", "gpt2-mini-wikitext-2", "gpt2-small-wikitext-2", "gpt2-tiny-wikitext-103", "gpt2-mini-wikitext-103", "gpt2-small-wikitext-103", "gpt2-tiny-wmt-16", "gpt2-mini-wmt-16", "gpt2-small-wmt-16"],

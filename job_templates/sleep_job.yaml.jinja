@@ -1,0 +1,37 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: job-{{job}}
+  label: 
+    track: sleep
+spec:
+  backoffLimit: 1  
+  template: 
+    spec:
+      restartPolicy: Never  
+      volumes: 
+      - name: dshm
+        emptyDir: 
+          medium: Memory
+      schedulerName: chakra
+      containers: 
+      - name: sleep
+        image: {{image}}
+        volumeMounts: 
+        - name: dshm
+          mountPath: /dev/shm
+        command: ["/bin/sh", "-c"]
+        args:
+        - |          
+          {{script}}
+        resources:
+          limits:
+            cpu: {{cpu}}
+            {% if gpu != 0 %}
+            nvidia.com/gpu: {{ gpu }}
+            {% endif %}
+          requests:
+            cpu: {{cpu}}
+            {% if gpu != 0 %}
+            nvidia.com/gpu: {{ gpu }}
+            {% endif %}

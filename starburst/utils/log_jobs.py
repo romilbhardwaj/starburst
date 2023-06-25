@@ -84,9 +84,9 @@ def retrieve_events_df(event_number=None, avoid_congestion=False, only_dict=Fals
 	"""Turns all logs from sweep into a pandas dataframe for analysis"""
 	all_jobs = {}
 	if event_number:
-		cluster_data_path = "../sweep_logs/archive/" + str(event_number) + '/events/'
-		submission_data_path = "../sweep_logs/archive/" + str(event_number) + '/jobs/'
-		sweep_data_path = "../sweep_logs/archive/" + str(event_number) + "/sweep.json"
+		cluster_data_path = "../sweep_logs/" + str(event_number) + '/events/'
+		submission_data_path = "../sweep_logs/" + str(event_number) + '/jobs/'
+		sweep_data_path = "../sweep_logs/" + str(event_number) + "/sweep.json"
 		
 
 		files = os.listdir(cluster_data_path)
@@ -239,7 +239,7 @@ def parse_event_logs(cluster_event_data=None, submission_data=None, event_time=N
 				jobs['runtime'].append(value[1] - value[0])
 				jobs['arrival'].append(value[0])
 				jobs['num_gpus'].append(1)
-				jobs['cpus'].append(submission_data[job_id]['workload']['cpu'])
+				jobs['cpus'].append(submission_data[job_id]['resources']['cpu'])
 
 				if avoid_congestion:
 					submit_time = cluster['job_creation_times'][key] #Job start time
@@ -363,9 +363,9 @@ def retrieve_df(event_number=None, avoid_congestion=False):
 	"""Turns all logs from sweep into a pandas dataframe for analysis"""
 	all_jobs = {}
 	if event_number:
-		cluster_data_path = "../sweep_logs/archive/" + str(event_number) + '/events/'
-		submission_data_path = "../sweep_logs/archive/" + str(event_number) + '/jobs/'
-		sweep_data_path = "../sweep_logs/archive/" + str(event_number) + "/sweep.json"
+		cluster_data_path = "../sweep_logs/" + str(event_number) + '/events/'
+		submission_data_path = "../sweep_logs/" + str(event_number) + '/jobs/'
+		sweep_data_path = "../sweep_logs/" + str(event_number) + "/sweep.json"
 		with open(sweep_data_path, "r") as f: 
 			sweep = json.load(f)
 
@@ -448,7 +448,7 @@ def write_cluster_event_data(batch_repo=None, cluster_event_data=None, tag=None,
 	logger = logging.getLogger(__name__)
 	log_frequency = 1
 	
-	archive_path = "../sweep_logs/archive/"
+	archive_path = "../sweep_logs/"
 
 	log_path = "../sweep_logs/"
 	files = os.listdir(log_path)
@@ -458,7 +458,7 @@ def write_cluster_event_data(batch_repo=None, cluster_event_data=None, tag=None,
 			os.rename(log_path + existing_log_path, archive_path + existing_log_path)
 
 	if batch_repo: 
-		log_path = log_path + "archive/" + batch_repo + "/"
+		log_path = log_path  + batch_repo + "/"
 		if not os.path.exists(log_path):
 			os.mkdir(log_path)
 		log_path += 'events/'
@@ -591,7 +591,7 @@ def write_cluster_event_data(batch_repo=None, cluster_event_data=None, tag=None,
 		# Retrieve data each second 
 		time.sleep(log_frequency)
 
-		p1_log = "../sweep_logs/archive/" + batch_repo + '/' + 'p1.log'
+		p1_log = "../sweep_logs/" + batch_repo + '/' + 'p1.log'
 		with open(p1_log, "a") as f:
 			f.write("retrieved event p1 " + str(index) + '\n')
 
@@ -600,7 +600,7 @@ def write_cluster_event_data(batch_repo=None, cluster_event_data=None, tag=None,
 				f.write("reached end of p1 " + str(index) + '\n')
 			return 0
 
-		signal_file = "../sweep_logs/archive/"+ batch_repo + '/signal.lock' 
+		signal_file = "../sweep_logs/"+ batch_repo + '/signal.lock' 
 		if os.path.exists(signal_file):
 			# TODO: Loop one last time
 			end = True 
@@ -639,9 +639,9 @@ def pull_vm_scheduler_logs(event_number=0, force=True):
 	#TODO: Set local python path
 	'''
 	gcp_path = 'suryaven@sky-scheduler:/home/suryaven/test/starburst/starburst/logs/archive/{}/'.format(event_number)
-	local_path = '../sweep_logs/archive/'
+	local_path = '../sweep_logs/'
 
-	plot_dirs = ["../sweep_logs/", "../sweep_logs/archive/"]
+	plot_dirs = ["../sweep_logs/"]
 	for plot_dir in plot_dirs:
 		if not os.path.exists(plot_dir):
 			os.mkdir(plot_dir)

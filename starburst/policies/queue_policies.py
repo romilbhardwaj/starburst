@@ -115,13 +115,14 @@ class FIFOWaitPolicy(BasePolicy):
             logger.debug(f'job data {job}')
             self.total_jobs += 1
             self.total_workload_time += job['job_duration']
-            if self.workload_type == 'cpu':
-                self.total_workload_surface_area += job['workload']['cpu']
-                self.total_workload_volume += job['job_duration'] * job['workload']['cpu']
+            resources = job['resources']
+            if self.workload_type == 'cpu_sleep':
+                self.total_workload_surface_area += resources['cpu']
+                self.total_workload_volume += job['job_duration'] * resources['cpu']
             else: 
-                self.total_workload_surface_area += job['workload']['gpu']
-                self.total_workload_volume += job['job_duration'] * job['workload']['gpu']
-            cpus = job['workload']['cpu']
+                self.total_workload_surface_area += resources['gpu']
+                self.total_workload_volume += job['job_duration'] * resources['gpu']
+            cpus = resources['cpu']
             logger.debug(f'total cpu {cpus}')
 
         self.max_tolerance = 0.25 #Increase in JCT they want over No-Wait
@@ -142,10 +143,8 @@ class FIFOWaitPolicy(BasePolicy):
 
         #self.onprem_only = self.job_data['hyperparameters']['onprem_only']
 
-        self.spilled_jobs_path = f'../sweep_logs/archive/{batch_repo}/events/{index}.log'
-        # TODO: Create this file at the beginning of each run
-        #p2_log = "../logs/archive/" + timestamp + '/' + 'p2.log'
-        event_path = f'../sweep_logs/archive/{batch_repo}/events/'
+        self.spilled_jobs_path = f'../sweep_logs/{batch_repo}/events/{index}.log'
+        event_path = f'../sweep_logs/{batch_repo}/events/'
         if not os.path.exists(event_path):
             os.mkdir(event_path)
         self.spill_to_cloud = self.job_data['hyperparameters']['spill_to_cloud'] # TODO: Verify if this works as intended

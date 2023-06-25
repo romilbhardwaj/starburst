@@ -1,13 +1,9 @@
 import argparse
 import numpy as np 
-import matplotlib.pyplot as plt
 import os 
 import time
-import datetime
 from jinja2 import Environment, PackageLoader, select_autoescape, FileSystemLoader
 from kubernetes import client, config
-from datetime import datetime
-from starburst.drivers import main_driver
 import json
 import starburst.utils.log_jobs as log_jobs
 import multiprocessing as mp
@@ -15,167 +11,62 @@ import starburst.drivers.main_driver as driver
 import subprocess
 import copy
 import itertools
-from collections import defaultdict
-from collections import OrderedDict
-import atexit 
 import logging
 import sweeps 
-import concurrent.futures
-from google.cloud import container_v1
+import job_generator
 import sys 
 import yaml 
-import requests
 import psutil
 from typing import List
 import re
 
+import tempfile
 import math 
-import training_dataset
 
-DEFAULT_HYPERPARAMETERS = sweeps.DEFAULT_HYPERPARAMETERS
-ESTIMATED_TIMES = training_dataset.ESTIMATED_TIMES
-LOG_DIRECTORY = '../sweep_logs/'
+DEFAULT_CONFIG = sweeps.DEFAULT_CONFIG
+JOB_GENERATORS =  {
+    'cpu_sleep': job_generator.CPUSleepJobGenerator,
+    'gpu_sleep': job_generator.GPUSleepJobGenerator,
+    'gpu_train': job_generator.GPUTrainJobGenerator,
+}
+LOG_DIRECTORY = '../sweep_logs/{name}/'
 
 logger = logging.getLogger(__name__)
 
-class Config:
+class RunConfig:
     def __init__(self, config_dict):
         self.__dict__.update(config_dict)
 
-def get_training_jobs(gpu):
-	"""returns list of runtimes and jobs with specified number of gpus"""
-	valid_jobs = []
-	for job in ESTIMATED_TIMES: 
-		if job[2] == gpu: 
-			valid_jobs.append((job[1], job[3]))
-	return valid_jobs
-
-def sample_training_job(gpu, runtime):
-	"return script the closest fils gpu runtime pair"
-	jobs = get_training_jobs(gpu)
-	#id = 0
-	min_delta = math.inf
-	min_id = 0  
-	for i in range(len(jobs)):
-		job = jobs[i]
-		delta = abs(jobs[i][0] - runtime)
-		if delta <= min_delta: 
-			min_delta = delta
-			min_id = i
-	logger.debug(f'exponentially distributed time {runtime} -- mapped time {jobs[min_id][0]} -- gpu {gpu}')
-	return jobs[min_id]
-
-def generate_jobs(hyperparameters): 
-	jobs = {}
-	hp = Config(hyperparameters)
-	jobs = {}
-	jobs['hyperparameters'] = hyperparameters
-	arrivals = []
-	np.random.seed(hp.random_seed)
-
-	job_index = 0 #1
-	submit_time = 0
-
-	while True:
-		if hp.time_constrained == True and submit_time > hp.batch_time:
-			break
-		elif hp.time_constrained == False and job_index >= hp.total_jobs:
-			break
-		job = {}
-		gpus = int(np.random.choice(hp.gpu_sizes, p=hp.gpu_dist)) #min(0, int(np.random.exponential(scale=2)))
-		cpus = 11 * gpus
-
-		logger.debug(f'workload type: {hp.workload_type}')
-		if hp.workload_type == 'cpu':
-			gpus = 0
-			cpus = int(np.random.choice(hp.cpu_sizes, p=hp.cpu_dist))
-
-		memory = 0 #min(0, int(np.random.exponential(scale=50)))
-		workload = {"gpu": gpus, "cpu":cpus, "memory":memory}
-		job['workload'] = workload
-		job['workload_type'] = hp.workload_type
-
-		if hp.uniform_submission:
-			submit_time += hp.uniform_arrival
-		else: 
-			submit_time += max(3, np.random.exponential(scale=1/hp.arrival_rate)) # TODO: Normalize this value 
-
-		job_duration = max(30, np.random.exponential(scale=hp.mean_duration))
-		job_duration = min(job_duration, 10000) # Set upperbound
-
-		# TODO: Implement training -- include estimate runtime
-		if hp.sample_real_workloads:
-			logger.debug(f'sampling real world workloads')
-			estimated_runtime, training_job_script = sample_training_job(gpus, job_duration)
-			job['setup_script'] = training_job_script
-			job['job_duration'] = estimated_runtime
-		else:
-			job['setup_script'] = hp.setup_script
-			job['job_duration'] = job_duration
-
-		# TODO: First find set of all jobs with same # of gpus
-		# TODO: Find job with closest time given gpu distribution 
-
-		#cpus = int(np.random.choice(hp.cpu_sizes, p=hp.cpu_dist))
-		
-		job['submit_time'] = submit_time
-		job['scheduler_submit_time'] = None
-		job['image'] = hp.image
-		#job['sleep'] = hp.sleep
-		job['job_type'] = hp.job_type
-		jobs[job_index] = job
-		arrivals.append((job_index, submit_time))
-		job_index += 1
-
-	return jobs, arrivals
-
-def save_jobs(jobs, repo, tag):
-	log_path = "../sweep_logs/"
-	if not os.path.exists(log_path):
-		os.mkdir(log_path)
-	log_path = "../sweep_logs/archive/"
-	if not os.path.exists(log_path):
-		os.mkdir(log_path)
-	log_path += repo + "/"
-	if not os.path.exists(log_path):
-		os.mkdir(log_path)
-	log_path += "jobs/"
-	if not os.path.exists(log_path):
-		os.mkdir(log_path)
-	current_log_path = log_path + tag + ".json"
-	with open(current_log_path, "w") as f:
-		json.dump(jobs, f)
-
 def submit(jobs={}, arrivals=[], timestamp=None, index=None, clusters=None):
 	def update_scheduler_submit_times(submit_times=None, timestamp=timestamp, index=index, arrivals=arrivals): 
-		trial_data_path = "../sweep_logs/archive/" + str(timestamp) + "/jobs/" + str(index) + ".json"
+		trial_data_path = f'{LOG_DIRECTORY.format(name=str(timestamp))}jobs/{str(index)}.yaml'
 		job_data = {}
 		# TODO: Figure out the bug for why schedule submit time fails 
 		with open(trial_data_path, "r") as f:
-			job_data = json.load(f)
-
+			job_data = yaml.safe_load(f)
 		for i in range(len(arrivals)):
 			# TODO: add scheduler_submit_time value in addition to submit_time 
 			if i in submit_times: 
-				job_data[str(i)]['scheduler_submit_time'] = submit_times[i] 
+				job_data[i]['scheduler_submit_time'] = submit_times[i] 
 
 		with open(trial_data_path, "w") as f:
-			json.dump(job_data, f)
+			yaml.safe_dump(job_data, f)
 
 	start_time = time.time()
 	curr_time = time.time()
-	job_index = 0 #1
+	job_index = 0
 	total_jobs = len(arrivals) #len(jobs)
 	submit_times = {}
-	p2_log = "../sweep_logs/archive/" + timestamp + '/' + 'p2.log'
+	p2_log = "../sweep_logs/" + timestamp + '/' + 'p2.log'
 
 	while True:
 		curr_time = time.time()
 		if job_index < total_jobs and curr_time > arrivals[job_index][1] + start_time:
 			job = jobs[job_index]
-			generate_sampled_job_yaml(job_id=job_index, job=job)
-			submit_time = time.time()
-			subprocess.run(['python3', '-m', 'starburst.drivers.submit_job', '--job-yaml', '../../examples/sampled/sampled_job.yaml', '--submit-time', str(submit_time)])
+			with tempfile.NamedTemporaryFile(mode='w') as f:
+				temp_file_path = f.name
+				yaml.safe_dump(job['kube_yaml'], f)
+				subprocess.run(['python3', '-m', 'starburst.drivers.submit_job', '--job-yaml', temp_file_path, '--submit-time', str(time.time())])
 			#logger.debug(f'****** Job {job_index} submission time {time.time()}')
 			submit_time = time.time()
 			submit_times[job_index] = submit_time
@@ -184,9 +75,9 @@ def submit(jobs={}, arrivals=[], timestamp=None, index=None, clusters=None):
 				f.write("Submitting job " + str(job) + '\n')
 			update_scheduler_submit_times(submit_times=submit_times)
 		#TODO: Improve stop condition -- wait until last job completes
+		time.sleep(0.01)
 		if job_index >= total_jobs: 
 			break
-	
 	update_scheduler_submit_times(submit_times=submit_times)
 	
 
@@ -204,7 +95,7 @@ def submit(jobs={}, arrivals=[], timestamp=None, index=None, clusters=None):
 			return None
 
 		def parse_jobs():
-			with open(f'../sweep_logs/archive/{timestamp}/events/{index}.log', "r") as f:
+			with open(f'../sweep_logs/{timestamp}/events/{index}.log', "r") as f:
 				cloud_log_list = f.read().split('\n')
 			log_jobs = []
 			for log in cloud_log_list[1:-1]:
@@ -270,82 +161,6 @@ def submit(jobs={}, arrivals=[], timestamp=None, index=None, clusters=None):
 	with open(p2_log, "a") as f:
 		f.write("reached end of p2 " + str(index) + '\n')
 
-	return 
-
-def generate_sampled_job_yaml(job_id=0, job=None):
-	""" 
-	Generalizes job submission to perform hyperparameter sweep 
-	# TODO: Finalize design
-	# TODO: Input the following value back into the yaml -- imagePullPolicy: Always
-	# TODO: Integrate skyburst yamls: https://github.com/michaelzhiluo/skyburst/tree/main/task_yamls
-	# TODO: Modify job object to support the following values: 
-	image=job['image']
-	setup_script=job['setup_script']
-	"""
-	output = ""
-	env = Environment(
-		loader=FileSystemLoader("../../examples/sampled/templates"),
-		autoescape=select_autoescape()
-	)
-
-	sleep_time=job["job_duration"]
-	workload=job['workload']
-	image=job['image']
-	setup_script=job['setup_script']
-	#sleep=job['sleep']
-	job_type=job['job_type']
-	workload_type=job['workload_type']
-
-	#nvidia-smi --query-gpu=uuid --format=csv,noheader && echo "||" && sleep {{time}}
-
-	if job_type == 'sleep': 
-		template = env.get_template("sampled_job.yaml.jinja")
-		if workload_type == 'cpu':
-			gpu_setup = 'echo "||"'
-		else:
-			gpu_setup == 'nvidia-smi --query-gpu=uuid --format=csv,noheader && echo "||"'
-		output += template.render({"job":str(job_id), "time":str(sleep_time), "gpu_script": gpu_setup})
-	elif job_type == 'train':
-		template = env.get_template("train_job.yaml.jinja")
-		output += template.render({"job":str(job_id), "image":str(image), "setup_script":str(setup_script)})
-
-	set_limits = False
-	# TODO: Merge all these for loops into one
-
-	#if workload_type == 'cpu':
-	#	if 'gpu' in workload:
-	#		workload.pop('gpu')
-			
-	for w in workload.values():
-		if w > 0:
-			set_limits = True
-			template = env.get_template("resource_limit.yaml.jinja")
-			output += "\n" + template.render()
-			break
-	
-	for w in workload:
-		if workload[w] > 0:
-			template = env.get_template("{}_resource.yaml.jinja".format(w))
-			output += "\n" + template.render({w: workload[w]})
-
-	for w in workload.values():
-		if w > 0:
-			set_limits = True
-			template = env.get_template("resource_request.yaml.jinja")
-			output += "\n" + template.render()
-			break 
-
-	for w in workload: 
-		if workload[w] > 0: 
-			template = env.get_template("{}_resource.yaml.jinja".format(w))
-			output += "\n" + template.render({w: workload[w]})
-
-	template = env.get_template("restart_limit.yaml.jinja")
-	output += "\n" + template.render()
-
-	job_yaml = open("../../examples/sampled/sampled_job.yaml", "w")
-	job_yaml.write(output)
-	job_yaml.close()
 	return 
 
 def clear_logs(clusters={}):
@@ -529,23 +344,81 @@ def reached_last_job(job_name=None, clusters={}):
 
 	return False 
 
+def launch_submit(jobs={}, arrivals=[], timestamp=None, index=None, clusters=None):
+	try: 
+		submit(jobs=jobs, arrivals=arrivals, timestamp=timestamp, index=index, clusters=clusters)
+	except Exception as e:
+		import traceback
+		t = traceback.format_exc()
+		p2_log = "../sweep_logs/" + timestamp + '/' + 'p2.log'
+		with open(p2_log, "a") as f:
+			f.write("p2 failed \n " + t + '\n')
+		pass
 
-def starburst_run(hyperparameters, batch_repo, index, tick):
+def generate_jobs(run_config: RunConfig):
+	"""
+	Generate jobs based on the job generation configuration. 
+	"""
+	rc = run_config
+	np.random.seed(rc.random_seed)
 
-	hp = Config(hyperparameters)
-	jobs, arrivals = generate_jobs(hyperparameters=hyperparameters)
-	logger.debug("JOBS SUBMITTED " + str(jobs))
-	save_jobs(jobs=jobs, repo=batch_repo, tag=index)
-	c1, c2 = mp.Pipe()
-	grpc_port = 30000 #9999 #50051
+	# Get the job generator class.
+	job_gen_class = None
+	if rc.workload_type  in JOB_GENERATORS:
+		job_gen_class = JOB_GENERATORS[rc.workload_type]
+	else:
+		raise ValueError(f'Invalid workload type {rc.workload_type}.')
+	
+	# Initialize the job generator.
+	all_params =  vars(run_config)
+	job_gen = job_gen_class({key: all_params[key] for key in job_generator.JOB_GEN_ARRAY if key in all_params})
+
+	jobs = {}
+	arrivals = []
+	job_index = 0
+	total_submit_time = 0	
+	while True:
+		if total_submit_time >= rc.submit_time:
+			break
+		job = {}
+		job['job_id'] = job_index
+		job['workload_type'] = rc.workload_type
+		job['resources'] = job_gen.get_resources()
+		total_submit_time += job_gen.get_interarrival()
+		job['submit_time'] = total_submit_time
+		job['image'] = job_gen.image
+		job['job_duration'] = job_gen.get_duration()
+		
+		arrivals.append((job_index, total_submit_time))
+
+		env = Environment(
+			loader=FileSystemLoader("../../job_templates"),
+			autoescape=select_autoescape()
+		)
+		template = env.get_template(job_gen.get_jinja_template())
+		jinja_dict = job_gen.get_jinja_dict(job)
+		jinja_str = template.render(jinja_dict)
+		job['kube_yaml'] = yaml.safe_load(jinja_str)
+		jobs[job_index] = job
+		job_index += 1
+	jobs['hyperparameters'] = vars(run_config)
+	return jobs, arrivals
+
+
+def launch_run(run_config: dict, sweep_name: str, run_index: int = 0):
+	run_config = RunConfig(run_config)
+	jobs, arrivals = generate_jobs(run_config=run_config)
+	save_jobs(jobs=jobs, sweep_name=sweep_name, run_index=run_index)
+	import pdb; pdb.set_trace()
+	grpc_port = 30000
 
 	clusters = {
-		"onprem": hp.onprem_cluster,
-		"cloud": hp.cloud_cluster
+		"onprem": run_config.onprem_cluster,
+		"cloud": run_config.cloud_cluster
 	}
-	logger.debug(f'Running policy: {hp.policy}')
-	sched_tick = tick
-	p0 = mp.Process(target=driver.custom_start, args=(grpc_port, sched_tick, clusters['onprem'], clusters['cloud'], hp.waiting_policy, hp.wait_time, jobs, batch_repo, index, hp.policy))
+	logger.debug(f'Running policy: {run_config.policy}')
+	sched_tick = run_config.sched_tick
+	p0 = mp.Process(target=driver.custom_start, args=(grpc_port, sched_tick, clusters['onprem'], clusters['cloud'], run_config.waiting_policy, run_config.wait_time, jobs, sweep_name, run_index, run_config.policy))
 	p0.start()
 	
 	logger.debug(f'Started cleaning cluster pods, jobs, and event logs...')
@@ -556,20 +429,23 @@ def starburst_run(hyperparameters, batch_repo, index, tick):
 		time.sleep(1)
 	clear_logs(clusters=clusters)
 	logger.debug(f'Completed cleaning cluster pods, jobs, and event logs...')
+	
 	# TODO: Delete file
-	signal_file = "../sweep_logs/archive/"+ batch_repo + '/signal.lock' 
+	signal_file = LOG_DIRECTORY.format(name=sweep_name) + '/signal.lock' 
 	try:
 		os.unlink(signal_file)
 	except Exception as e: 
 		pass 
 
 
-	tag = str(index)
-	p1 = mp.Process(target=log, args=(tag, batch_repo, True, clusters['onprem'], clusters['cloud'], index))
-	p2 = mp.Process(target=launch_submit, args=(jobs, arrivals, batch_repo, index, clusters))
+	tag = str(run_index)
+	p1 = mp.Process(target=log, args=(tag, sweep_name, True, clusters['onprem'], clusters['cloud'], tag))
 	p1.start()
-	p2.start()
-	p2.join()
+
+	launch_submit(jobs, arrivals, sweep_name, tag, clusters)
+	#p2 = mp.Process(target=launch_submit, args=(jobs, arrivals, sweep_name, tag, clusters))
+	#p2.start()
+	#p2.join()
 	# TODO: Write file 
 	with open(signal_file, "w") as f:
 		pass
@@ -579,80 +455,45 @@ def starburst_run(hyperparameters, batch_repo, index, tick):
 	
 	return 0 
 
-def launch_submit(jobs={}, arrivals=[], timestamp=None, index=None, clusters=None):
-	try: 
-		submit(jobs=jobs, arrivals=arrivals, timestamp=timestamp, index=index, clusters=clusters)
-	except Exception as e:
-		import traceback
-		t = traceback.format_exc()
-		p2_log = "../sweep_logs/archive/" + timestamp + '/' + 'p2.log'
-		with open(p2_log, "a") as f:
-			f.write("p2 failed \n " + t + '\n')
-		pass 
+#==================================================#
 
-
-def run_sweep(sweep={}, sweep_timestamp=None):
-	sweep_dir = "../sweep_logs/archive/" + sweep_timestamp + "/"
-	if not os.path.exists(sweep_dir):
-		os.mkdir(sweep_dir)
-	sweep_path = sweep_dir + "sweep.json"
-
-	with open(sweep_path, "w") as f:
-		json.dump(sweep, f)
-
-	for i in range(len(sweep)):
-		hp = sweep[i]
-		tick = hp['sched_tick']
-		starburst_run(hp, sweep_timestamp, str(i), tick)
-
-
-def sweep_pipeline(sweep_config: str):
+def save_jobs(jobs: dict, sweep_name: str, run_index: int = 0):
 	"""
-	Runs a hyperparameter sweep on the cluster.
-
+	Saves jobs to yaml file.
+	
 	Args:
-		sweep_config (str): Path to YAML file containing sweep configuration.
+		jobs (dict): Dictionary of jobs to save.
+		sweep_name (str): Name of sweep.
+		run_idx (int): Index of run.
 	"""
-	# 1) Clean Sweeps from prior runs.
-	clear_prior_sweeps(retry_limit=3)
-
-	# 2) Load sweep config and generate runs.
-	sweep = load_yaml_file(sweep_config)
-	sweep_dict = generate_runs(sweep)
-
-	# Create Log directories
-	current_timestamp = int(time.time())
-	directory_path = f"../sweep_logs/archive/{current_timestamp}"
-	absolute_path = os.path.abspath(directory_path)
-	os.makedirs(absolute_path, exist_ok=True)
-
-	run_sweep(sweep=sweep_dict, sweep_timestamp=current_timestamp)
-
-if __name__ == '__main__':
-	parser = argparse.ArgumentParser(description='Submit a sweep of synthetically generated jobs.')
-	parser.add_argument(
-		'--config',
-		type=str,
-		default='../../scripts/cpu_sweep.yaml',
-		help='Input YAML config.')
-	args = parser.parse_args()
-	sweep_pipeline(sweep_config=args.config)
-
+	log_path = LOG_DIRECTORY.format(name=sweep_name)
+	if not os.path.exists(log_path):
+		raise Exception(f'Sweep logs {log_path} does not exist.')
+	log_path += "jobs/"
+	os.makedirs(log_path, exist_ok=True)
+	
+	jobs_path = f'{log_path}{run_index}.yaml'
+	yaml_jobs = yaml.dump(jobs)
+	with open(jobs_path, "w") as f:
+		f.write(yaml_jobs)
 
 def generate_runs(sweep_config: dict) -> List[dict]: 
 	"""
 	Takes specified fixed values and generates grid of hyperparameters based on varying values
 
+	Args:
+		sweep_config (dict): Dictionary of hyperparameters to sweep over.
 	"""
 	list_type_args = ['cpu_sizes', 'cpu_dist', 'gpu_sizes', 'gpu_dist']
 
 	# Split sweep_config into fixed and varied hyperparameters.
-	base_config = copy.deepcopy(sweeps.DEFAULT_HYPERPARAMETERS)
+	base_config = copy.deepcopy(sweeps.DEFAULT_CONFIG)
 	varied_config = {}
 	for key, value in sweep_config.items():
 		if not isinstance(value, list):
 			base_config[key] = value
-		elif isinstance(value, list) and key in list_type_args and not isinstance(value[0], list):
+		elif isinstance(value, list) and key in list_type_args \
+			and not isinstance(value[0], list):
 			base_config[key] = value
 		else:
 			varied_config[key] = value
@@ -687,7 +528,6 @@ def load_yaml_file(file_path: str) -> dict:
 		data = yaml.safe_load(file)
 	return data
 
-
 def clear_prior_sweeps(retry_limit: int = 1) -> None:
 	"""
 	Deletes all prior sweeps from the cluster.
@@ -715,3 +555,67 @@ def clear_prior_sweeps(retry_limit: int = 1) -> None:
 				pass
 		if not found_submit_process:
 			break
+
+def create_log_directory(sweep_name: str=None) -> int:
+	"""
+	Creates a log directory for the entire sweep.
+
+	Args:
+		name (str): Name of the log directory for the current sweep.
+	"""
+	if not sweep_name:
+		sweep_name  = str(int(time.time()))
+	log_directory_path = LOG_DIRECTORY.format(name=sweep_name)
+	absolute_path = os.path.abspath(log_directory_path)
+	os.makedirs(absolute_path, exist_ok=True)
+	return sweep_name
+
+def save_sweep_runs(runs: dict, sweep_name: str) -> None:
+	"""
+	Saves the sweep runs to a JSON file.
+
+	Args:
+		runs (dict): Dictionary of runs to save.
+		sweep_name (str): Name of the sweep.
+	"""
+	sweep_path = LOG_DIRECTORY.format(name=sweep_name)+ "sweep.yaml"
+	yaml_runs = yaml.dump(runs)
+	with open(sweep_path, "w") as f:
+		f.write(yaml_runs)
+	
+def sweep_pipeline(sweep_config: str):
+	"""
+	Runs a hyperparameter sweep on the cluster.
+
+	Args:
+		sweep_config (str): Path to YAML file containing sweep configuration.
+	"""
+	# 1) Clean Sweeps from prior runs.
+	clear_prior_sweeps(retry_limit=3)
+
+	# 2) Create Log directory for sweep
+	current_timestamp = create_log_directory()
+
+	# 3) Load sweep config and generate runs.
+	sweep_dict = load_yaml_file(sweep_config)
+	runs_dict = generate_runs(sweep_dict)
+	save_sweep_runs(runs_dict, current_timestamp)
+
+	# 4) Launch runs in sequence.
+	for run_idx in runs_dict.keys():
+		launch_run(run_config=runs_dict[run_idx],
+	     		   sweep_name=current_timestamp,
+				   run_index=str(run_idx))
+
+if __name__ == '__main__':
+	parser = argparse.ArgumentParser(description='Submit a sweep of synthetically generated jobs.')
+	parser.add_argument(
+		'--config',
+		type=str,
+		default='../../scripts/cpu_sweep.yaml',
+		help='Input YAML config.')
+	parser.add_argument('--debug',
+		     action='store_true',
+			 help='Enable debug mode')
+	args = parser.parse_args()
+	sweep_pipeline(sweep_config=args.config)

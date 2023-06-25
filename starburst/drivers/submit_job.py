@@ -25,21 +25,12 @@ def run_client(ip, port, job_yaml_path):
     with grpc.insecure_channel(f'{ip}:{port}') as channel:
         stub = job_submit_pb2_grpc.JobSubmissionStub(channel)
         print("-------------- SubmitJob --------------")
-        # Read the job yaml
-        #with open(JOB_YAML_PATH, 'r') as f:
-        
-        #if args.kubeflow: 
-        #    stub.SubmitJob
-        #else: 
         logger.debug(f'CLIENT READ AT {ip}:{port} with {channel}')
         with open(args.job_yaml, 'r') as f:
             job_yaml = f.read()
         print(job_yaml)
-        #logger.debug(f'****** Job Sent to GRPC SERVER -- Job {args.submit_time} at Time {time.time()}')
-        #logger.debug(f'****** Job Reached GRPC SERVER -- Job {job_yaml} at Time {time.time()}')
         curr_time = time.time()
         print(f'****** Job Sent to GRPC SERVER -- Job {args.submit_time} at Time {curr_time} with Delta {curr_time - args.submit_time}')
-        #print(f'****** Job Reached GRPC SERVER -- Job {job_yaml} at Time {time.time()}')
         ret = stub.SubmitJob(job_submit_pb2.JobMessage(JobYAML=job_yaml))
         print(f"Got retcode {ret.retcode}")
 

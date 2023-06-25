@@ -99,9 +99,9 @@ class StarburstScheduler:
         event.job.job_event_queue_add_time = time.time()
         self.job_queue.append(event.job)
         _end_process_event_time = time.perf_counter()
-        logger.debug("QUEUEADD TIME (()) " + str(_end_process_event_time - _start_process_event_time))
-        logger.debug(f'***** Job Retrieved in Event Queue -- Job {event.job} at time {_end_process_event_time}')
-        logger.debug(f'DIFF TIMES {time.time()} or {time.perf_counter()}')
+        # logger.debug("QUEUEADD TIME (()) " + str(_end_process_event_time - _start_process_event_time))
+        # logger.debug(f'***** Job Retrieved in Event Queue -- Job {event.job} at time {_end_process_event_time}')
+        # logger.debug(f'DIFF TIMES {time.time()} or {time.perf_counter()}')
 
     async def scheduler_loop(self, queue, conn):
         """Main loop"""
@@ -133,16 +133,16 @@ class StarburstScheduler:
             _end_process_event_time = time.perf_counter()
             _end_time = time.perf_counter()
 
-            logger.debug("AWAIT TIME (()) " + str(_end_await_time - _start_await_time))
-            logger.debug("PROCESSQUEUE TIME (()) " + str(_end_process_queue_time - _start_process_queue_time))
-            logger.debug("JOB QUEUE SIZE " + str(job_queue_len))
-            logger.debug("PROCESSEVENT TIME (()) " + str(_end_process_event_time - _start_process_event_time))
-            logger.debug("EVENT QUEUE SIZE (()) " + str(event_queue_len))
+            # logger.debug("AWAIT TIME (()) " + str(_end_await_time - _start_await_time))
+            # logger.debug("PROCESSQUEUE TIME (()) " + str(_end_process_queue_time - _start_process_queue_time))
+            # logger.debug("JOB QUEUE SIZE " + str(job_queue_len))
+            # logger.debug("PROCESSEVENT TIME (()) " + str(_end_process_event_time - _start_process_event_time))
+            # logger.debug("EVENT QUEUE SIZE (()) " + str(event_queue_len))
             delta = _end_time  - _start_time
             if delta < 1:
                 await asyncio.sleep(1.0 -(_end_time - _start_time)) # -(_end_time - _start_time))
             _interloop_end_time = time.perf_counter()
-            logger.debug("INTERLOOP TIME (()) " + str(_interloop_end_time - _start_time))
-            if self.prev_loop_time:
-                logger.debug("LOOP TIME (()) " + str(_interloop_end_time - self.prev_loop_time))#str(_end_time - _start_time))
+            # logger.debug("INTERLOOP TIME (()) " + str(_interloop_end_time - _start_time))
+            # if self.prev_loop_time:
+            #     logger.debug("LOOP TIME (()) " + str(_interloop_end_time - self.prev_loop_time))#str(_end_time - _start_time))
             self.prev_loop_time = _interloop_end_time

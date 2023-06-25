@@ -4,9 +4,11 @@ metadata:
   name: job-{{job}}
   label: 
     track: train
-spec: 
+spec:
+  backoffLimit: 1 
   template: 
-    spec: 
+    spec:
+      restartPolicy: Never 
       volumes: 
       - name: dshm
         emptyDir: 
@@ -21,4 +23,11 @@ spec:
         command: ["/bin/bash", "-c"]
         args:
         - |
-          nvidia-smi --query-gpu=uuid --format=csv,noheader && echo "||" && python {{setup_script}}
+          nvidia-smi --query-gpu=uuid --format=csv,noheader && echo "||" && python {{script}}
+        resources:
+          limits:
+            cpu: {{cpu}}
+            nvidia.com/gpu: {{gpu}}
+          requests:
+            cpu: {{cpu}}
+            nvidia.com/gpu: {{gpu}}
