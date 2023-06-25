@@ -98,7 +98,7 @@ class CPUSleepJobGenerator(JobGenerator):
 	
 	@property
 	def script(self):
-		 return 'echo \"||\" && sleep {time}'
+		 return 'echo "||" && sleep {time}'
 
 
 class GPUSleepJobGenerator(JobGenerator):
@@ -119,7 +119,7 @@ class GPUSleepJobGenerator(JobGenerator):
 	@property
 	def script(self):
 		# Must add nvidia-smi to query for GPU indexes (later used to plot job runs on a Gantt chart)
-		return 'nvidia-smi --query-gpu=uuid --format=csv,noheader && echo \"||\" && sleep {time}'
+		return 'nvidia-smi --query-gpu=uuid --format=csv,noheader && echo "||" && sleep {time}'
 
 
 # Stateful job generator, keeps track of previous gpu and training scripts.

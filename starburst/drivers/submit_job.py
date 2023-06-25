@@ -23,7 +23,6 @@ def parse_args():
 	parser.add_argument('--port', '-p', type=int, default=driver.GRPC_PORT, help='GRPC Port')
 	parser.add_argument('--ip', '-i', type=str, default=DEFAULT_IP, help='GRPC IP addresss')
 	args = parser.parse_args()
-
 	return args
 
 def run_client(ip, port, job_yaml_path):

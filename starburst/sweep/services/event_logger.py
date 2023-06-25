@@ -8,7 +8,7 @@ import time
 
 from kubernetes import client, config
 
-from  starburst.sweep import utils
+from  starburst.sweep import sweep_logger, utils
 
 EVENT_DATA_TEMPLATE = {
 		'container_creation_times': {},
@@ -41,30 +41,10 @@ def write_cluster_event_data(batch_repo=None, cluster_event_data=None, tag=None,
 	Normal  Started    52m   kubelet            Started container sleep
 	Normal  Completed  52m   kubelet            Job completed
 	'''
-	
-	archive_path = "../sweep_logs/"
 
-	log_path = "../sweep_logs/"
-	files = os.listdir(log_path)
-	for file in files:
-		if file.endswith(".json"):
-			existing_log_path = str(file)
-			os.rename(log_path + existing_log_path, archive_path + existing_log_path)
 
-	if batch_repo: 
-		log_path = log_path  + batch_repo + "/"
-		if not os.path.exists(log_path):
-			os.mkdir(log_path)
-		log_path += 'events/'
-		if not os.path.exists(log_path):
-			os.mkdir(log_path)
-		print("Made directory for hyperparameter search...")
-		current_log_path = log_path + tag + ".json"
-	else: 
-		if tag: 
-			current_log_path = log_path + "event_data_" + tag + "_" + str(int(datetime.datetime.now().timestamp())) + ".json"
-		else: 
-			current_log_path = log_path + "event_data_" + str(int(datetime.datetime.now().timestamp())) + ".json"
+	log_path = sweep_logger.LOG_DIRECTORY.format(name=batch_repo) + '/events/'
+	current_log_path = log_path + tag + ".yaml"
 
 	# TODO Verify if they will interfere
 	config.load_kube_config(context=onprem_cluster)
@@ -157,11 +137,10 @@ def write_cluster_event_data(batch_repo=None, cluster_event_data=None, tag=None,
 							event_data['job_completion_times'][job_name] = int(job_completion_time.timestamp())
 							logger.debug(f'Logged Job Completion Time for job {job_name} at time {job_completion_time}')
 		# TODO: Save job hyperparameters directly into job events metadata	
-		with open(current_log_path, "w") as f:
-			json.dump(cluster_event_data, f)
+		utils.save_yaml_object(cluster_event_data, current_log_path)
 		time.sleep(EVENT_LOG_FREQUENCY)
 
-		p1_log = "../sweep_logs/" + batch_repo + '/debug/' + 'p1.log'
+		p1_log = sweep_logger.LOG_DIRECTORY.format(name=batch_repo) + '/debug/' + 'event_logger.log'
 		with open(p1_log, "a") as f:
 			f.write("retrieved event p1 " + str(index) + '\n')
 

@@ -6,7 +6,7 @@ from typing import Dict, Tuple
 from kubernetes import client, config
 import yaml
 
-from starburst.sweep import sweep_logger, training_dataset
+from starburst.sweep import training_dataset
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,9 @@ def check_empty_cluster(clusters: Dict[str, str]) -> bool:
 
 
 def clear_clusters(clusters: Dict[str, str]):
-	"""Automates clearing of cluster state by removing event, logs, and pods on both onprem and cloud cluster."""
+	"""
+	Automates clearing of cluster state by removing event, logs, and pods on both onprem and cloud cluster.
+	"""
 	while True:
 		try:
 			api_batch_list = []
