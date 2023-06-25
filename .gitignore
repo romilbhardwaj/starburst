@@ -1,5 +1,5 @@
 /local
 /starburst/utils/kube_logging/kube-state-metrics-configs
 /starburst/utils/kube_logging/prometheus
-/startburst/sweep_logs
+/starburst/sweep_logs
 **/__pycache__
