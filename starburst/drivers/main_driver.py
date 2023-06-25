@@ -8,7 +8,7 @@ import logging
 from starburst.event_sources.grpc.job_submit_event_source import JobSubmissionEventSource
 from starburst.event_sources.sched_tick_event_source import SchedTickEventSource
 from starburst.scheduler.starburst_scheduler import StarburstScheduler
-from starburst.utils.event_logger import SimpleEventLogger
+from starburst.sweep.event_logger import SimpleEventLogger
 
 logging.basicConfig(level=logging.DEBUG, #CRITICAL or INFO
                     format='%(asctime)s | %(levelname)-6s | %(name)-40s || %(message)s',
@@ -20,11 +20,11 @@ logger = logging.getLogger(__name__)
 # TODO: Resolve local logs from being overriden by logs of imported packages (e.g. kubeflow)
 
 # Job submission parameters
-GRPC_PORT = 10000 #50051
+GRPC_PORT = 30000
 
 # Other parameters
 ASYNC_SLEEP_TIME = 0.5
-SCHED_TICK_TIME = 1 # Run a tick every 1s
+SCHED_TICK_TIME = 1
 
 # K8s configuration. These names must exist as contexts in your kubeconfig file. Check using `kubectl config get-contexts`.
 ONPREM_K8S_CLUSTER_NAME = 'kind-onprem'

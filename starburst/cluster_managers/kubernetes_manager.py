@@ -9,9 +9,6 @@ from kubernetes.client import models
 
 from starburst.types.job import Job
 
-# TODO: Resolve TFJob logs from overriding starburst logs initialized in main_driver.py
-#import starburst.utils.tf_job as TFJob
-
 client.rest.logger.setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 

@@ -104,13 +104,11 @@ class FIFOWaitPolicy(BasePolicy):
         self.total_workload_volume = 0
         self.total_workload_time = 0
         self.total_workload_surface_area = 0
-        self.total_jobs = 0 
-        self.workload_type = self.job_data['hyperparameters']['workload_type']
+        self.total_jobs = 0
+        assert len(self.job_data) >= 1, "Job data is empty, job submission is bugged." 
+        self.workload_type = self.job_data[0]['workload_type']
         logger.debug(f'all jobs data {self.job_data}')
         for job_id in self.job_data:
-            if job_id == 'hyperparameters': 
-                continue 
-
             job = self.job_data[job_id]
             logger.debug(f'job data {job}')
             self.total_jobs += 1
@@ -139,15 +137,11 @@ class FIFOWaitPolicy(BasePolicy):
         
         self.compute_wait_coefficient = self.max_tolerance/self.avg_job_size
 
-        
-
-        #self.onprem_only = self.job_data['hyperparameters']['onprem_only']
-
         self.spilled_jobs_path = f'../sweep_logs/{batch_repo}/events/{index}.log'
         event_path = f'../sweep_logs/{batch_repo}/events/'
         if not os.path.exists(event_path):
             os.mkdir(event_path)
-        self.spill_to_cloud = self.job_data['hyperparameters']['spill_to_cloud'] # TODO: Verify if this works as intended
+        self.spill_to_cloud = self.job_data[0]['spill_to_cloud'] # TODO: Verify if this works as intended
         with open(self.spilled_jobs_path, "a") as f:
             f.write("Scheduler spun up! \n")
         
@@ -187,7 +181,7 @@ class FIFOWaitPolicy(BasePolicy):
         """ Process in FIFO order. Iterates over all jobs (no HoL blocking).
         If job has been waiting longer than a threshold, submit to cloud. """
         start_time = time.perf_counter()
-        logger.debug(f'New process_queue function call || time since previous call {str(time.perf_counter() - self.previous_function_call_time)} | previous call time {str(self.previous_function_call_time)}')
+        # logger.debug(f'New process_queue function call || time since previous call {str(time.perf_counter() - self.previous_function_call_time)} | previous call time {str(self.previous_function_call_time)}')
         self.previous_function_call_time = time.perf_counter()
         if job_queue:
             cloud_start_time = time.time()
@@ -225,9 +219,9 @@ class FIFOWaitPolicy(BasePolicy):
                     else: 
                         timeout = job_duration * job.resources['gpu'] * self.compute_wait_coefficient
                     job_timed_out = wait_time >  max(timeout, 15) #timeout #self.wait_threshold * job.resources['gpus']
-                logger.debug(f'Cloud Timeout Submission Check || policy {self.policy} | job timed out {job_timed_out} | timeout value {timeout} | wait threshold {self.wait_threshold} | wait time {wait_time} | event queue wait time {event_wait_time} | curr time {loop_time} | submission time {job.job_submit_time} | event added time {job.job_event_queue_add_time} | input job duration {job_duration} | input job resources {str(job_resource)} | input job name {str(job_id)}')
+                # logger.debug(f'Cloud Timeout Submission Check || policy {self.policy} | job timed out {job_timed_out} | timeout value {timeout} | wait threshold {self.wait_threshold} | wait time {wait_time} | event queue wait time {event_wait_time} | curr time {loop_time} | submission time {job.job_submit_time} | event added time {job.job_event_queue_add_time} | input job duration {job_duration} | input job resources {str(job_resource)} | input job name {str(job_id)}')
                 if job_timed_out:
-                    logger.debug(f'Cloud Timeout Submission Entered || job {job.job_name} | spilling to cloud  {self.spill_to_cloud} | queue {job_queue}')
+                    # logger.debug(f'Cloud Timeout Submission Entered || job {job.job_name} | spilling to cloud  {self.spill_to_cloud} | queue {job_queue}')
                     if self.spill_to_cloud:
                         self.cloud_manager.submit_job(job)
                     job_queue.remove(job)
@@ -277,8 +271,8 @@ class FIFOWaitPolicy(BasePolicy):
             curr_time = time.perf_counter()
             logger.debug(f'End of process_queue function call || total time {str(curr_time-start_time)}')
         else:
-            logger.info("Job queue is empty.")
+            # logger.info("Job queue is empty.")
             curr_time = time.perf_counter()
-            logger.debug(f'End of process_queue function call || total time {str(curr_time-start_time)}')
+            # logger.debug(f'End of process_queue function call || total time {str(curr_time-start_time)}')
             return
 
