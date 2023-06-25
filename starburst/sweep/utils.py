@@ -11,8 +11,8 @@ from starburst.sweep import sweep_logger, training_dataset
 logger = logging.getLogger(__name__)
 
 class RunConfig:
-    def __init__(self, config_dict):
-        self.__dict__.update(config_dict)
+	def __init__(self, config_dict):
+		self.__dict__.update(config_dict)
 
 def load_yaml_file(file_path: str) -> dict:
 	"""
@@ -44,8 +44,8 @@ def save_yaml_object(obj_dict: dict, path: str) -> None:
 
 def sample_gpu_train_job(gpu: int, duration: float) -> Tuple[int, str]:
 	"""
-    Returns a closest real-life training job closest to (gpu, duration) pair.
-    """
+	Returns a closest real-life training job closest to (gpu, duration) pair.
+	"""
 	jobs = [(j[1], j[3]) for j in training_dataset.ESTIMATED_TIMES if j[2] == gpu]
 	min_delta = math.inf
 	min_id = 0  
