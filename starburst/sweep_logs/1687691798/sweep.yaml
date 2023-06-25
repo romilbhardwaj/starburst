@@ -1,0 +1,41 @@
+0:
+  arrival_dist: uniform
+  arrival_param: 5
+  cloud_cluster: mluo-cloud
+  cloud_cluster_nodes: 4
+  cloud_cpu_per_node: 8
+  cluster_size: 2
+  cpu_dist:
+  - 1
+  cpu_sizes:
+  - 1
+  cpus_per_node: 8
+  gpu_dist:
+  - 0.7
+  - 0.15
+  - 0.1
+  - 0.05
+  gpu_sizes:
+  - 1
+  - 2
+  - 4
+  - 8
+  gpu_workload: false
+  gpus_per_node: 8
+  image: gcr.io/sky-burst/skyburst:latest
+  max_duration: 10000
+  mean_duration: 10
+  min_arrival_time: 3
+  min_duration: 2
+  onprem_cluster: mluo-onprem
+  onprem_only: false
+  policy: constant
+  random_seed: 13
+  sched_tick: 0.1
+  spill_to_cloud: false
+  submit_time: 10
+  time_out: 5
+  use_new_cluster: true
+  wait_time: 40
+  waiting_policy: fifo_wait
+  workload_type: cpu_sleep

@@ -1,0 +1,30 @@
+2023-06-25 11:16:40,143 - DEBUG - Submitting 2 jobs...
+2023-06-25 11:16:45,591 - DEBUG - Submitting Job 0: {'job_id': 0, 'workload_type': 'cpu_sleep', 'image': 'gcr.io/sky-burst/skyburst:latest', 'spill_to_cloud': False, 'resources': {'cpu': 1, 'gpu': 0}, 'submit_time': 5, 'job_duration': 2.7120683102399417, 'kube_yaml': {'apiVersion': 'batch/v1', 'kind': 'Job', 'metadata': {'name': 'job-0', 'label': {'track': 'sleep'}}, 'spec': {'backoffLimit': 1, 'template': {'spec': {'restartPolicy': 'Never', 'volumes': [{'name': 'dshm', 'emptyDir': {'medium': 'Memory'}}], 'schedulerName': 'chakra', 'containers': [{'name': 'sleep', 'image': 'gcr.io/sky-burst/skyburst:latest', 'volumeMounts': [{'name': 'dshm', 'mountPath': '/dev/shm'}], 'command': ['/bin/sh', '-c'], 'args': ['echo "||" && sleep 2.7120683102399417\n'], 'resources': {'limits': {'cpu': 1}, 'requests': {'cpu': 1}}}]}}}}} at Time 1687691805.5791528.
+2023-06-25 11:16:50,557 - DEBUG - Submitting Job 1: {'job_id': 1, 'workload_type': 'cpu_sleep', 'image': 'gcr.io/sky-burst/skyburst:latest', 'spill_to_cloud': False, 'resources': {'cpu': 1, 'gpu': 0}, 'submit_time': 10, 'job_duration': 33.74045299745098, 'kube_yaml': {'apiVersion': 'batch/v1', 'kind': 'Job', 'metadata': {'name': 'job-1', 'label': {'track': 'sleep'}}, 'spec': {'backoffLimit': 1, 'template': {'spec': {'restartPolicy': 'Never', 'volumes': [{'name': 'dshm', 'emptyDir': {'medium': 'Memory'}}], 'schedulerName': 'chakra', 'containers': [{'name': 'sleep', 'image': 'gcr.io/sky-burst/skyburst:latest', 'volumeMounts': [{'name': 'dshm', 'mountPath': '/dev/shm'}], 'command': ['/bin/sh', '-c'], 'args': ['echo "||" && sleep 33.74045299745098\n'], 'resources': {'limits': {'cpu': 1}, 'requests': {'cpu': 1}}}]}}}}} at Time 1687691810.5456157.
+2023-06-25 11:16:50,557 - DEBUG - Waiting for 2 jobs to complete...
+2023-06-25 11:16:50,583 - DEBUG - Submitted Jobs State: {0: False, 1: False}
+2023-06-25 11:16:51,611 - DEBUG - Submitted Jobs State: {0: False, 1: False}
+2023-06-25 11:16:52,635 - DEBUG - Submitted Jobs State: {0: False, 1: False}
+2023-06-25 11:16:53,659 - DEBUG - Submitted Jobs State: {0: False, 1: False}
+2023-06-25 11:16:54,684 - DEBUG - Submitted Jobs State: {0: True, 1: False}
+2023-06-25 11:16:55,708 - DEBUG - Submitted Jobs State: {0: True, 1: False}
+2023-06-25 11:16:56,733 - DEBUG - Submitted Jobs State: {0: True, 1: False}
+2023-06-25 11:16:57,758 - DEBUG - Submitted Jobs State: {0: True, 1: False}
+2023-06-25 11:16:58,783 - DEBUG - Submitted Jobs State: {0: True, 1: False}
+2023-06-25 11:16:59,807 - DEBUG - Submitted Jobs State: {0: True, 1: False}
+2023-06-25 11:17:00,832 - DEBUG - Submitted Jobs State: {0: True, 1: False}
+2023-06-25 11:17:01,857 - DEBUG - Submitted Jobs State: {0: True, 1: False}
+2023-06-25 11:17:02,881 - DEBUG - Submitted Jobs State: {0: True, 1: False}
+2023-06-25 11:17:03,905 - DEBUG - Submitted Jobs State: {0: True, 1: False}
+2023-06-25 11:17:04,930 - DEBUG - Submitted Jobs State: {0: True, 1: False}
+2023-06-25 11:17:05,955 - DEBUG - Submitted Jobs State: {0: True, 1: False}
+2023-06-25 11:17:06,981 - DEBUG - Submitted Jobs State: {0: True, 1: False}
+2023-06-25 11:17:08,006 - DEBUG - Submitted Jobs State: {0: True, 1: False}
+2023-06-25 11:17:09,031 - DEBUG - Submitted Jobs State: {0: True, 1: False}
+2023-06-25 11:17:10,099 - DEBUG - Submitted Jobs State: {0: True, 1: False}
+2023-06-25 11:17:11,123 - DEBUG - Submitted Jobs State: {0: True, 1: False}
+2023-06-25 11:17:12,147 - DEBUG - Submitted Jobs State: {0: True, 1: False}
+2023-06-25 11:17:13,171 - DEBUG - Submitted Jobs State: {0: True, 1: False}
+2023-06-25 11:17:14,196 - DEBUG - Submitted Jobs State: {0: True, 1: False}
+2023-06-25 11:17:15,219 - DEBUG - Submitted Jobs State: {0: True, 1: False}
+2023-06-25 11:17:16,243 - DEBUG - Submitted Jobs State: {0: True, 1: False}
