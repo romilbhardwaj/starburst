@@ -1,0 +1,33 @@
+# Sweep Parameters
+workload_type: cpu_sleep
+submit_time: 10
+random_seed: 13
+# Cluster Parameters
+onprem_cluster: mluo-onprem
+cloud_cluster: mluo-cloud
+# Job generation parameters
+arrival_dist: uniform
+arrival_param: 5
+min_arrival_time: 3
+mean_duration: 10
+min_duration: 2
+cpu_dist: [1]
+cpu_sizes: [1]
+image: gcr.io/sky-burst/skyburst:latest
+
+# Cluster Parameters
+cluster_size: 2
+sched_tick: 0.1
+spill_to_cloud: false
+waiting_policy: fifo_wait
+policy: constant
+wait_time:
+  - 40
+
+# Example of submitting sweep (4 runs) with this script:
+# wait_time:
+#   - 40
+#   - 30
+# random_seed:
+#   - 13
+#   - 14

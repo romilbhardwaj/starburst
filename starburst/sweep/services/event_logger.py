@@ -83,7 +83,7 @@ def write_cluster_event_data(batch_repo=None, cluster_event_data=None, tag=None,
 				events = api.list_event_for_all_namespaces()
 				event_data = cluster_event_data[type]
 				# TODO: Determine what to do with message data - item.message
-				instances = utils.retrieve_node_instance(api)
+				instances = retrieve_node_instance(api)
 				event_data['node_instances'] = instances
 				# TODO: Integrate GPU INDEX logging
 				# TODO: gpu_index = api.read_namespaced_pod_log(name=pod_name, namespace="default")
@@ -175,6 +175,16 @@ def write_cluster_event_data(batch_repo=None, cluster_event_data=None, tag=None,
 			# TODO: Loop one last time
 			end = True 
 
+def retrieve_node_instance(api):
+	node_list = api.list_node().items
+	instance_types = {}
+	for node_data in node_list:
+		node_name = node_data.metadata.name
+		for label, value in node_data.metadata.labels.items(): 
+			if label == "node.kubernetes.io/instance-type":
+				instance_types[node_name] = value
+				break 
+	return instance_types
 
 def logger_service(tag=None, batch_repo=None, onprem_cluster="", cloud_cluster="", index=None):
 	cluster_event_data = {
