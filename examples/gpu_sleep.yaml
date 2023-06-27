@@ -1,0 +1,32 @@
+# Sweep Parameters
+workload_type: gpu_sleep
+submit_time: 300
+random_seed: 13
+# Cluster Parameters
+onprem_cluster: mluo-onprem
+cloud_cluster: mluo-cloud
+# Job generation parameters
+arrival_dist: uniform
+arrival_param: 30
+min_arrival_time: 3
+mean_duration: 30
+min_duration: 10
+gpu_sizes: [1,2,4,8]
+gpu_dist: [0.7, 0.15, 0.1, 0.05]
+image: gcr.io/deeplearning-platform-release/pytorch-gpu.1-12
+
+# Policy Parameters
+sched_tick: 0.1
+spill_to_cloud: false
+waiting_policy: fifo_wait
+policy: constant
+wait_time:
+  - 40
+
+# Example of submitting sweep (4 runs) with this script:
+# wait_time:
+#   - 40
+#   - 30
+# random_seed:
+#   - 13
+#   - 14
