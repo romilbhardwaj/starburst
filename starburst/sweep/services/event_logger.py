@@ -7,7 +7,8 @@ from typing import Any, Dict
 
 from kubernetes import client, config
 
-from starburst.sweep import sweep_logger, utils
+from starburst.sweep import utils, submit_sweep
+from starburst.utils import log_manager
 
 EVENT_DATA_TEMPLATE = {
     'job_pods': {},
@@ -15,7 +16,7 @@ EVENT_DATA_TEMPLATE = {
     'pod_logs': {},
     'pod_node': {}
 }
-EVENT_LOG_FREQUENCY = 1
+EVENT_LOG_FREQUENCY = 0.5
 
 
 class PodStatus(Enum):
@@ -43,7 +44,7 @@ def get_event_logger_log_path(name: str):
     """
     Retrieves the path to the job submission log file.
     """
-    path = (f"{sweep_logger.LOG_DIRECTORY.format(name=name)}"
+    path = (f"{submit_sweep.LOG_DIRECTORY.format(name=name)}"
             "/debug/event_logger.log")
     return os.path.abspath(path)
 
@@ -52,7 +53,7 @@ def get_pod_events_path(name: str, idx: int):
     """
     Retrives the path to YAML file that stores pod/job events.
     """
-    log_path = sweep_logger.LOG_DIRECTORY.format(name=name) + '/events/'
+    log_path = submit_sweep.LOG_DIRECTORY.format(name=name) + '/events/'
     return f"{log_path}{idx}.yaml"
 
 
@@ -73,7 +74,7 @@ def retrieve_node_instance(api: client.CoreV1Api) -> Dict[str, str]:
 
 def event_logger_loop(clusters: Dict[str, str], jobs: Dict[Any, Any],
                       sweep_name: str, run_index: int,
-                      file_logger: sweep_logger.LogFileManager):
+                      file_logger: log_manager.LogFileManager):
     """
     Loop for logging events from the cluster.
 
@@ -82,7 +83,7 @@ def event_logger_loop(clusters: Dict[str, str], jobs: Dict[Any, Any],
         jobs (Dict[Any, Any]): Dictionary of job ids and their job data.
         sweep_name (str): Name of the sweep.
         run_index (int): Index of the run.
-        file_logger (sweep_logger.LogFileManager): File logger for logging
+        file_logger (log_manager.LogFileManager): File logger for logging
                                                    events.
     """
 
@@ -175,7 +176,7 @@ def logger_service(clusters: Dict[str, str], jobs: Dict[Any, Any],
     """
     Service that logs events and pod logs for the sweep.
     """
-    event_loop_logger = sweep_logger.LogFileManager(
+    event_loop_logger = log_manager.LogFileManager(
         "event_logger_service", get_event_logger_log_path(sweep_name))
     try:
         event_logger_loop(clusters=clusters,
@@ -186,6 +187,7 @@ def logger_service(clusters: Dict[str, str], jobs: Dict[Any, Any],
     except Exception:
         # If an error occrus during job submission loop, log the error
         # and move onto the next run in the sweep.
-        event_loop_logger.append(traceback.format_exc() + "\n")
+        exception_str = traceback.format_exc() + "\n"
+        event_loop_logger.append(exception_str)
         pass
     event_loop_logger.close()

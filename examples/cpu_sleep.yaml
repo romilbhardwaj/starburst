@@ -16,18 +16,10 @@ cpu_sizes: [1]
 image: gcr.io/sky-burst/skyburst:latest
 
 # Policy Parameters
-cluster_size: 2
-sched_tick: 0.1
-spill_to_cloud: false
-waiting_policy: fifo_wait
-policy: constant
-wait_time:
-  - 40
-
-# Example of submitting sweep (4 runs) with this script:
-# wait_time:
-#   - 40
-#   - 30
-# random_seed:
-#   - 13
-#   - 14
+waiting_policy: compute
+waiting_coeff: 40
+waiting_budget: 0.25
+queue_policy: fifo
+loop: False
+spill_to_cloud: log
+min_waiting_time: 0

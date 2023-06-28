@@ -9,10 +9,11 @@ import time
 from typing import List
 
 import starburst.drivers.main_driver as driver
-from starburst.sweep import job_generator, sweep_logger, sweeps, utils
+from starburst.sweep import job_generator, sweeps, utils
 from starburst.sweep.services import job_submission, event_logger
 
 DEFAULT_CONFIG = sweeps.DEFAULT_CONFIG
+LOG_DIRECTORY = "../sweep_logs/{name}/"
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +106,7 @@ def launch_run(run_config: dict, sweep_name: str, run_index: int = 0):
 
     # Generate jobs and their corresponding arrival times.
     jobs = job_generator.generate_jobs(run_config=run_config)
-    job_yaml_path = (f"{sweep_logger.LOG_DIRECTORY.format(name=sweep_name)}"
+    job_yaml_path = (f"{LOG_DIRECTORY.format(name=sweep_name)}"
                      f"jobs/{run_index}.yaml")
     utils.save_yaml_object(jobs, job_yaml_path)
 
@@ -119,19 +120,32 @@ def launch_run(run_config: dict, sweep_name: str, run_index: int = 0):
         time.sleep(1)
     logger.debug(f"Starting Run ID: {run_index}.")
 
+    waiting_budget = run_config.waiting_budget
+    waiting_coeff = run_config.waiting_coeff
+    if waiting_budget != -1:
+        waiting_coeff = utils.estimate_waiting_coeff(run_config.waiting_policy,
+                                                     run_config.waiting_budget,
+                                                     jobs)
+    policy_config = {
+        'waiting_policy': run_config.waiting_policy,
+        'waiting_coeff': waiting_coeff,
+        'queue_policy': run_config.queue_policy,
+        'loop': run_config.loop,
+        'min_waiting_time': run_config.min_waiting_time,
+    }
+    print(policy_config)
+
     scheduler_service = mp.Process(
-        target=driver.custom_start,
+        target=driver.launch_starburst_scheduler,
         args=(
             driver.GRPC_PORT,
-            run_config.sched_tick,
+            run_config.schedule_tick,
             clusters["onprem"],
             clusters["cloud"],
-            run_config.waiting_policy,
-            run_config.wait_time,
-            jobs,
-            sweep_name,
-            run_index,
-            run_config.policy,
+            run_config.spill_to_cloud,
+            policy_config,
+            (f'{LOG_DIRECTORY.format(name=sweep_name)}/events/'
+             f'{run_index}.log'),
         ),
     )
     scheduler_service.start()
@@ -154,8 +168,11 @@ def launch_run(run_config: dict, sweep_name: str, run_index: int = 0):
     job_submission_service.start()
 
     job_submission_service.join()
+
+    event_logger_service.terminate()
     event_logger_service.join()
     scheduler_service.terminate()
+    scheduler_service.join()
     logger.debug("Sweep complete.")
 
 
@@ -170,19 +187,20 @@ def sweep_pipeline(sweep_config: str):
     clear_prior_sweeps(retry_limit=3)
 
     # 2) Create Log directory for sweep
-    time = sweep_logger.create_log_directory()
+    cur_time = time.time()
+    log_directory_path = LOG_DIRECTORY.format(name=str(cur_time))
+    utils.create_log_directory(LOG_DIRECTORY.format(name=log_directory_path))
 
     # 3) Load sweep config and generate runs.
     sweep_dict = utils.load_yaml_file(sweep_config)
     runs_dict = generate_runs(sweep_dict)
-    utils.save_yaml_object(
-        runs_dict, f"{sweep_logger.LOG_DIRECTORY.format(name=time)}/"
-        "sweep.yaml")
+    utils.save_yaml_object(runs_dict, f"{log_directory_path}/"
+                           "sweep.yaml")
 
     # 4) Launch runs in sequence.
     for run_idx in runs_dict.keys():
         launch_run(run_config=runs_dict[run_idx],
-                   sweep_name=time,
+                   sweep_name=cur_time,
                    run_index=str(run_idx))
 
 

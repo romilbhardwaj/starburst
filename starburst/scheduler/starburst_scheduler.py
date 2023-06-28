@@ -3,146 +3,155 @@ Starburst scheduler.
 """
 import asyncio
 import logging
-import os
-import queue
 import time
-import json 
+import traceback
+from typing import Dict
 
 from starburst.policies import queue_policies
 from starburst.cluster_managers.kubernetes_manager import KubernetesManager
-from starburst.types.events import BaseEvent, EventTypes, SchedTick, JobAddEvent
+from starburst.types.events import BaseEvent, EventTypes, SchedTick, \
+    JobAddEvent
 
 logger = logging.getLogger(__name__)
 
+SCHED_TICK = 1
+
 
 class StarburstScheduler:
-	""" Starburst scheduler. """
+    """ Starburst scheduler.
+    
+    Description: Starburst scheduler is responsible for scheduling jobs on both
+    the on-prem and cloud clusters. It is also responsible for handling events,
+    such as job add events (JobAdd) and scheduling ticks (SchedulerTick).
+    """
 
-	def __init__(self,
-				 event_queue: asyncio.Queue,
-				 event_logger: object,
-				 onprem_cluster_name: str,
-				 cloud_cluster_name: str,
-				 queue_policy_str: str = "fifo_onprem_only",
-				 wait_time: int = 0,
-				 job_data: dict = {},
-				 timestamp: int = 0,
-				 run: int = 0,
-				 policy: str = 'fixed'):
-		"""
-		Main Starburst scheduler class. Responsible for processing events in the provided event queue.
-		:param event_queue: Main event queue
-		:param event_logger: Event logger used for debug and storing events in the system.
-		:param onprem_cluster_name: Name of the on-prem cluster (the name of the context in kubeconfig)
-		:param cloud_cluster_name: Name of the cloud cluster (the name of the context in kubeconfig)
-		"""
-		# Scheduler objects
-		self.event_queue = event_queue
-		self.event_logger = event_logger
-		self.onprem_cluster_name = onprem_cluster_name
-		self.cloud_cluster_name = cloud_cluster_name
-		self.job_queue = []
-		self.prev_sched_tick_call = None
-		self.prev_tick = 0
-		self.prev_event = None 
-		self.timestamp = timestamp
-		self.ticks = []
-		self.run = run
-		self.prev_loop_time = None
+    def __init__(
+        self,
+        event_queue: asyncio.Queue,
+        event_logger: object,
+        onprem_cluster_name: str,
+        cloud_cluster_name: str,
+        spill_to_cloud: str,
+        policy_config: Dict[str, str],
+        log_file: str = None,
+    ):
+        """
+        Main Starburst scheduler class.
+        
+        Responsible for processing events in the provided event queue.
 
-		# Create the cluster managers
-		self.onprem_cluster_manager = KubernetesManager(self.onprem_cluster_name)
-		self.cloud_cluster_manager = KubernetesManager(self.cloud_cluster_name)
+        Args:
+            event_queue (asyncio.Queue): Event queue for asynchronous
+                                         event processing.
+            event_logger (object): Event logger used for debug and
+                                   storing events in the system.
+            onprem_cluster_name (str): Name of the on-prem cluster (the name
+                                       of the context in kubeconfig).
+            cloud_cluster_name (str): Name of the cloud cluster (the name
+                                      of the context in kubeconfig).
+        """
+        # Scheduler objects
+        self.event_queue = event_queue
+        self.event_logger = event_logger
 
-		# Set up policy
-		logger.debug(f'all job data inputted {job_data}')
-		queue_policy_class = queue_policies.get_policy(queue_policy_str)
-		if queue_policy_str == "fifo_wait":
-			self.queue_policy = queue_policy_class(self.onprem_cluster_manager, self.cloud_cluster_manager, wait_threshold=wait_time, job_data=job_data, policy=policy, batch_repo=timestamp, index=run)
-		elif queue_policy_str == "time_estimator":
-			self.queue_policy = queue_policy_class(self.onprem_cluster_manager, self.cloud_cluster_manager, wait_threshold=wait_time, job_data=job_data)
-		else: 
-			self.queue_policy = queue_policy_class(self.onprem_cluster_manager, self.cloud_cluster_manager)
+        # Job queue
+        # TODO(mluo): Move to within Kubernetes instead.
+        self.job_queue = []
+        self.ticks = []
+        self.log_file = log_file
 
-		# Get asyncio loop
-		self.aioloop = asyncio.get_event_loop()
+        # if not self.debug:
+        #     logging.basicConfig(level=logging.INFO)
 
-	def process_event(self, event: BaseEvent):
-		'''
-		Sends an event to the appropriate processor.
-		:param event:
-		:return:
-		'''
-		# TODO: Timeout event for job 
-		if event.event_type == EventTypes.SCHED_TICK:
-			assert isinstance(event, SchedTick)
-			self.processor_sched_tick_event(event)
-		elif event.event_type == EventTypes.JOB_ADD:
-			assert isinstance(event, JobAddEvent)
-			self.processor_job_add_event(event)
-		else:
-			raise NotImplementedError(f"Event type {event.event_type} is not supported.")
+        # Create the cluster maangers for on-prem and cloud.
+        self.onprem_cluster_name = onprem_cluster_name
+        self.cloud_cluster_name = cloud_cluster_name
+        self.onprem_cluster_manager = KubernetesManager(
+            self.onprem_cluster_name)
+        self.cloud_cluster_manager = KubernetesManager(self.cloud_cluster_name)
+        self.spill_to_cloud = spill_to_cloud
+        self.policy_config = policy_config
+        # Set up policy
+        queue_policy_class = queue_policies.get_policy(self.policy_config)
+        if 'FifoOnpremOnlyPolicy' not in str(queue_policy_class):
+            self.queue_policy = queue_policy_class(
+                self.onprem_cluster_manager,
+                self.cloud_cluster_manager,
+                spill_to_cloud=self.spill_to_cloud,
+                policy_config=self.policy_config,
+                log_file=self.log_file)
+        else:
+            self.queue_policy = queue_policy_class(self.onprem_cluster_manager,
+                                                   self.cloud_cluster_manager)
 
-	def processor_sched_tick_event(self, event: SchedTick):
-		""" Scheduler tick event. Think of this as a periodic event.
+    def process_event(self, event: BaseEvent):
+        '''
+        Sends an event to the appropriate processor.
 
-		You can do a bunch of things here, such as updating local state and trying to submit jobs from the queue.
-		"""
-		# Log the event
-		self.event_logger.log_event(event)
-		# Process the queue
-		self.queue_policy.process_queue(self.job_queue)
+        Args:
+            event (BaseEvent): Event to process. Can be SchedulerTick
+                               or JobAddEvent.
+        '''
+        # TODO: Timeout event for job
+        if event.event_type == EventTypes.SCHED_TICK:
+            assert isinstance(event, SchedTick), "Event is not a SchedTick"
+            self.processor_sched_tick_event(event)
+        elif event.event_type == EventTypes.JOB_ADD:
+            assert isinstance(event, JobAddEvent), "Event is not a JobAddEvent"
+            self.processor_job_add_event(event)
+        else:
+            raise NotImplementedError(
+                f"Event type {event.event_type} is not supported.")
 
-	def processor_job_add_event(self, event: JobAddEvent):
-		""" Process an add job event. This is where you probably want to add job to your queue"""
-		_start_process_event_time = time.perf_counter()
-		event.job.job_event_queue_add_time = time.time()
-		self.job_queue.append(event.job)
-		_end_process_event_time = time.perf_counter()
-		# logger.debug("QUEUEADD TIME (()) " + str(_end_process_event_time - _start_process_event_time))
-		# logger.debug(f'***** Job Retrieved in Event Queue -- Job {event.job} at time {_end_process_event_time}')
-		# logger.debug(f'DIFF TIMES {time.time()} or {time.perf_counter()}')
+    def processor_sched_tick_event(self, event: SchedTick):
+        """
+        Scheduler tick event. This is the periodic event for the scheduler.
 
-	async def scheduler_loop(self, queue, conn):
-		"""Main loop"""
-		start_time = time.perf_counter()
-		counter = 0 
+        This is where the scheduler will process the queue and make
+        intelligent decisions.
+        """
+        self.event_logger.log_event(event)
+        # Process the queue
+        self.queue_policy.process_queue(self.job_queue)
 
-		#TODO: Ensure any two consequtive calls to SchedEventTick are limited by 
-		while True: 
-			_start_time = time.perf_counter()
-			_start_await_time = time.perf_counter()
-			event = None
-			try: 
-				# TODO: Added all events from event queue onto process queue within a tick
-				event = self.event_queue.get_nowait()
-				#event = await self.event_queue.get()
-			except Exception as e: 
-				pass
-			_end_await_time = time.perf_counter()
+    def processor_job_add_event(self, event: JobAddEvent):
+        """
+        Process an add job event. This is where the job is added to the
+        scheduler queue.
 
-			_start_process_queue_time = time.perf_counter()
-			job_queue_len = len(self.job_queue)
-			self.queue_policy.process_queue(self.job_queue)
-			_end_process_queue_time = time.perf_counter()
+        Args:
+            event (JobAddEvent): Job add event.
+        """
+        self.event_logger.log_event(event)
+        event.job.set_event_queue_add_time(time.time())
+        self.job_queue.append(event.job)
 
-			_start_process_event_time = time.perf_counter()
-			event_queue_len = self.event_queue.qsize
-			if event: 
-				self.process_event(event)
-			_end_process_event_time = time.perf_counter()
-			_end_time = time.perf_counter()
+    async def scheduler_loop(self, queue, conn):
+        """
+        Main scheduler loop.
+        
+        This is the main loop for the scheduler. It will process events
+        """
+        while True:
+            loop_start_time = time.perf_counter()
+            event = None
+            try:
+                if not self.event_queue.empty():
+                    event = self.event_queue.get_nowait()
+            except Exception as e:
+                logger.debug(f"Exception: {e}: {traceback.print_exc()}")
+                pass
 
-			# logger.debug("AWAIT TIME (()) " + str(_end_await_time - _start_await_time))
-			# logger.debug("PROCESSQUEUE TIME (()) " + str(_end_process_queue_time - _start_process_queue_time))
-			# logger.debug("JOB QUEUE SIZE " + str(job_queue_len))
-			# logger.debug("PROCESSEVENT TIME (()) " + str(_end_process_event_time - _start_process_event_time))
-			# logger.debug("EVENT QUEUE SIZE (()) " + str(event_queue_len))
-			delta = _end_time  - _start_time
-			if delta < 1:
-				await asyncio.sleep(1.0 -(_end_time - _start_time)) # -(_end_time - _start_time))
-			_interloop_end_time = time.perf_counter()
-			# logger.debug("INTERLOOP TIME (()) " + str(_interloop_end_time - _start_time))
-			# if self.prev_loop_time:
-			#     logger.debug("LOOP TIME (()) " + str(_interloop_end_time - self.prev_loop_time))#str(_end_time - _start_time))
-			self.prev_loop_time = _interloop_end_time
+            # Call scheduler every SCHED_TICK seconds
+            self.queue_policy.process_queue(self.job_queue)
+
+            if event:
+                self.process_event(event)
+            loop_end_time = time.perf_counter()
+
+            # This mimics a scheduler tick.
+            # TODO(mluo): Make the scheduler truly async.
+            # Add two async events; Scheduler tick and job timeouts
+            delta = loop_end_time - loop_start_time
+            if delta < SCHED_TICK:
+                await asyncio.sleep(SCHED_TICK - delta)

@@ -120,6 +120,7 @@ class CPUSleepJobGenerator(JobGenerator):
             "cpu": resources["cpu"],
             "gpu": resources["gpu"],
             "image": self.image,
+            "estimated_runtime": job["job_duration"],
         }
 
     @property
@@ -148,6 +149,7 @@ class GPUSleepJobGenerator(JobGenerator):
             "cpu": resources["cpu"],
             "gpu": resources["gpu"],
             "image": self.image,
+            "estimated_runtime": job["job_duration"],
         }
 
     @property
@@ -193,6 +195,7 @@ class GPUTrainJobGenerator(JobGenerator):
             "cpu": resources["cpu"],
             "gpu": resources["gpu"],
             "image": self.image,
+            "estimated_runtime": job["job_duration"],
         }
 
     @property
@@ -248,6 +251,7 @@ def generate_jobs(run_config: utils.RunConfig):
     while True:
         if total_submit_time >= rc.submit_time:
             break
+        # TODO(mluo): Remove spill to cloud from jog_gen.
         job = {
             "job_id": job_index,
             "workload_type": rc.workload_type,

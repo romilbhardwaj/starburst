@@ -4,6 +4,10 @@ metadata:
   name: job-{{job}}
   label: 
     track: sleep
+{% if estimated_runtime is not none %}
+  annotations:
+    estimated_runtime: {{ estimated_runtime }}
+{% endif %}
 spec:
   backoffLimit: 1  
   template: 

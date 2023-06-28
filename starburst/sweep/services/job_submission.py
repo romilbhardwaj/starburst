@@ -19,7 +19,8 @@ from typing import Any, Dict
 from kubernetes import client, config
 import yaml
 
-from starburst.sweep import sweep_logger, utils
+from starburst.sweep import utils, submit_sweep
+from starburst.utils import log_manager
 
 JOB_SUBMISSION_TICK = 0.05
 JOB_COMPLETION_TICK = 1
@@ -66,19 +67,19 @@ class JobStateTracker(object):
         it either polls the cloud cluster or parses the log file.
 
         Args:
-                onprem_cluster (Dict[str, Any]): On-prem cluster configuration.
-                cloud_cluster (Dict[str, Any]): Cloud cluster configuration.
+            onprem_cluster (Dict[str, Any]): On-prem cluster configuration.
+            cloud_cluster (Dict[str, Any]): Cloud cluster configuration.
         """
 
-        spill_to_cloud = cloud_cluster["spill_to_cloud"]
+        spill_to_cloud = cloud_cluster["spill_to_cloud"] == 'log'
         configs = [onprem_cluster, cloud_cluster]
         for idx, cluster_config in enumerate(configs):
-            if idx == 1 and not spill_to_cloud:
+            if idx == 1 and spill_to_cloud:
                 cloud_log_path = cloud_cluster["cloud_cluster_path"]
                 cloud_jobs = parse_spillover_jobs(file_path=cloud_log_path)
                 for job_idx in cloud_jobs:
                     self.finish_state[job_idx] = True
-                break
+                continue
             config.load_kube_config(context=cluster_config["name"])
             api = client.BatchV1Api()
             job_list, _, _ = api.list_namespaced_job_with_http_info(
@@ -116,7 +117,7 @@ def parse_spillover_jobs(file_path: str):
     log_jobs = []
     for log in cloud_log_list[1:-1]:
         # Regex to find the job id and the expected job duration.
-        match = re.search(r"Cloud Job \|\| job id (\S+) \| (\S+)", log)
+        match = re.search(r"Cloud Job \|\| job name job-(\S+) \| (\S+)", log)
         match = match.groups()
         if match:
             # Convert the job id to an int.
@@ -129,7 +130,7 @@ def get_job_submission_log_path(name: str):
     """
     Retrives the path to the job submission log file.
     """
-    path = (f"{sweep_logger.LOG_DIRECTORY.format(name=name)}"
+    path = (f"{submit_sweep.LOG_DIRECTORY.format(name=name)}"
             "/debug/job_submission_thread.log")
     return os.path.abspath(path)
 
@@ -138,7 +139,7 @@ def get_event_submission_log_path(name: str, idx: int):
     """
     Retrives the path to the event submission log file.
     """
-    path = (f"{sweep_logger.LOG_DIRECTORY.format(name=name)}"
+    path = (f"{submit_sweep.LOG_DIRECTORY.format(name=name)}"
             f"/events/{idx}.log")
     return os.path.abspath(path)
 
@@ -163,7 +164,7 @@ def submission_loop(
     clusters: Dict[str, str],
     sweep_name: str,
     run_index: int,
-    file_logger: sweep_logger.LogFileManager,
+    file_logger: log_manager.LogFileManager,
 ):
     """
     Logic for submitting jobs to the scheduler. Only returns when all jobs
@@ -195,7 +196,7 @@ def submission_loop(
             job_tracker.update_submit_idx(job_index, submit_time)
             job_tracker.update_submit_file_state(
                 job_index,
-                f"{sweep_logger.LOG_DIRECTORY.format(name=str(sweep_name))}"
+                f"{submit_sweep.LOG_DIRECTORY.format(name=str(sweep_name))}"
                 f"/jobs/{run_index}.yaml",
             )
             file_logger.append(f"Submitting Job {job_index}: {str(job)} "
@@ -225,7 +226,7 @@ def job_submission_service(jobs: Dict[Any, Any], clusters: Dict[str, str],
     Calls loop that submit jobs to the scheduler. 
     If an error occurs during the submission loop, the error is logged.
     """
-    submission_file_logger = sweep_logger.LogFileManager(
+    submission_file_logger = log_manager.LogFileManager(
         "job_submission_service", get_job_submission_log_path(sweep_name))
     try:
         submission_loop(

@@ -1,11 +1,12 @@
 import logging
 import math
 import os
-from typing import Dict, Tuple
+from typing import Any, Dict, Tuple
 
 from kubernetes import client, config
 import yaml
 
+from starburst.policies.waiting_policies import WaitingPolicyEnum
 from starburst.sweep import training_dataset
 
 logger = logging.getLogger(__name__)
@@ -128,3 +129,55 @@ def clear_clusters(clusters: Dict[str, str]):
                     done = False
             if done:
                 break
+
+
+def create_log_directory(log_path: SyntaxWarning) -> str:
+    """
+    Creates a log directory for the entire sweep.
+
+    Args:
+        name (str): Name of the log directory for the current sweep.
+    """
+    base_log_path = os.path.abspath(log_path)
+    os.makedirs(base_log_path, exist_ok=True)
+    # Generate sub log directories.
+    sub_logs = ["jobs/", "debug/", "events/"]
+    for s_log in sub_logs:
+        temp_path = f"{base_log_path}/{s_log}"
+        os.makedirs(temp_path, exist_ok=True)
+
+
+def estimate_waiting_coeff(waiting_policy: str, waiting_budget: float,
+                           jobs: Dict[Any, Any]):
+    """
+    Estimate the waiting coefficient based on the waiting policy, waiting
+    budget and generated job data.
+    """
+    total_jobs = len(jobs)
+    assert total_jobs > 0, "No jobs to schedule."
+    workload_type = jobs[0]['workload_type']
+
+    avg_job_duration = 0
+    avg_job_size = 0
+    for _, job in jobs.items():
+        avg_job_duration += job['job_duration']
+        resources = job['resources']
+        if workload_type == 'cpu_sleep':
+            avg_job_size += resources['cpu']
+        elif 'gpu' in workload_type:
+            avg_job_size += resources['gpu']
+    avg_job_duration /= float(total_jobs)
+    avg_job_size /= float(total_jobs)
+
+    if waiting_policy == WaitingPolicyEnum.INFINITE.value:
+        return -1
+    elif waiting_policy == WaitingPolicyEnum.CONSTANT.value:
+        return waiting_budget * avg_job_duration
+    elif waiting_policy == WaitingPolicyEnum.RUNTIME.value:
+        return waiting_budget
+    elif waiting_policy == WaitingPolicyEnum.RESOURCE.value:
+        return waiting_budget * avg_job_duration / avg_job_size
+    elif waiting_policy == WaitingPolicyEnum.COMPUTE.value:
+        return waiting_budget / avg_job_size
+    else:
+        raise ValueError(f"Invalid waiting policy: {waiting_policy}.")
