@@ -15,7 +15,7 @@ cpu_dist: [1]
 cpu_sizes: [1]
 image: gcr.io/sky-burst/skyburst:latest
 
-# Cluster Parameters
+# Policy Parameters
 cluster_size: 2
 sched_tick: 0.1
 spill_to_cloud: false

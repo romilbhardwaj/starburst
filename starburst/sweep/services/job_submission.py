@@ -139,7 +139,7 @@ def get_event_submission_log_path(name: str, idx: int):
     Retrives the path to the event submission log file.
     """
     path = (f"{sweep_logger.LOG_DIRECTORY.format(name=name)}"
-            "/events/{idx}.log")
+            f"/events/{idx}.log")
     return os.path.abspath(path)
 
 
@@ -156,30 +156,6 @@ def submit_job_to_scheduler(job_yaml: dict):
             "--job-yaml",
             temp_file_path,
         ])
-
-
-def job_submission_service(jobs: Dict[Any, Any], clusters: Dict[str, str],
-                           sweep_name: str, run_index: int):
-    """
-    Calls loop that submit jobs to the scheduler. 
-    If an error occurs during the submission loop, the error is logged.
-    """
-    submission_file_logger = sweep_logger.LogFileManager(
-        "job_submission_service", get_job_submission_log_path(sweep_name))
-    try:
-        submission_loop(
-            jobs=jobs,
-            clusters=clusters,
-            sweep_name=sweep_name,
-            run_index=run_index,
-            file_logger=submission_file_logger,
-        )
-    except Exception:
-        # If an error occrus during job submission loop, log the error
-        # and move onto the next run in the sweep.
-        submission_file_logger.append(traceback.format_exc() + "\n")
-        pass
-    submission_file_logger.close()
 
 
 def submission_loop(
@@ -241,3 +217,27 @@ def submission_loop(
         file_logger.append("Submitted Jobs State: " +
                            str(job_tracker.finish_state))
         time.sleep(JOB_COMPLETION_TICK)
+
+
+def job_submission_service(jobs: Dict[Any, Any], clusters: Dict[str, str],
+                           sweep_name: str, run_index: int):
+    """
+    Calls loop that submit jobs to the scheduler. 
+    If an error occurs during the submission loop, the error is logged.
+    """
+    submission_file_logger = sweep_logger.LogFileManager(
+        "job_submission_service", get_job_submission_log_path(sweep_name))
+    try:
+        submission_loop(
+            jobs=jobs,
+            clusters=clusters,
+            sweep_name=sweep_name,
+            run_index=run_index,
+            file_logger=submission_file_logger,
+        )
+    except Exception:
+        # If an error occrus during job submission loop, log the error
+        # and move onto the next run in the sweep.
+        submission_file_logger.append(traceback.format_exc() + "\n")
+        pass
+    submission_file_logger.close()

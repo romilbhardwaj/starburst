@@ -1,180 +1,65 @@
 import copy
-import logging
+from enum import Enum
 import os
-import re
 import time
+import traceback
+from typing import Any, Dict
 
 from kubernetes import client, config
 
 from starburst.sweep import sweep_logger, utils
 
 EVENT_DATA_TEMPLATE = {
-    'container_creation_times': {},
-    'container_start_times': {},
-    'image_pull_start_times': {},
-    'image_pull_end_times': {},
-    'scheduled_nodes': {},
-    'job_creation_times': {},
-    'job_completion_times': {},
     'job_pods': {},
     'node_instances': {},
-    'gpu_index': {},
-    'node_name': {}
+    'pod_logs': {},
+    'pod_node': {}
 }
 EVENT_LOG_FREQUENCY = 1
 
-logger = logging.getLogger(__name__)
+
+class PodStatus(Enum):
+    """
+    Kubernetes pod status states.
+    """
+    PENDING = "Pending"
+    RUNNING = "Running"
+    SUCCEEDED = "Succeeded"
+    FAILED = "Failed"
+    UNKNOWN = "Unknown"
 
 
-def write_cluster_event_data(batch_repo=None,
-                             cluster_event_data=None,
-                             tag=None,
-                             onprem_cluster="",
-                             cloud_cluster="",
-                             index=None):
-    '''
-	Store relevant event data in a dictionary to disk with periodic calls
-
-	Examples:
-	Type    Reason     Age   From               Message
-	----    ------     ----  ----               -------
-	Normal  Scheduled  52m   default-scheduler  Successfully assigned default/sleep-6-481852-sswbd to gke-starburst-default-pool-8bec73e3-81j8
-	Normal  Pulling    52m   kubelet            Pulling image "alpine:latest"
-	Normal  Pulled     52m   kubelet            Successfully pulled image "alpine:latest" in 118.522763ms
-	Normal  Created    52m   kubelet            Created container sleep
-	Normal  Started    52m   kubelet            Started container sleep
-	Normal  Completed  52m   kubelet            Job completed
-	'''
-
-    log_path = sweep_logger.LOG_DIRECTORY.format(name=batch_repo) + '/events/'
-    current_log_path = log_path + tag + ".yaml"
-
-    # TODO Verify if they will interfere
-    config.load_kube_config(context=onprem_cluster)
-    onprem_api = client.CoreV1Api()
-
-    config.load_kube_config(context=cloud_cluster)
-    cloud_api = client.CoreV1Api()
-
-    end = False
-    while True:
-        clusters = {"onprem": onprem_api, "cloud": cloud_api}
-        for type in clusters:
-            api = clusters[type]
-            if api is not None:
-                # TODO: Rate Limitted
-                events = api.list_event_for_all_namespaces()
-                event_data = cluster_event_data[type]
-                # TODO: Determine what to do with message data - item.message
-                instances = retrieve_node_instance(api)
-                event_data['node_instances'] = instances
-                # TODO: Integrate GPU INDEX logging
-                # TODO: gpu_index = api.read_namespaced_pod_log(name=pod_name, namespace="default")
-                try:
-                    pod_list = api.list_namespaced_pod(namespace="default")
-                    for gpu_pod in pod_list.items:
-                        gpu_pod_name = gpu_pod.metadata.name
-                        if "chakra" not in gpu_pod_name and "prepull" not in gpu_pod_name:
-                            gpu_index = api.read_namespaced_pod_log(
-                                name=gpu_pod_name, namespace="default")
-                            event_data['gpu_index'][gpu_pod_name] = gpu_index
-                            #pod = api.read_namespaced_pod(name=pod_name, namespace="default")
-                            # TODO: Verify node_name is parsed properly
-                            event_data['node_name'][
-                                gpu_pod_name] = gpu_pod.spec.node_name
-
-                except Exception as e:
-                    logger.debug("POD LOG ERROR CAUGHT: " + str(e))
-                for item in events.items:
-                    event_reason = item.reason
-                    #logger.debug("Event reason: ~~~ --- !!! " + str(event_reason))
-                    if event_reason == 'Pulling':
-                        involved_object = item.involved_object
-                        if involved_object.kind == 'Pod':
-                            pod_name = involved_object.name
-                            pull_start_time = item.first_timestamp
-                            event_data['image_pull_start_times'][
-                                pod_name] = int(pull_start_time.timestamp())
-                    elif event_reason == 'Pulled':
-                        involved_object = item.involved_object
-                        if involved_object.kind == 'Pod':
-                            pod_name = involved_object.name
-                            pull_end_time = item.first_timestamp
-                            event_data['image_pull_end_times'][pod_name] = int(
-                                pull_end_time.timestamp())
-                    elif event_reason == 'Created':
-                        involved_object = item.involved_object
-                        if involved_object.kind == 'Pod':
-                            pod_name = involved_object.name
-                            container_creation_time = item.first_timestamp
-                            event_data['container_creation_times'][
-                                pod_name] = int(
-                                    container_creation_time.timestamp())
-                    elif event_reason == 'Started':
-                        #TODO: Determine pod termination and deletion metrics
-                        #logger.debug("Event pod started: ~~~ --- !!! " + str(item))
-                        involved_object = item.involved_object
-                        if involved_object.kind == 'Pod':
-                            pod_name = involved_object.name
-                            container_start_time = item.first_timestamp
-                            event_data['container_start_times'][
-                                pod_name] = int(
-                                    container_start_time.timestamp())
-                    elif event_reason == 'Scheduled':
-                        involved_object = item.involved_object
-                        if involved_object.kind == 'Pod':
-                            pod_name = involved_object.name
-                            message = item.message
-                            event_data['scheduled_nodes'][pod_name] = message
-                    elif event_reason == 'SuccessfulCreate':
-                        #TODO: Determine difference between job metrics and pod metrics
-                        involved_object = item.involved_object
-                        if involved_object.kind == 'Job':
-                            job_name = involved_object.name
-                            message = item.message
-                            match = re.search(
-                                    r"Created pod: (\S+)", message
-                            )  # e.g. "Created pod: sleep-2-476460-zzz6h"
-                            if match:
-                                pod_name = match.group(1)
-                                event_data['job_pods'][job_name] = pod_name
-                            job_creation_time = item.first_timestamp
-                            event_data['job_creation_times'][job_name] = int(
-                                job_creation_time.timestamp()
-                            )  #[pod_name] = int(job_creation_time.timestamp())
-                    elif event_reason == 'Completed':
-                        #https://komodor.com/learn/exit-codes-in-containers-and-kubernetes-the-complete-guide/
-                        #TODO: Determine difference between job metrics and pod metrics
-                        involved_object = item.involved_object
-                        if involved_object.kind == 'Job':
-                            job_name = involved_object.name
-                            job_completion_time = item.first_timestamp
-                            event_data['job_completion_times'][job_name] = int(
-                                job_completion_time.timestamp())
-                            logger.debug(
-                                f'Logged Job Completion Time for job {job_name} at time {job_completion_time}'
-                            )
-        # TODO: Save job hyperparameters directly into job events metadata
-        utils.save_yaml_object(cluster_event_data, current_log_path)
-        time.sleep(EVENT_LOG_FREQUENCY)
-
-        p1_log = sweep_logger.LOG_DIRECTORY.format(
-            name=batch_repo) + '/debug/' + 'event_logger.log'
-        with open(p1_log, "a") as f:
-            f.write("retrieved event p1 " + str(index) + '\n')
-
-        if end:
-            with open(p1_log, "a") as f:
-                f.write("reached end of p1 " + str(index) + '\n')
-            return 0
-
-        signal_file = "../sweep_logs/" + batch_repo + '/signal.lock'
-        if os.path.exists(signal_file):
-            # TODO: Loop one last time
-            end = True
+def check_if_pod_logs_exist(status: str):
+    """
+    Checks if the pod logs exist for the given status.
+    """
+    return status in [
+        PodStatus.RUNNING.value, PodStatus.SUCCEEDED.value,
+        PodStatus.FAILED.value
+    ]
 
 
-def retrieve_node_instance(api):
+def get_event_logger_log_path(name: str):
+    """
+    Retrieves the path to the job submission log file.
+    """
+    path = (f"{sweep_logger.LOG_DIRECTORY.format(name=name)}"
+            "/debug/event_logger.log")
+    return os.path.abspath(path)
+
+
+def get_pod_events_path(name: str, idx: int):
+    """
+    Retrives the path to YAML file that stores pod/job events.
+    """
+    log_path = sweep_logger.LOG_DIRECTORY.format(name=name) + '/events/'
+    return f"{log_path}{idx}.yaml"
+
+
+def retrieve_node_instance(api: client.CoreV1Api) -> Dict[str, str]:
+    """
+    Retrieves the instance type for each node in the cluster.
+    """
     node_list = api.list_node().items
     instance_types = {}
     for node_data in node_list:
@@ -186,18 +71,121 @@ def retrieve_node_instance(api):
     return instance_types
 
 
-def logger_service(tag=None,
-                   batch_repo=None,
-                   onprem_cluster="",
-                   cloud_cluster="",
-                   index=None):
+def event_logger_loop(clusters: Dict[str, str], jobs: Dict[Any, Any],
+                      sweep_name: str, run_index: int,
+                      file_logger: sweep_logger.LogFileManager):
+    """
+    Loop for logging events from the cluster.
+
+    Args:
+        clusters (Dict[str, str]): Dictionary of cluster types and their names.
+        jobs (Dict[Any, Any]): Dictionary of job ids and their job data.
+        sweep_name (str): Name of the sweep.
+        run_index (int): Index of the run.
+        file_logger (sweep_logger.LogFileManager): File logger for logging
+                                                   events.
+    """
+
     cluster_event_data = {
         'onprem': copy.deepcopy(EVENT_DATA_TEMPLATE),
-        'cloud': copy.deepcopy(EVENT_DATA_TEMPLATE)
+        'cloud': copy.deepcopy(EVENT_DATA_TEMPLATE),
     }
-    write_cluster_event_data(batch_repo=batch_repo,
-                             cluster_event_data=cluster_event_data,
-                             tag=tag,
-                             onprem_cluster=onprem_cluster,
-                             cloud_cluster=cloud_cluster,
-                             index=index)
+    events_log_path = get_pod_events_path(sweep_name, run_index)
+    apis = {}
+
+    # Preprocessing cluster event data.
+    for cluster_type, cluster in clusters.items():
+        config.load_kube_config(context=cluster)
+        apis[cluster_type] = client.CoreV1Api()
+        event_data = cluster_event_data[cluster_type]
+        event_data['node_instances'] = retrieve_node_instance(
+            apis[cluster_type])
+
+    total_jobs = len(jobs)
+    scheduled_pods = set()
+    finished_jobs = set()
+    while True:
+        for cluster_type, api in apis.items():
+            config.load_kube_config(context=cluster)
+            # Get all events
+            events = api.list_event_for_all_namespaces()
+            # Get all pods
+            pod_list = api.list_namespaced_pod(namespace="default")
+
+            event_data = cluster_event_data[cluster_type]
+            for pod in pod_list.items:
+                pod_name = pod.metadata.name
+                if 'job' not in pod_name:
+                    continue
+                pod_status = pod.status.phase
+                if pod_name not in scheduled_pods:
+                    event_data['pod_node'][pod_name] = pod.spec.node_name
+                    scheduled_pods.add(pod_name)
+
+                if check_if_pod_logs_exist(pod_status):
+                    pod_logs = api.read_namespaced_pod_log(name=pod_name,
+                                                           namespace="default",
+                                                           previous=False)
+                    event_data['pod_logs'][pod_name] = pod_logs
+
+            # Parsing Events
+            for item in events.items:
+                involved_object = item.involved_object
+                event_reason = item.reason
+                name = involved_object.name
+                # Filter out pods that are not related to the sweep of jobs.
+                if 'job' not in name or name in finished_jobs:
+                    continue
+                event_key = None
+                if involved_object.kind == 'Pod':
+                    file_logger.append(f'Pod {name} - {event_reason}')
+                    event_key = f'pod_{event_reason}'
+                    event_value = int(item.first_timestamp.timestamp())
+                elif involved_object.kind == 'Job':
+                    file_logger.append(f'Job {name} - {event_reason}')
+                    event_key = f'Job_{event_reason}'
+                    event_value = int(item.first_timestamp.timestamp())
+                    # Special handling when job completes.
+                    if event_reason == 'Completed':
+                        pods = api.list_namespaced_pod(
+                            namespace='default',
+                            label_selector=f"job-name={name}").items
+                        event_data['job_pods'][name] = [
+                            pod.metadata.name for pod in pods
+                        ]
+                        finished_jobs.add(name)
+                if event_key is not None:
+                    event_key = event_key.lower()
+                    if event_key not in event_data:
+                        event_data[event_key] = {}
+                    event_data[event_key][name] = event_value
+
+        utils.save_yaml_object(cluster_event_data, events_log_path)
+        time.sleep(EVENT_LOG_FREQUENCY)
+        file_logger.append(f"==========Event Logging Loop; Run: {run_index}, "
+                           f"Time {time.time()}==========")
+
+        if len(finished_jobs) == total_jobs:
+            file_logger.append(f"Finished logging for Run: {run_index}")
+            break
+
+
+def logger_service(clusters: Dict[str, str], jobs: Dict[Any, Any],
+                   sweep_name: str, run_index: int):
+    """
+    Service that logs events and pod logs for the sweep.
+    """
+    event_loop_logger = sweep_logger.LogFileManager(
+        "event_logger_service", get_event_logger_log_path(sweep_name))
+    try:
+        event_logger_loop(clusters=clusters,
+                          jobs=jobs,
+                          sweep_name=sweep_name,
+                          run_index=run_index,
+                          file_logger=event_loop_logger)
+    except Exception:
+        # If an error occrus during job submission loop, log the error
+        # and move onto the next run in the sweep.
+        event_loop_logger.append(traceback.format_exc() + "\n")
+        pass
+    event_loop_logger.close()
