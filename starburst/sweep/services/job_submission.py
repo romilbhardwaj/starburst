@@ -20,7 +20,7 @@ from kubernetes import client, config
 import yaml
 
 from starburst.sweep import utils, submit_sweep
-from starburst.utils import log_manager
+from starburst.utils import LogManager
 
 JOB_SUBMISSION_TICK = 0.05
 JOB_COMPLETION_TICK = 1
@@ -164,7 +164,7 @@ def submission_loop(
     clusters: Dict[str, str],
     sweep_name: str,
     run_index: int,
-    file_logger: log_manager.LogFileManager,
+    file_logger: LogManager,
 ):
     """
     Logic for submitting jobs to the scheduler. Only returns when all jobs
@@ -226,7 +226,7 @@ def job_submission_service(jobs: Dict[Any, Any], clusters: Dict[str, str],
     Calls loop that submit jobs to the scheduler. 
     If an error occurs during the submission loop, the error is logged.
     """
-    submission_file_logger = log_manager.LogFileManager(
+    submission_file_logger = LogManager(
         "job_submission_service", get_job_submission_log_path(sweep_name))
     try:
         submission_loop(

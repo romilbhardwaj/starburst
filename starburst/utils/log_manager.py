@@ -2,9 +2,9 @@ import collections
 import logging
 
 
-class LogFileManager(object):
+class LogManager(object):
     """
-    LogFileManager is a class that manages logging to a log file.
+    LogManager is a class that manages logging to a log file.
     """
 
     def __init__(self, log_name: str, log_file_path: str):
@@ -14,8 +14,7 @@ class LogFileManager(object):
         self.logger.handlers = []
         self.file_handler = logging.FileHandler(log_file_path)
         self.file_handler.setLevel(logging.DEBUG)
-        self.formatter = logging.Formatter("%(asctime)s - %(levelname)s "
-                                           "- %(message)s")
+        self.formatter = logging.Formatter("%(message)s")
         self.file_handler.setFormatter(self.formatter)
         self.logger.addHandler(self.file_handler)
         # Prevent the logger from propagating to the root logger.

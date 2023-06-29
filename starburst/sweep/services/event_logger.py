@@ -8,7 +8,7 @@ from typing import Any, Dict
 from kubernetes import client, config
 
 from starburst.sweep import utils, submit_sweep
-from starburst.utils import log_manager
+from starburst.utils import LogManager
 
 EVENT_DATA_TEMPLATE = {
     'job_pods': {},
@@ -74,7 +74,7 @@ def retrieve_node_instance(api: client.CoreV1Api) -> Dict[str, str]:
 
 def event_logger_loop(clusters: Dict[str, str], jobs: Dict[Any, Any],
                       sweep_name: str, run_index: int,
-                      file_logger: log_manager.LogFileManager):
+                      file_logger: LogManager):
     """
     Loop for logging events from the cluster.
 
@@ -83,7 +83,7 @@ def event_logger_loop(clusters: Dict[str, str], jobs: Dict[Any, Any],
         jobs (Dict[Any, Any]): Dictionary of job ids and their job data.
         sweep_name (str): Name of the sweep.
         run_index (int): Index of the run.
-        file_logger (log_manager.LogFileManager): File logger for logging
+        file_logger (LogFileManager): File logger for logging
                                                    events.
     """
 
@@ -176,8 +176,8 @@ def logger_service(clusters: Dict[str, str], jobs: Dict[Any, Any],
     """
     Service that logs events and pod logs for the sweep.
     """
-    event_loop_logger = log_manager.LogFileManager(
-        "event_logger_service", get_event_logger_log_path(sweep_name))
+    event_loop_logger = LogManager("event_logger_service",
+                                   get_event_logger_log_path(sweep_name))
     try:
         event_logger_loop(clusters=clusters,
                           jobs=jobs,

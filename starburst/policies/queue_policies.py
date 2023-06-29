@@ -8,7 +8,7 @@ import time
 from typing import Dict, List
 
 from starburst.cluster_managers.manager import Manager
-from starburst.cluster_managers.log_manager import LogManager
+from starburst.cluster_managers.log_manager import LogClusterManager
 from starburst.policies import waiting_policies
 from starburst.types.job import Job
 
@@ -97,8 +97,8 @@ class FIFOWaitPolicy(BasePolicy):
         with open(self.spilled_jobs_path, "a") as f:
             f.write("Scheduler spun up! \n")
         if spill_to_cloud == 'log':
-            self.cloud_manager = LogManager(cloud_manager.cluster_name,
-                                            self.spilled_jobs_path)
+            self.cloud_manager = LogClusterManager(cloud_manager.cluster_name,
+                                                   self.spilled_jobs_path)
 
     def process_queue(self, job_queue: List[Job]):
 
