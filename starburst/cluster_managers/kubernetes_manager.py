@@ -1,19 +1,36 @@
 import logging
 import re
-import time
-from typing import Dict, Optional
-import time
-import yaml
+from typing import Dict
+
 from kubernetes import client, config
 from kubernetes.client import models
+import yaml
 
+from starburst.cluster_managers.manager import Manager
 from starburst.types.job import Job
 
 client.rest.logger.setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 
-class KubernetesManager(object):
+def parse_resource_cpu(resource_str):
+    """ Parse CPU string to cpu count. """
+    unit_map = {'m': 1e-3, 'K': 1e3}
+    value = re.search(r'\d+', resource_str).group()
+    unit = resource_str[len(value):]
+    return float(value) * unit_map.get(unit, 1)
+
+
+def parse_resource_memory(resource_str):
+    """ Parse resource string to megabytes. """
+    unit_map = {'Ki': 2**10, 'Mi': 2**20, 'Gi': 2**30, 'Ti': 2**40}
+    value = re.search(r'\d+', resource_str).group()
+    unit = resource_str[len(value):]
+    return float(value) * unit_map.get(unit, 1) / (2**20
+                                                   )  # Convert to megabytes
+
+
+class KubernetesManager(Manager):
     """ Kubernetes manager.
 
     Provides helper methods to:
@@ -22,260 +39,122 @@ class KubernetesManager(object):
     3. Get cluster resources
     """
 
-    def __init__(self, kube_context=None):
+    def __init__(self, cluster_name: str, namespace: str = 'default'):
+        super().__init__(cluster_name)
+        self.namespace = namespace
         # Load kubernetes config for the given context
-        config.load_kube_config(context=kube_context)
+        config.load_kube_config(context=self.cluster_name)
         # Create kubernetes client
         self.core_v1 = client.CoreV1Api()
         self.batch_v1 = client.BatchV1Api()
 
-    def get_total_cluster_resources(self):
-        """ Get cluster resources. """
-        nodes = self.core_v1.list_node()
-        total_res = {
-            "cpu": 0,
-            "memory": 0,
-            "gpu": 0,
-        }
-        for node in nodes.items:
-            total_res["cpu"] += int(node.status.capacity["cpu"])
-            total_res["memory"] += int(node.status.capacity["memory"][:-2])
-            total_res["gpu"] += int(
-                node.status.capacity.get("nvidia.com/gpu", 0))
-        return total_res
-
-    def get_total_cluster_resource_usage(self):
-        """ Get cluster resources usage """
-        nodes = self.core_v1.list_node()
-        total_res = {
-            "cpu": 0,
-            "memory": 0,
-            "gpu": 0,
-        }
-        for node in nodes.items:
-            total_res["cpu"] += int(node.status.allocatable["cpu"])
-            total_res["memory"] += int(node.status.allocatable["memory"][:-2])
-            total_res["gpu"] += int(
-                node.status.allocatable.get("nvidia.com/gpu", 0))
-        return total_res
-
-    @staticmethod
-    def parse_resource_cpu(resource_str):
-        """ Parse CPU string to cpu count. """
-        unit_map = {'m': 1e-3, 'K': 1e3}
-        value = re.search(r'\d+', resource_str).group()
-        unit = resource_str[len(value):]
-        return float(value) * unit_map.get(unit, 1)
-
-    @staticmethod
-    def parse_resource_memory(resource_str):
-        """ Parse resource string to megabytes. """
-        unit_map = {'Ki': 2**10, 'Mi': 2**20, 'Gi': 2**30, 'Ti': 2**40}
-        value = re.search(r'\d+', resource_str).group()
-        unit = resource_str[len(value):]
-        return float(value) * unit_map.get(unit, 1) / (
-            2**20)  # Convert to megabytes
+        # Keep track of previous job.
+        self.previous_job = None
+        self.previous_job_status = None
 
     def get_cluster_resources(self):
-        start_time = time.perf_counter()
-        curr_time = time.perf_counter()
-        logger.debug("Started get_cluster_resources(): ~~~ --- " +
-                     str(curr_time - start_time))
-        # Load the kubeconfig
-        config.load_kube_config()
-
-        # Create an API client
-        api_instance = client.CoreV1Api()
-
-        # Initialize total resources
-        total_cpu = 0
-        total_memory = 0
-
-        # Set pagination parameters
-        limit = None  # 50
-        continue_token = ""
-
-        while True:
-            # Get a batch of nodes
-            nodes, _, _ = api_instance.list_node_with_http_info(
-                limit=limit, _continue=continue_token)
-
-            # Loop through each node and sum their resources
-            for node in nodes.items:
-                cpu_capacity = int(node.status.capacity['cpu'])
-                memory_capacity = int(
-                    node.status.capacity['memory'].rstrip('Ki'))
-
-                total_cpu += cpu_capacity
-                total_memory += memory_capacity
-
-            # Check if there are more nodes to fetch
-            if nodes.metadata._continue:
-                continue_token = nodes.metadata._continue
-            else:
-                break
-
-        curr_time = time.perf_counter()
-        logger.debug("Completed get_cluster_resources(): ~~~ --- " +
-                     str(curr_time - start_time))
-        logger.debug(str(total_cpu))
-        logger.debug(str(total_memory))
-        return total_cpu, total_memory
-
-    ## Get cluster resources
-    #total_cpu, total_memory = get_cluster_resources()
-
-    #print(f"Total CPU: {total_cpu} cores")
-    #print(f"Total Memory: {total_memory / 1024**2:.2f} GiB")
-    def stream_state():
-        # TODO: Implement asynchronous function that updates cluster state with each schedule event
-        return
-
-    def get_state():
-        # TODO: Retrieves data from dictionary that finds state
-        return
-
-    def get_allocatable_resources_per_node(self) -> Dict[str, Dict[str, int]]:
-        """ Get allocatable resources per node. """
-        # Get the nodes and running pods
-        start_time = time.perf_counter()
-        curr_time = time.perf_counter()
-
-        logger.debug("Started get_allocatable_resources_per_node(): ~~~ --- " +
-                     str(curr_time - start_time))
-
-        api_instance = self.core_v1
-        limit = None  #50
-        continue_token = ""
-        nodes, _, _ = api_instance.list_node_with_http_info(
-            limit=limit, _continue=continue_token)
-        pods, _, _ = api_instance.list_pod_for_all_namespaces_with_http_info(
-            limit=limit, _continue=continue_token)  #watch=False)
-
-        nodes = nodes.items
-        pods = pods.items
-
-        curr_time = time.perf_counter()
-        logger.debug(
-            "Completed get_allocatable_resources_per_node(): ~~~ --- " +
-            str(curr_time - start_time))
-
-        # Initialize a dictionary to store available resources per node
-        available_resources = {}
-        running_pods = set()  #{}
-
-        for node in nodes:
-            name = node.metadata.name
-            total_cpu = self.parse_resource_cpu(node.status.allocatable['cpu'])
-            total_memory = self.parse_resource_memory(
-                node.status.allocatable['memory'])
-            total_gpu = int(node.status.allocatable.get('nvidia.com/gpu', 0))
-
-            used_cpu = 0
-            used_memory = 0
-            used_gpu = 0
-
-            for pod in pods:
-                #logger.debug("Pod resource information: ~~~ --- " + str(pod))
-                if pod.spec.node_name == name and pod.status.phase in [
-                        'Running', 'Pending'
-                ] and pod.metadata.namespace == 'default':
-                    running_pods.add(pod.metadata.name)
-                    for container in pod.spec.containers:
-                        if container.resources.requests:
-                            used_cpu += self.parse_resource_cpu(
-                                container.resources.requests.get('cpu', '0m'))
-                            used_memory += self.parse_resource_memory(
-                                container.resources.requests.get(
-                                    'memory', '0Mi'))
-                            used_gpu += int(
-                                container.resources.requests.get(
-                                    'nvidia.com/gpu', 0))
-                            '''
-                            used_resources = {
-                                "cpu": used_cpu,
-                                "memory": used_memory,
-                                "gpu": used_gpu
-                            }
-                            logger.debug("Used resources form can_fit(): ~~~ --- " + str(used_resources))
-                            '''
-
-            used_resources = {
-                "cpu": used_cpu,
-                "memory": used_memory,
-                "gpu": used_gpu
-            }
-            logger.debug("Used resources form can_fit(): ~~~ --- " +
-                         str(used_resources))
-            #time.sleep(1000000000)
-            available_cpu = total_cpu - used_cpu
-            available_memory = total_memory - used_memory
-            available_gpu = total_gpu - used_gpu
-
-            available_resources[name] = {
-                'cpu': available_cpu,
-                'memory': available_memory,  # MB
-                'gpu': available_gpu
-            }
-
-        logger.debug("Available resources from can_fit(): ~~~ --- " +
-                     str(available_resources))
-
-        return available_resources, running_pods
-
-    def job_running(self, job_name=None, namespace=None):
-
-        def find_job_with_substring(jobs, substring):
-            for job in jobs:
-                if substring in job.metadata.name:
-                    return job.metadata.name
-            return None
-
+        """ Gets total cluster resources for each node."""
         limit = None
         continue_token = ""
-        job_list, _, _ = self.batch_v1.list_namespaced_job_with_http_info(
-            namespace="default", limit=limit, _continue=continue_token)
-        real_job_name = find_job_with_substring(job_list.items, job_name)
-        logger.debug("FINDING JOB " + str(job_name) + " Found: " +
-                     str(real_job_name))
-        if real_job_name:
-            job = self.batch_v1.read_namespaced_job_status_with_http_info(
-                name=real_job_name, namespace="default")
-            logger.debug("NEW JOB STATUS " + str(job[0].status) +
-                         " JOB NAME " + str(job_name) + " Found: " +
-                         str(real_job_name))
-            return job[0].status.active
-        else:
-            return 0
+        nodes, _, _ = self.core_v1.list_node_with_http_info(
+            limit=limit, _continue=continue_token)
+        nodes = nodes.items
 
-    def can_fit(self, job: Job) -> Optional[str]:
-        """ Check if a job can fit in the cluster. """
-        start_time = time.perf_counter()
-        curr_time = time.perf_counter()
-        logger.debug("Started can_fit(): ~~~ --- " +
-                     str(curr_time - start_time))
+        # Initialize a dictionary to store available resources per node
+        cluster_resources = {}
+        for node in nodes:
+            name = node.metadata.name
+            node_cpu = parse_resource_cpu(node.status.capacity['cpu'])
+            node_memory = parse_resource_memory(node.status.capacity['memory'])
+            node_gpu = int(node.status.capacity.get('nvidia.com/gpu', 0))
+            cluster_resources[name] = {
+                'cpu': node_cpu,
+                'memory': node_memory,  # MB
+                'gpu': node_gpu
+            }
+        return cluster_resources
+
+    def get_allocatable_resources(self) -> Dict[str, Dict[str, int]]:
+        """ Get allocatable resources per node. """
+        # Get the nodes and running pods
+        limit = None
+        continue_token = ""
+        nodes, _, _ = self.core_v1.list_node_with_http_info(
+            limit=limit, _continue=continue_token)
+        nodes = nodes.items
+
+        available_resources = {}
+        for node in nodes:
+            node_name = node.metadata.name
+            node_cpu = parse_resource_cpu(node.status.allocatable['cpu'])
+            node_memory = parse_resource_memory(
+                node.status.allocatable['memory'])
+            node_gpu = int(node.status.allocatable.get('nvidia.com/gpu', 0))
+            available_resources[node_name] = {
+                'cpu': node_cpu,
+                'memory': node_memory,
+                'gpu': node_gpu
+            }
+        pods, _, _ = self.core_v1.list_pod_for_all_namespaces_with_http_info(
+            limit=limit, _continue=continue_token)
+        pods = pods.items
+
+        for pod in pods:
+            if pod.status.phase in [
+                    'Running', 'Pending'
+            ] and pod.metadata.namespace == self.namespace:
+                node_name = pod.spec.node_name
+                if node_name is None:
+                    continue
+                assert node_name in available_resources, (
+                    f"Node {node_name} "
+                    "not found in cluster resources.")
+                for container in pod.spec.containers:
+                    if container.resources.requests:
+                        available_resources[node_name][
+                            'cpu'] -= parse_resource_cpu(
+                                container.resources.requests.get('cpu', '0m'))
+                        available_resources[node_name][
+                            'memory'] -= parse_resource_memory(
+                                container.resources.requests.get(
+                                    'memory', '0Mi'))
+                        available_resources[node_name]['gpu'] -= int(
+                            container.resources.requests.get(
+                                'nvidia.com/gpu', 0))
+        return available_resources
+
+    def can_fit(self, job: Job) -> bool:
+        """
+        Check if a job can fit in the cluster.
+
+        Args:
+            job: Job object containing the YAML file.
+        """
+        if self.previous_job:
+            self.previous_job_status = self._get_job_status(
+                self.previous_job.name)
+            if self.previous_job_status.active != 1:
+                return False
+
         job_resources = job.resources
-        cluster_resources, _ = self.get_allocatable_resources_per_node()
+        available_cluster_resources = self.get_allocatable_resources()
 
-        for node_name, node_resources in cluster_resources.items():
+        # Multinode jobs not supported.
+        for _, node_resources in available_cluster_resources.items():
             if node_resources["cpu"] >= job_resources.get("cpu", 0) and \
               node_resources["memory"] >= job_resources.get("memory", 0) and \
               node_resources["gpu"] >= job_resources.get("gpu", 0):
-                curr_time = time.perf_counter()
-                logger.debug("Completed can_fit(): ~~~ --- " +
-                             str(curr_time - start_time))
-                return node_name
-        curr_time = time.perf_counter()
-        logger.debug("Completed can_fit(): ~~~ --- " +
-                     str(curr_time - start_time))
-        return None
+                return True
+        return False
 
     def submit_job(self, job: Job):
-        """ Submit a YAML which contains the Kubernetes Job declaration using the batch api """
-        start_time = time.perf_counter()
-        curr_time = time.perf_counter()
-        logger.debug("Started submit_job(): ~~~ --- " +
-                     str(curr_time - start_time))
+        """
+        Submit a YAML which contains the Kubernetes Job declaration using the
+        batch api.
+
+        Args:
+            job: Job object containing the YAML file.
+        """
         # Parse the YAML file into a dictionary
         job_dict = yaml.safe_load(job.job_yaml)
         # Create a Kubernetes job object from the dictionary
@@ -284,13 +163,12 @@ class KubernetesManager(object):
         k8s_job.metadata = models.V1ObjectMeta(
             name=str(job_dict['metadata']['name']))
         k8s_job.spec = models.V1JobSpec(template=job_dict['spec']['template'])
-        self.batch_v1.create_namespaced_job(namespace="default", body=k8s_job)
-        curr_time = time.perf_counter()
-        logger.debug("Completed submit_job(): ~~~ --- " +
-                     str(curr_time - start_time))
+        self.batch_v1.create_namespaced_job(namespace=self.namespace,
+                                            body=k8s_job)
+        self.previous_job = job
 
-    def get_job_status(self, job_name):
+    def _get_job_status(self, job_name):
         """ Get job status. """
-        job = self.batch_v1.read_namespaced_job_status(job_name,
-                                                       namespace="default")
+        job = self.batch_v1.read_namespaced_job(job_name,
+                                                namespace=self.namespace)
         return job.status

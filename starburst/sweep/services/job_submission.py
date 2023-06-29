@@ -215,7 +215,7 @@ def submission_loop(
         if job_tracker.check_if_jobs_finished():
             break
         job_tracker.update_finished_jobs(onprem_cluster, cloud_cluster)
-        file_logger.append("Submitted Jobs State: " +
+        file_logger.append("Finished Jobs State: " +
                            str(job_tracker.finish_state))
         time.sleep(JOB_COMPLETION_TICK)
 

@@ -7,7 +7,8 @@ import logging
 import time
 from typing import Dict, List
 
-from starburst.cluster_managers.kubernetes_manager import KubernetesManager
+from starburst.cluster_managers.manager import Manager
+from starburst.cluster_managers.log_manager import LogManager
 from starburst.policies import waiting_policies
 from starburst.types.job import Job
 
@@ -32,8 +33,7 @@ def get_policy(policy_config: Dict[str, str]):
 
 class BasePolicy(object):
 
-    def __init__(self, onprem_manager: KubernetesManager,
-                 cloud_manager: KubernetesManager):
+    def __init__(self, onprem_manager: Manager, cloud_manager: Manager):
         self.onprem_manager = onprem_manager
         self.cloud_manager = cloud_manager
 
@@ -41,7 +41,8 @@ class BasePolicy(object):
         raise NotImplementedError("Policy must implement process method.")
 
 
-# Similar to YARN CapacityScheduler. Jobs wait in queue until the onprem cluster can fit the job.
+# Similar to YARN CapacityScheduler. Jobs wait in queue until the onprem
+# cluster can fit the job.
 class FIFOOnpremOnlyPolicy(BasePolicy):
     """
     Implements FIFO submission to only onprem. Jobs wait indefinitely
@@ -63,22 +64,25 @@ class FIFOOnpremOnlyPolicy(BasePolicy):
 
 
 class FIFOWaitPolicy(BasePolicy):
-    """ Implements FIFO submission to only onprem. If job has been waiting longer than a threshold, submit to cloud. """
+    """
+    Implements FIFO submission to only onprem.
+    
+    If job has been waiting longer than a threshold, submit to cloud. """
 
     def __init__(
         self,
-        onprem_manager: KubernetesManager,
-        cloud_manager: KubernetesManager,
+        onprem_manager: Manager,
+        cloud_manager: Manager,
         spill_to_cloud: str = 'cluster',
         policy_config: Dict[str, str] = POLICY_CONFIG_TEMPLATE,
         log_file: str = None,
     ):
         super().__init__(onprem_manager, cloud_manager)
         self.spill_to_cloud = spill_to_cloud
+
         copy_dict = dict(POLICY_CONFIG_TEMPLATE)
         copy_dict.update(policy_config)
         self.policy_config = copy_dict
-
         self.waiting_policy = policy_config['waiting_policy']
         self.waiting_coeff = policy_config['waiting_coeff']
         self.queue_policy = policy_config['queue_policy']
@@ -92,9 +96,9 @@ class FIFOWaitPolicy(BasePolicy):
         self.spilled_jobs_path = self.log_file
         with open(self.spilled_jobs_path, "a") as f:
             f.write("Scheduler spun up! \n")
-
-        self.prevJobName = None,
-        self.prevJobStatus = None,
+        if spill_to_cloud == 'log':
+            self.cloud_manager = LogManager(cloud_manager.cluster_name,
+                                            self.spilled_jobs_path)
 
     def process_queue(self, job_queue: List[Job]):
 
@@ -108,51 +112,15 @@ class FIFOWaitPolicy(BasePolicy):
                 timeout = max(job.timeout, self.min_waiting_time)
                 job_timed_out = wait_time >= timeout
                 if job_timed_out:
-                    if self.spill_to_cloud == 'cluster':
-                        self.cloud_manager.submit_job(job)
-                    elif self.spill_to_cloud == 'log':
-                        gpu_resources = job.resources['gpu']
-                        submission_time = job.job_event_queue_add_time
-                        with open(self.spilled_jobs_path, "a") as f:
-                            f.write(
-                                f'Cloud Job || job name {job.job_name} | '
-                                f'estimated cloud start time {time.time()} | '
-                                f'estimated job duration {job.runtime} | '
-                                f'submission time {submission_time} | '
-                                f'gpus {gpu_resources} \n')
-                    else:
-                        raise ValueError('Invalid spill_to_cloud value: '
-                                         f'{self.spill_to_cloud}')
+                    self.cloud_manager.submit_job(job)
                     job_queue.remove(job)
 
             # Loop through the queue for submitting jobs to on-prem.
             for job in job_queue:
-                if isinstance(self.prevJobName, tuple):
-                    self.prevJobName = self.prevJobName[0]
-                if isinstance(self.prevJobStatus, tuple):
-                    self.prevJobStatus = self.prevJobStatus[0]
-                logger.debug(
-                    f'prev job name {str(self.prevJobName)} | prev job status {str(self.prevJobStatus)} | type {type(self.prevJobName)}'
-                )
-
-                if self.prevJobName:
-                    self.prevJobStatus = self.onprem_manager.job_running(
-                        job_name=self.prevJobName, namespace='default')
-                    logger.debug(
-                        f'Updated Previous Job Status || prev job name {str(self.prevJobName)} | prev job status {str(self.prevJobStatus)} | type {type(self.prevJobName)}'
-                    )
-
                 can_fit = self.onprem_manager.can_fit(job)
-                logger.debug(
-                    f'Onprem Submission Check || Can fit: {can_fit} | Prev Job Name: {self.prevJobName} | Prev Job Status: {self.prevJobStatus}'
-                )
-                # TODO: Set previous job completed instead of previous job
-                # scheduled -- ERROR
-                if can_fit and (self.prevJobName == None or self.prevJobStatus
-                                == None or self.prevJobStatus == 1):
+                if can_fit:
                     job_queue.remove(job)
                     self.onprem_manager.submit_job(job)
-                    self.prevJobName = job.job_name
                 else:
                     if self.loop:
                         continue

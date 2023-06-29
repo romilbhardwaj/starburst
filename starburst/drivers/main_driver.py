@@ -10,7 +10,7 @@ from starburst.event_sources.grpc.job_submit_event_source import \
 from starburst.event_sources.sched_tick_event_source import\
  SchedTickEventSource
 from starburst.scheduler.starburst_scheduler import StarburstScheduler
-from starburst.sweep.event_logger import SimpleEventLogger
+from starburst.utils.log_manager import SimpleEventLogger
 
 logging.basicConfig(
     level=logging.DEBUG,
@@ -22,7 +22,6 @@ logger = logging.getLogger(__name__)
 GRPC_PORT = 30000
 
 # Other parameters
-ASYNC_SLEEP_TIME = 0.5
 SCHED_TICK_TIME = 1
 
 # K8s configuration. These names must exist as contexts in your kubeconfig
@@ -92,7 +91,7 @@ def launch_starburst_scheduler(grpc_port=None,
     for s in event_sources:
         event_loop.create_task(s.event_generator())
     try:
-        event_loop.run_until_complete(starburst.scheduler_loop(None, None))
+        event_loop.run_until_complete(starburst.scheduler_loop())
     finally:
         event_loop.close()
     return

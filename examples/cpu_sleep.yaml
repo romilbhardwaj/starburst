@@ -1,6 +1,6 @@
 # Sweep Parameters
 workload_type: cpu_sleep
-submit_time: 10
+submit_time: 15
 random_seed: 13
 # Cluster Parameters
 onprem_cluster: mluo-onprem
@@ -16,9 +16,9 @@ cpu_sizes: [1]
 image: gcr.io/sky-burst/skyburst:latest
 
 # Policy Parameters
-waiting_policy: compute
-waiting_coeff: 40
-waiting_budget: 0.25
+waiting_policy: constant
+waiting_coeff: 10
+waiting_budget: -1
 queue_policy: fifo
 loop: False
 spill_to_cloud: log

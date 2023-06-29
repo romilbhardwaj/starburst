@@ -57,11 +57,7 @@ class StarburstScheduler:
         # Job queue
         # TODO(mluo): Move to within Kubernetes instead.
         self.job_queue = []
-        self.ticks = []
         self.log_file = log_file
-
-        # if not self.debug:
-        #     logging.basicConfig(level=logging.INFO)
 
         # Create the cluster maangers for on-prem and cloud.
         self.onprem_cluster_name = onprem_cluster_name
@@ -126,7 +122,7 @@ class StarburstScheduler:
         event.job.set_event_queue_add_time(time.time())
         self.job_queue.append(event.job)
 
-    async def scheduler_loop(self, queue, conn):
+    async def scheduler_loop(self):
         """
         Main scheduler loop.
         
@@ -142,14 +138,14 @@ class StarburstScheduler:
                 logger.debug(f"Exception: {e}: {traceback.print_exc()}")
                 pass
 
-            # Call scheduler every SCHED_TICK seconds
-            self.queue_policy.process_queue(self.job_queue)
-
             if event:
                 self.process_event(event)
+
+            self.queue_policy.process_queue(self.job_queue)
+
             loop_end_time = time.perf_counter()
 
-            # This mimics a scheduler tick.
+            # Call scheduler every SCHED_TICK seconds
             # TODO(mluo): Make the scheduler truly async.
             # Add two async events; Scheduler tick and job timeouts
             delta = loop_end_time - loop_start_time

@@ -54,17 +54,15 @@ def run_client(ip: str, port: int, job_yaml_path: str):
     """
     with grpc.insecure_channel(f'{ip}:{port}') as channel:
         stub = job_submit_pb2_grpc.JobSubmissionStub(channel)
-        logger.debug(f'CLIENT READ AT {ip}:{port} with {channel}')
         with open(job_yaml_path, 'r') as f:
             job_yaml = f.read()
         print("-------------- SubmitJob --------------")
         print(job_yaml)
         print("---------------------------------------")
-        curr_time = time.time()
-        logger.debug(
-            f'****** Job Sent to GRPC SERVER at Time {curr_time} ******')
         ret = stub.SubmitJob(job_submit_pb2.JobMessage(JobYAML=job_yaml))
-        logger.debug(f"Got retcode {ret.retcode}")
+        curr_time = time.time()
+        logger.debug(f'****** Job Sent to GRPC SERVER at Time {curr_time} | '
+                     f'Retcode {ret.retcode} ******')
 
 
 if __name__ == '__main__':

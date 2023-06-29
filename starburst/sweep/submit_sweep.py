@@ -9,10 +9,10 @@ import time
 from typing import List
 
 import starburst.drivers.main_driver as driver
-from starburst.sweep import job_generator, sweeps, utils
+from starburst.sweep import job_generator, utils
 from starburst.sweep.services import job_submission, event_logger
 
-DEFAULT_CONFIG = sweeps.DEFAULT_CONFIG
+DEFAULT_CONFIG_PATH = 'default.yaml'
 LOG_DIRECTORY = "../sweep_logs/{name}/"
 
 logger = logging.getLogger(__name__)
@@ -60,7 +60,7 @@ def generate_runs(sweep_config: dict) -> List[dict]:
     list_type_args = ["cpu_sizes", "cpu_dist", "gpu_sizes", "gpu_dist"]
 
     # Split sweep_config into fixed and varied hyperparameters.
-    base_config = copy.deepcopy(sweeps.DEFAULT_CONFIG)
+    base_config = utils.load_yaml_file(DEFAULT_CONFIG_PATH)
     varied_config = {}
     for key, value in sweep_config.items():
         if not isinstance(value, list):

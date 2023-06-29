@@ -22,6 +22,10 @@ class Job(object):
         self._timeout = None
 
     @property
+    def name(self):
+        return self.job_name
+
+    @property
     def resources(self):
         return self._resources
 
