@@ -202,7 +202,8 @@ class FIFOWaitPolicy(BasePolicy):
                 wait_time = loop_time - job.job_submit_time
                 job_id = int(job.job_name[4:])
                 job_duration = self.job_data[job_id]['job_duration']
-                job_resource = job.resources['gpu']
+                job_gpu_resource = job.resources['gpu']
+                job_cpu_resource = job.resources['cpu']
                 timeout = 0
                 job_timed_out = False
                 if self.policy == 'constant': 
@@ -226,7 +227,7 @@ class FIFOWaitPolicy(BasePolicy):
                     else: 
                         timeout = job_duration * job.resources['gpu'] * self.compute_wait_coefficient
                     job_timed_out = wait_time >  max(timeout, 15) #timeout #self.wait_threshold * job.resources['gpus']
-                logger.debug(f'Cloud Timeout Submission Check || policy {self.policy} | job timed out {job_timed_out} | timeout value {timeout} | wait threshold {self.wait_threshold} | wait time {wait_time} | event queue wait time {event_wait_time} | curr time {loop_time} | submission time {job.job_submit_time} | event added time {job.job_event_queue_add_time} | input job duration {job_duration} | input job resources {str(job_resource)} | input job name {str(job_id)}')
+                logger.debug(f'Cloud Timeout Submission Check || policy {self.policy} | job timed out {job_timed_out} | timeout value {timeout} | wait threshold {self.wait_threshold} | wait time {wait_time} | event queue wait time {event_wait_time} | curr time {loop_time} | submission time {job.job_submit_time} | event added time {job.job_event_queue_add_time} | input job duration {job_duration} | input job gpu resources {str(job_gpu_resource)} | input job cpu resources {str(job_cpu_resource)} | input job name {str(job_id)}')
                 if job_timed_out:
                     logger.debug(f'Cloud Timeout Submission Entered || job {job.job_name} | spilling to cloud  {self.spill_to_cloud} | queue {job_queue}')
                     if self.spill_to_cloud:
@@ -235,7 +236,7 @@ class FIFOWaitPolicy(BasePolicy):
                     # TODO: Share and save job runtimes for cloud jobs when spill over begins 
                     # TODO: Log jobs name and time job reaches this condition
                     with open(self.spilled_jobs_path, "a") as f:
-                        f.write(f'Cloud Job || job id {job_id} | job name {job.job_name} | estimated cloud start time {time.time()} | estimated job duration {job_duration} | submission time {job.job_event_queue_add_time} | gpus {job_resource} \n')
+                        f.write(f'Cloud Job || job id {job_id} | job name {job.job_name} | estimated cloud start time {time.time()} | estimated job duration {job_duration} | submission time {job.job_event_queue_add_time} | gpus {job_gpu_resource} | cpus {job_cpu_resource} \n')
 
             cloud_end_time = time.time()
             logger.debug(f"Looped through queue for cloud timeout || processing time {cloud_end_time - cloud_start_time}")
