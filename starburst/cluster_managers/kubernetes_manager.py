@@ -30,6 +30,25 @@ def parse_resource_memory(resource_str):
                                                    )  # Convert to megabytes
 
 
+def _plan_pod_allocation(pod, available_resources):
+    """
+    Plan pod allocation.
+
+    Args:
+        pod: Pod object.
+        available_resources: Available resources per node.
+    """
+    # Limited to single node pods for now.
+    for node_name, node_resources in available_resources.items():
+        if node_resources["cpu"] >= float(
+                pod.spec.containers[0].resources.requests.get(
+                    "cpu", 0)) and node_resources["gpu"] >= float(
+                        pod.spec.containers[0].resources.requests.get(
+                            "nvidia.com/gpu", 0)):
+            return node_name
+    return None
+
+
 class KubernetesManager(Manager):
     """ Kubernetes manager.
 
@@ -100,16 +119,15 @@ class KubernetesManager(Manager):
         pods = pods.items
 
         for pod in pods:
-            container_creating = any(
-                status.state.waiting
-                and status.state.waiting.reason == "ContainerCreating"
-                for status in pod.status.container_statuses)
-            if pod.metadata.namespace == self.namespace and (
-                    pod.status.phase in ['Running', 'Pending']
-                    or container_creating):
+            if pod.status.phase in [
+                    'Running', 'Pending'
+            ] and pod.metadata.namespace == self.namespace:
                 node_name = pod.spec.node_name
                 if node_name is None:
-                    continue
+                    # Hallucinate - Find node that can fit the pod
+                    node_name = _plan_pod_allocation(pod, available_resources)
+                    if node_name is None:
+                        continue
                 assert node_name in available_resources, (
                     f"Node {node_name} "
                     "not found in cluster resources.")
