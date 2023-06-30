@@ -10,6 +10,6 @@ spec:
         image: busybox
         command: ["/bin/sh", "-c", "sleep 300"]
         resources:
-          requests:
+          limits:
             cpu: 1
       restartPolicy: Never

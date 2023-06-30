@@ -28,7 +28,8 @@ class StarburstScheduler:
                  wait_time: int = 0,
                  job_data: dict = {},
                  timestamp: int = 0,
-                 run: int = 0):
+                 run: int = 0,
+                 policy: str = 'fixed'):
         """
         Main Starburst scheduler class. Responsible for processing events in the provided event queue.
         :param event_queue: Main event queue
@@ -48,15 +49,17 @@ class StarburstScheduler:
         self.timestamp = timestamp
         self.ticks = []
         self.run = run
+        self.prev_loop_time = None
 
         # Create the cluster managers
         self.onprem_cluster_manager = KubernetesManager(self.onprem_cluster_name)
         self.cloud_cluster_manager = KubernetesManager(self.cloud_cluster_name)
 
         # Set up policy
+        logger.debug(f'all job data inputted {job_data}')
         queue_policy_class = queue_policies.get_policy(queue_policy_str)
         if queue_policy_str == "fifo_wait":
-            self.queue_policy = queue_policy_class(self.onprem_cluster_manager, self.cloud_cluster_manager, wait_threshold=wait_time)
+            self.queue_policy = queue_policy_class(self.onprem_cluster_manager, self.cloud_cluster_manager, wait_threshold=wait_time, job_data=job_data, policy=policy, batch_repo=timestamp, index=run)
         elif queue_policy_str == "time_estimator":
             self.queue_policy = queue_policy_class(self.onprem_cluster_manager, self.cloud_cluster_manager, wait_threshold=wait_time, job_data=job_data)
         else: 
@@ -72,10 +75,10 @@ class StarburstScheduler:
         :return:
         '''
         # TODO: Timeout event for job 
-        # if event.event_type == EventTypes.SCHED_TICK:
-        #     assert isinstance(event, SchedTick)
-        #     self.processor_sched_tick_event(event)
-        if event.event_type == EventTypes.JOB_ADD:
+        if event.event_type == EventTypes.SCHED_TICK:
+            assert isinstance(event, SchedTick)
+            self.processor_sched_tick_event(event)
+        elif event.event_type == EventTypes.JOB_ADD:
             assert isinstance(event, JobAddEvent)
             self.processor_job_add_event(event)
         else:
@@ -94,9 +97,12 @@ class StarburstScheduler:
     def processor_job_add_event(self, event: JobAddEvent):
         """ Process an add job event. This is where you probably want to add job to your queue"""
         _start_process_event_time = time.perf_counter()
+        event.job.job_event_queue_add_time = time.time()
         self.job_queue.append(event.job)
         _end_process_event_time = time.perf_counter()
         logger.debug("QUEUEADD TIME (()) " + str(_end_process_event_time - _start_process_event_time))
+        logger.debug(f'***** Job Retrieved in Event Queue -- Job {event.job} at time {_end_process_event_time}')
+        logger.debug(f'DIFF TIMES {time.time()} or {time.perf_counter()}')
 
     '''
     async def log_ticks(self): 
@@ -120,12 +126,11 @@ class StarburstScheduler:
 
         #TODO: Ensure any two consequtive calls to SchedEventTick are limited by 
         while True: 
-            
-
             _start_time = time.perf_counter()
             _start_await_time = time.perf_counter()
             event = None
             try: 
+                # TODO: Added all events from event queue onto process queue within a tick
                 event = self.event_queue.get_nowait()
                 #event = await self.event_queue.get()
             except Exception as e: 
@@ -133,10 +138,12 @@ class StarburstScheduler:
             _end_await_time = time.perf_counter()
 
             _start_process_queue_time = time.perf_counter()
+            job_queue_len = len(self.job_queue)
             self.queue_policy.process_queue(self.job_queue)
             _end_process_queue_time = time.perf_counter()
 
             _start_process_event_time = time.perf_counter()
+            event_queue_len = self.event_queue.qsize
             if event: 
                 self.process_event(event)
             _end_process_event_time = time.perf_counter()
@@ -155,13 +162,17 @@ class StarburstScheduler:
             '''
             logger.debug("AWAIT TIME (()) " + str(_end_await_time - _start_await_time))
             logger.debug("PROCESSQUEUE TIME (()) " + str(_end_process_queue_time - _start_process_queue_time))
+            logger.debug("JOB QUEUE SIZE " + str(job_queue_len))
             logger.debug("PROCESSEVENT TIME (()) " + str(_end_process_event_time - _start_process_event_time))
-            logger.debug("QUEUE SIZE (()) " + str(self.event_queue.qsize))
-            
-            time.sleep(0.5) # -(_end_time - _start_time))
+            logger.debug("EVENT QUEUE SIZE (()) " + str(event_queue_len))
+            delta = _end_time  - _start_time
+            if delta < 1:
+                await asyncio.sleep(1.0 -(_end_time - _start_time)) # -(_end_time - _start_time))
             _interloop_end_time = time.perf_counter()
             logger.debug("INTERLOOP TIME (()) " + str(_interloop_end_time - _start_time))
-            logger.debug("LOOP TIME (()) " + str(_end_time))#str(_end_time - _start_time))
+            if self.prev_loop_time:
+                logger.debug("LOOP TIME (()) " + str(_interloop_end_time - self.prev_loop_time))#str(_end_time - _start_time))
+            self.prev_loop_time = _interloop_end_time
                 
             
         '''

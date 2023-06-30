@@ -13,6 +13,7 @@ class Job(object):
                  resources: dict = None):
         self.job_name = job_name
         self.job_submit_time = job_submit_time
+        self.job_event_queue_add_time = None
         self.job_start_time = job_start_time
         self.job_end_time = job_end_time
         self.job_yaml = job_yaml

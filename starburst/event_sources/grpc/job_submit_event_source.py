@@ -43,7 +43,9 @@ class JobSubmissionServicer(job_submit_pb2_grpc.JobSubmissionServicer):
         if 'nvidia.com/gpu' in job_dict['spec']['template']['spec']['containers'][0]['resources']['limits']:
             gpu = job_dict['spec']['template']['spec']['containers'][0]['resources']['limits']['nvidia.com/gpu']
         
-        job = Job(job_name=job_dict['metadata']['name'],#"MyJob",
+        name = job_dict['metadata']['name']
+        logger.debug(f'****** Job Submitted to Event Queue -- Job {name} at Time {time.time()}')
+        job = Job(job_name=str(job_dict['metadata']['name']),#"MyJob",
                   # TODO: Parse out job_name and save it locally
                   job_submit_time=time.time(),
                   job_start_time=0,
@@ -71,6 +73,7 @@ class JobSubmissionEventSource(BaseEventSource):
         self.server = grpc.aio.server(futures.ThreadPoolExecutor(max_workers=10))
         job_submit_pb2_grpc.add_JobSubmissionServicer_to_server(
             JobSubmissionServicer(self.output_queue), self.server)
+        logger.info(f'GRPC Server running on port {server_port}')
         self.server.add_insecure_port(f'[::]:{server_port}')
 
     async def event_generator(self):

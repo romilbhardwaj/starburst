@@ -1,14 +1,24 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: sleep-{{job}}
+  name: job-{{job}}
+  label: 
+    track: sleep
 spec: 
   template: 
     spec: 
+      volumes: 
+      - name: dshm
+        emptyDir: 
+          medium: Memory
+      schedulerName: chakra
       containers: 
       - name: sleep
         image: gcr.io/deeplearning-platform-release/pytorch-gpu.1-12
+        volumeMounts: 
+        - name: dshm
+          mountPath: /dev/shm
         command: ["/bin/sh", "-c"]
         args:
-        - |
-          nvidia-smi --query-gpu=uuid --format=csv,noheader && sleep {{time}}
+        - |          
+          {{gpu_script}} && sleep {{time}}

@@ -3,6 +3,7 @@ import logging
 import time
 from typing import Iterable, List
 import heapq 
+import os 
 
 from starburst.cluster_managers.kubernetes_manager import KubernetesManager
 from starburst.types.job import Job
@@ -71,9 +72,14 @@ class FIFOWaitPolicy(BasePolicy):
                  loop: bool = False,
                  preempt_cpu: bool = False,
                  linear_wait_constant: int = 1,
-                 wait_until_scheduled: bool = False):
+                 policy: str = 'fixed',
+                 job_data: dict = {},
+                 batch_repo: int = 0,
+                 index: int = 0, 
+                 ):
         
         self.wait_threshold = wait_threshold
+        self.policy = policy
         self.loop = loop
         self.preemmpt_cpu = preempt_cpu
         self.linear_wait_constant = linear_wait_constant
@@ -83,14 +89,75 @@ class FIFOWaitPolicy(BasePolicy):
                         "gpu": 0,
                         #"nvidia.com/gpu": 0
                     }
-        self.prevState = None
-        self.currState = None
-        self.curr_pods = None
-        self.prev_pods = None
-        self.wait_until_scheduled = wait_until_scheduled
+        
+
         self.previous_function_call_time = 0
         self.prevJobName = None,
         self.prevJobStatus = None,
+        self.onprem_only = False, 
+        self.cloud_only = False, 
+        if isinstance(job_data, tuple):
+            self.job_data = self.job_data[0]
+        else: 
+            self.job_data = job_data
+
+        self.total_workload_volume = 0
+        self.total_workload_time = 0
+        self.total_workload_surface_area = 0
+        self.total_jobs = 0 
+        self.workload_type = self.job_data['hyperparameters']['workload_type']
+        logger.debug(f'all jobs data {self.job_data}')
+        for job_id in self.job_data:
+            if job_id == 'hyperparameters': 
+                continue 
+
+            job = self.job_data[job_id]
+            logger.debug(f'job data {job}')
+            self.total_jobs += 1
+            self.total_workload_time += job['job_duration']
+            if self.workload_type == 'cpu':
+                self.total_workload_surface_area += job['workload']['cpu']
+                self.total_workload_volume += job['job_duration'] * job['workload']['cpu']
+            else: 
+                self.total_workload_surface_area += job['workload']['gpu']
+                self.total_workload_volume += job['job_duration'] * job['workload']['gpu']
+            cpus = job['workload']['cpu']
+            logger.debug(f'total cpu {cpus}')
+
+        self.max_tolerance = 0.25 #Increase in JCT they want over No-Wait
+        
+        # TODO: Recompute compute wait coefficient -> use gpu_sizes, gpu_dist from hyperparameters value
+        # TODO: Improve terminology 
+        self.constant_wait_coefficient = self.max_tolerance * (self.total_workload_time) / self.total_jobs
+
+        self.runtime_wait_coefficient = (self.linear_wait_constant * self.total_jobs) / self.total_workload_time # TODO: Computing incorrect value
+        self.resource_wait_coefficient = (self.linear_wait_constant * self.total_jobs) / self.total_workload_surface_area # TODO: Computing incorrect value
+        self.compute_wait_coefficient = (self.linear_wait_constant * self.total_jobs) / self.total_workload_volume # TODO: Computing incorrect value
+        
+        self.avg_job_size = self.total_workload_surface_area/self.total_jobs
+        
+        self.compute_wait_coefficient = self.max_tolerance/self.avg_job_size
+
+        
+
+        #self.onprem_only = self.job_data['hyperparameters']['onprem_only']
+
+        self.spilled_jobs_path = f'../logs/archive/{batch_repo}/events/{index}.log'
+        # TODO: Create this file at the beginning of each run
+        #p2_log = "../logs/archive/" + timestamp + '/' + 'p2.log'
+        event_path = f'../logs/archive/{batch_repo}/events/'
+        if not os.path.exists(event_path):
+            os.mkdir(event_path)
+        self.spill_to_cloud = self.job_data['hyperparameters']['spill_to_cloud'] # TODO: Verify if this works as intended
+        with open(self.spilled_jobs_path, "a") as f:
+            f.write("Scheduler spun up! \n")
+        
+
+
+        # TODO: Compute average job_size directly from input distribution jobs['hyperparameters']['gpu_dist'] *  jobs['hyperparameters']['gpu_sizes']
+        
+        logger.debug(f'Optimal coefficients || constant wait coefficient {self.constant_wait_coefficient} | runtime wait coefficient {self.runtime_wait_coefficient} | resource wait coefficient {self.resource_wait_coefficient} | compute wait coefficient {self.compute_wait_coefficient}')
+        
         super().__init__(onprem_manager, cloud_manager)
     '''
     Cluster state updates:
@@ -98,418 +165,122 @@ class FIFOWaitPolicy(BasePolicy):
     (2) Once submitted yaml, creates job on k8s (queries cluster's pod states) -- SPECULATIVE w/ pod state
     (3) Once submitted yaml, creates job on k8s, kills jobs if running for too long (queries cluster's pod states) -- SPECULATIVE w/ pod state and ROLLBACK
     (4) Once submitted yaml, creates job on k8s, creates a pod, and gets scheduled (queries cluster's node states) -- NON SPECULATIVE
+
+    Waiting Policies
+    (1) Constant Wait 
+    (2) Compute Wait = runtime * resources
+    (3) Starburst = compute wait + loop + cpu balking 
+
+    Misc Todos
+    # TODO: Mark jobs pending on the queue as pending, so they are not used to submit locally 
+    # TODO: Don't run and wait for process queue until empty
+    # TODO: Check job.submit_time and see if it has been waiting longer than the threshold
+    # TODO: Check if the onprem cluster can fit the job
+    # TODO: Compute job timeout values in parallel 
+    # TODO: Figure out why cloud timeout fails  
+    # TODO: Don't submit cluster to onprem if cluster state remains the same from a previous job
+    # TODO: Retrieve the jobs on the onprem cluster and list them 
+    # TODO: Compute job timeout values in parallel 
+    # TODO: Can_fit incorrectly executes here -- print out log of cluster state before and after submit_job
+    # TODO: Figure out how to properly parse the job data from the cluster event logs
     '''
     def process_queue(self, job_queue: List[Job]):
         """ Process in FIFO order. Iterates over all jobs (no HoL blocking).
         If job has been waiting longer than a threshold, submit to cloud. """
-        # Check if the onprem cluster can fit the job
-        import time
         start_time = time.perf_counter()
-        curr_time = time.perf_counter()
-        logger.debug("Started process_queue(): ~~~ --- " + str(curr_time-start_time))
-        retry = 0
-        #TODO: Mark jobs pending on the queue as pending, so they are not used to submit locally 
-        #TODO: Don't run and wait for process queue until empty
-        logger.debug("PREVIOUS CALL TO PROCCESS QUEUE TIME DELTA " + str(time.perf_counter() - self.previous_function_call_time))
-        logger.debug("PREVIOUS CALL TO PROCCESS QUEUE TIME ABSOLUTE " + str(self.previous_function_call_time))
+        logger.debug(f'New process_queue function call || time since previous call {str(time.perf_counter() - self.previous_function_call_time)} | previous call time {str(self.previous_function_call_time)}')
         self.previous_function_call_time = time.perf_counter()
         if job_queue:
-            curr_time = time.perf_counter()
-            logger.debug("Retry(" + str(retry) + ") " + "Started queue loop : ~~~ --- " + str(curr_time-start_time))
-            retry += 1
-            # NOTE: Pops off pending jobs before submitting new jobs
-            job_id = 0
             cloud_start_time = time.time()
+            
             for job in job_queue:
-                # Check job.submit_time and see if it has been waiting longer than the threshold
-                # TODO: Compute job timeout values in parallel 
+                if self.policy == 'onprem_only': 
+                    break 
+                # if self.cloud_only # TODO: Include option for submission to onprem only
                 loop_time = time.time()
-                #if time.time() - job.job_submit_time > self.wait_threshold:
-                if loop_time - job.job_submit_time > self.wait_threshold:
-                    curr_time = time.time()
-                    logger.debug(f"SUBMIT - CLOUD {job.job_name} ### Delta (Loop) {loop_time - job.job_submit_time} Timeout {self.wait_threshold}")
-                    logger.debug(f"SUBMIT - CLOUD {job.job_name} ### Delta (Curr) {curr_time - job.job_submit_time} Timeout {self.wait_threshold}")
-                    logger.debug(f"SUBMIT - CLOUD ### Queue {job_queue}")
-                    logger.debug(f"SUBMIT - CLOUD ### Looptime {loop_time} Currtime {curr_time} Submitime {job.job_submit_time}")
-                    # Submit to cloud
-                    self.cloud_manager.submit_job(job)
-                    logger.debug(
-                        f"Deadline passed, spilling over {job}. Submitting to cloud.")
-                    # Remove from queue
+                event_wait_time = loop_time - job.job_event_queue_add_time
+                wait_time = loop_time - job.job_submit_time
+                job_id = int(job.job_name[4:])
+                job_duration = self.job_data[job_id]['job_duration']
+                job_gpu_resource = job.resources['gpu']
+                job_cpu_resource = job.resources['cpu']
+                timeout = 0
+                job_timed_out = False
+                if self.policy == 'constant': 
+                    timeout = self.wait_threshold
+                    job_timed_out = wait_time > max(timeout, 15) #timeout
+                elif self.policy == 'constant_optimal': 
+                    timeout = self.constant_wait_coefficient
+                    job_timed_out = wait_time >  max(timeout, 15) # timeout
+                elif self.policy == 'runtime_optimal':
+                    timeout = job_duration * self.runtime_wait_coefficient
+                    job_timed_out = wait_time >  max(timeout, 15) # timeout #self.wait_threshold * self.linear_wait_constant 
+                elif self.policy == 'resource_optimal':
+                    if self.workload_type == 'cpu':
+                        timeout = job.resources['cpu'] * self.resource_wait_coefficient
+                    else: 
+                        timeout = job.resources['gpu'] * self.resource_wait_coefficient
+                    job_timed_out = wait_time >  max(timeout, 15) #timeout #self.wait_threshold * self.linear_wait_constant
+                elif self.policy == 'compute_optimal' or self.policy == 'starburst': 
+                    if self.workload_type == 'cpu':
+                        timeout = job_duration * job.resources['cpu'] * self.resource_wait_coefficient
+                    else: 
+                        timeout = job_duration * job.resources['gpu'] * self.compute_wait_coefficient
+                    job_timed_out = wait_time >  max(timeout, 15) #timeout #self.wait_threshold * job.resources['gpus']
+                logger.debug(f'Cloud Timeout Submission Check || policy {self.policy} | job timed out {job_timed_out} | timeout value {timeout} | wait threshold {self.wait_threshold} | wait time {wait_time} | event queue wait time {event_wait_time} | curr time {loop_time} | submission time {job.job_submit_time} | event added time {job.job_event_queue_add_time} | input job duration {job_duration} | input job gpu resources {str(job_gpu_resource)} | input job cpu resources {str(job_cpu_resource)} | input job name {str(job_id)}')
+                if job_timed_out:
+                    logger.debug(f'Cloud Timeout Submission Entered || job {job.job_name} | spilling to cloud  {self.spill_to_cloud} | queue {job_queue}')
+                    if self.spill_to_cloud:
+                        self.cloud_manager.submit_job(job)
                     job_queue.remove(job)
+                    # TODO: Share and save job runtimes for cloud jobs when spill over begins 
+                    # TODO: Log jobs name and time job reaches this condition
+                    with open(self.spilled_jobs_path, "a") as f:
+                        f.write(f'Cloud Job || job id {job_id} | job name {job.job_name} | estimated cloud start time {time.time()} | estimated job duration {job_duration} | submission time {job.job_event_queue_add_time} | gpus {job_gpu_resource} | cpus {job_cpu_resource} \n')
+
             cloud_end_time = time.time()
-            logger.debug(f"TIME TO PROCESS QUEUE CLOUD ### TIME DIFF {cloud_end_time - cloud_start_time}")
-            # TODO: Figure out why the above doesn't work as intended     
-            onprem_start_time = time.time()    
+            logger.debug(f"Looped through queue for cloud timeout || processing time {cloud_end_time - cloud_start_time}")
+             
+            onprem_start_time = time.time() 
             for job in job_queue:
-                curr_time = time.perf_counter()
-                logger.debug("Job(" + str(job_id) + ") " + "Next job on queue : ~~~ --- " + str(curr_time-start_time))
-                job_id += 1 
                 debug_time = time.time()
-                # TODO: Don't submit cluster to onprem if cluster state remains the same from a previous job
-                # TODO: Retrieve the jobs on the cluster and list them 
-                # TODO: Compute job timeout values in parallel 
-                if self.wait_until_scheduled: 
-                    self.currState, self.curr_pods = self.onprem_manager.get_allocatable_resources_per_node()
-                    if self.prevState and self.prev_pods: 
-                        while self.prevState == self.currState and self.prev_pods == self.curr_pods:
-                            logger.debug(f"SCHEDULER OVERCLOCKED ***")
-                            self.currState, self.curr_pods = self.onprem_manager.get_allocatable_resources_per_node()
-                    #self.prevState = None #self.currState
-                    self.currState = None
-                    self.curr_pods = None
-                #if not self.prevJobStatus:
-                    #self.currState, self.curr_pods = self.onprem_manager.get_allocatable_resources_per_node()
-                    #self.batch_v1.read_namespaced_job_status_with_http_info()
-                    #self.prevJobStatus = self.onprem_manager.job_running(job_name=self.prevJobName, namespace='default')
-                #if time.time() - job.job_submit_time <= self.wait_threshold and self.onprem_manager.can_fit(job):
-                #if self.onprem_manager.can_fit(job):
                 if isinstance(self.prevJobName, tuple):
                     self.prevJobName = self.prevJobName[0]
                 if isinstance(self.prevJobStatus, tuple):
                     self.prevJobStatus = self.prevJobStatus[0]
-                logger.debug("prevJobName " +  str(self.prevJobName))
-                logger.debug("prevJobStatus " +  str(self.prevJobStatus))
-                if self.prevJobName: 
-                    logger.debug("Looking for job ^^^ " +  str(self.prevJobName))
+                logger.debug(f'prev job name {str(self.prevJobName)} | prev job status {str(self.prevJobStatus)} | type {type(self.prevJobName)}')
+
+                if self.prevJobName:     
                     self.prevJobStatus = self.onprem_manager.job_running(job_name=self.prevJobName, namespace='default')
-                    logger.debug("Prev job status ^^^ " +  str(self.prevJobStatus))
-                    logger.debug("Looking for job ^^^ " +  str(self.prevJobName))
-                logger.debug("prevJobName " +  str(self.prevJobName))
-                logger.debug("prevJobStatus " +  str(self.prevJobStatus))
-                if self.onprem_manager.can_fit(job) and (self.prevJobName == None or self.prevJobStatus == None or self.prevJobStatus == 1): 
-                    logger.debug("REACHED @@@ CAN FIT " +  str(self.prevJobName))
-                    if self.wait_until_scheduled:
-                        self.currState, self.curr_pods = self.onprem_manager.get_allocatable_resources_per_node()
-                        if self.prevState == self.currState and self.curr_pods == self.prev_pods:
-                            logger.debug(f"SCHEDULER OVERCLOCKED ***")
-                        #self.prevState = self.currState
-                        logger.debug("PREV STATE IS " + str(self.prevState))
-                        logger.debug("CURR STATE IS " + str(self.currState))
-                        logger.debug("PREV PODS IS " + str(self.prev_pods))
-                        logger.debug("CURR PODS IS " + str(self.curr_pods))
-                        self.prevState = self.currState
-                        self.currState = None
-                        self.prev_pods = self.curr_pods
-                        self.curr_pods = None 
-                #if self.onprem_manager.can_fit(job):
-                    logger.debug(f"SUBMIT - ONPREM {job.job_name} ### Currtime {debug_time} Submitime {job.job_submit_time}")
-                    # TODO: Can_fit incorrectly executes here -- print out log of cluster state before and after submit_job
-                    # TODO: Figure out how to properly parse the job data from the cluster event logs
-                    # Remove from queue
+                    logger.debug(f'Updated Previous Job Status || prev job name {str(self.prevJobName)} | prev job status {str(self.prevJobStatus)} | type {type(self.prevJobName)}')
+                
+                # TODO: Pre-emption conditional -- time.time() - job.job_submit_time <= self.wait_threshold 
+                # if self.cloud_only # TODO: Include option for submission to cloud only
+                can_fit = self.onprem_manager.can_fit(job)
+                logger.debug(f'Onprem Submission Check || Can fit: {can_fit} | Prev Job Name: {self.prevJobName} | Prev Job Status: {self.prevJobStatus}')
+                # TODO: Set previous job completed instead of previous job scheduled -- ERROR  
+                if can_fit and (self.prevJobName == None or self.prevJobStatus == None or self.prevJobStatus == 1): 
+                    logger.debug(f'Onprem Submission Entered || job {job.job_name} | queue {job_queue} | submission time {job.job_submit_time} | debug time {debug_time}' )                    
                     job_queue.remove(job)
-                    #self.prevJobName = job.job_name
-                    # Submit the job
                     self.onprem_manager.submit_job(job)
-                    logger.debug(f"CURR PREVIOUS SUBMITED JOB {self.prevJobName} original {job.job_name}")
-                    self.prevJobName = job.job_name
-                    logger.debug(f"UPDATED PREVIOUS SUBMITED JOB {self.prevJobName} original {job.job_name}")
-                    logger.debug("prevJobName " +  str(self.prevJobName))
-                    logger.debug("prevJobStatus " +  str(self.prevJobStatus))
-                    # TODO: Verify if job.resources matches estimated state's key values
-                    for r in job.resources:
+                    self.prevJobName = job.job_name # NOTE: Previous job status computed outside if statement
+                    
+                    for r in job.resources: # TODO: Verify if job.resources matches estimated state's key values
                         self.estimated_state[r] += job.resources[r]
-                    logger.debug(f"Onprem cluster can fit {job}. Submitting to onprem.")
                 else:
-                    logger.debug(f"WAITING - CANNOT FIT ON PREM AND DID NOT TIMEOUT {job.job_name} ### Currtime {debug_time} Submitime {job.job_submit_time}")
-                    waited_time = time.time() - job.job_submit_time
-                    logger.debug(
-                        f"Waiting - Onprem cluster cannot fit {job}. Been waiting for {waited_time} seconds.")
-                    if self.loop: 
+                    logger.debug(f'Onprem submission adverted | job {job.job_name} | queue {job_queue} | submission time {job.job_submit_time} | debug time {debug_time}')
+                    #if self.loop:
+                    if self.policy == 'starburst': 
                         pass
                     else: 
                         break
             onprem_end_time = time.time()
-            logger.debug(f"TIME TO PROCESS QUEUE ONPREM ### TIME DIFF {onprem_end_time - onprem_start_time}")
+            logger.debug(f"Looped through queue for onprem submission || processing time {onprem_end_time - onprem_start_time}")
             curr_time = time.perf_counter()
-            logger.debug("Completed process_queue(): ~~~ --- " + str(curr_time-start_time))
+            logger.debug(f'End of process_queue function call || total time {str(curr_time-start_time)}')
         else:
             logger.info("Job queue is empty.")
             curr_time = time.perf_counter()
-            logger.debug("Completed process_queue(): ~~~ --- " + str(curr_time-start_time))
-
-            return
-
-
-class LinearTimeWaitPolicy(BasePolicy):
-    """ Implements FIFO submission to only onprem. If job has been waiting longer than a threshold, submit to cloud. """
-
-    def __init__(self,
-                 onprem_manager: KubernetesManager,
-                 cloud_manager: KubernetesManager,
-                 wait_threshold: int = 0,
-                 loop: bool = False,
-                 preempt_cpu: bool = False,
-                 linear_wait_constant: int = 1,
-                 wait_until_scheduled: bool = False):
-        
-        self.wait_threshold = wait_threshold
-        self.loop = loop
-        self.preemmpt_cpu = preempt_cpu
-        self.linear_wait_constant = linear_wait_constant
-        self.estimated_state = {
-                        "cpu": 0,
-                        "memory": 0,
-                        "gpu": 0,
-                        #"nvidia.com/gpu": 0
-                    }
-        self.prevState = None
-        self.currState = None
-        self.curr_pods = None
-        self.prev_pods = None
-        self.wait_until_scheduled = wait_until_scheduled
-
-        super().__init__(onprem_manager, cloud_manager)
-
-
-    def process_queue(self, job_queue: List[Job]):
-        """ Process in FIFO order. Iterates over all jobs (no HoL blocking).
-        If job has been waiting longer than a threshold, submit to cloud. """
-        # Check if the onprem cluster can fit the job
-        import time
-        start_time = time.perf_counter()
-        curr_time = time.perf_counter()
-
-        logger.debug("Started process_queue(): ~~~ --- " + str(curr_time-start_time))
-        retry = 0 
-
-        #TODO: Mark jobs pending on the queue as pending, so they are not used to submit locally 
-        #TODO: Don't run and wait for process queue until empty
-
-        if job_queue:
-            curr_time = time.perf_counter()
-            logger.debug("Retry(" + str(retry) + ") " + "Started queue loop : ~~~ --- " + str(curr_time-start_time))
-            retry += 1
-            
-            # NOTE: Pops off pending jobs before submitting new jobs
-            job_id = 0
-            
-            for job in job_queue:
-                # Check job.submit_time and see if it has been waiting longer than the threshold
-                debug_time = time.time()
-                if (time.time() - job.job_submit_time) * self.linear_wait_constant > self.wait_threshold:
-                    logger.debug(f"SUBMIT - CLOUD {job.job_name} ### Delta {debug_time - job.job_submit_time} Timeout {self.wait_threshold}")
-                    logger.debug(f"SUBMIT - CLOUD ### Currtime {debug_time} Submitime {job.job_submit_time}")
-                    # Submit to cloud
-                    self.cloud_manager.submit_job(job)
-                    logger.debug(
-                        f"Deadline passed, spilling over {job}. Submitting to cloud.")
-                    # Remove from queue
-                    job_queue.remove(job)
-            # TODO: Figure out why the above doesn't work as intended         
-            for job in job_queue:
-                curr_time = time.perf_counter()
-                logger.debug("Job(" + str(job_id) + ") " + "Next job on queue : ~~~ --- " + str(curr_time-start_time))
-                job_id += 1 
-
-                debug_time = time.time()
-                # TODO: Don't submit cluster to onprem if cluster state remains the same from a previous job
-
-                # TODO: Retrieve the jobs on the cluster and list them 
-
-                if self.wait_until_scheduled: 
-                    self.currState, self.curr_pods = self.onprem_manager.get_allocatable_resources_per_node()
-
-                    if self.prevState and self.prev_pods: 
-                        while self.prevState == self.currState and self.prev_pods == self.curr_pods:
-                            logger.debug(f"SCHEDULER OVERCLOCKED ***")
-                            self.currState, self.curr_pods = self.onprem_manager.get_allocatable_resources_per_node()
-                            
-                    #self.prevState = None #self.currState
-                    self.currState = None
-                    self.curr_pods = None
-
-                if (time.time() - job.job_submit_time) * self.linear_wait_constant <= self.wait_threshold and self.onprem_manager.can_fit(job):
-                    if self.wait_until_scheduled: 
-                        self.currState, self.curr_pods = self.onprem_manager.get_allocatable_resources_per_node()
-
-                        if self.prevState == self.currState and self.curr_pods == self.prev_pods:
-                            logger.debug(f"SCHEDULER OVERCLOCKED ***")
-                                
-                        #self.prevState = self.currState
-                        logger.debug("PREV STATE IS " + str(self.prevState))
-                        logger.debug("CURR STATE IS " + str(self.currState))
-
-                        logger.debug("PREV PODS IS " + str(self.prev_pods))
-                        logger.debug("CURR PODS IS " + str(self.curr_pods))
-                        
-                        self.prevState = self.currState
-                        self.currState = None
-
-                        self.prev_pods = self.curr_pods
-                        self.curr_pods = None 
-
-                #if self.onprem_manager.can_fit(job):
-                    logger.debug(f"SUBMIT - ONPREM {job.job_name} ### Currtime {debug_time} Submitime {job.job_submit_time}")
-                    # TODO: Can_fit incorrectly executes here -- print out log of cluster state before and after submit_job
-                    # TODO: Figure out how to properly parse the job data from the cluster event logs
-                    # Remove from queue
-                    job_queue.remove(job)
-                    # Submit the job
-
-
-                    self.onprem_manager.submit_job(job)
-                    # TODO: Verify if job.resources matches estimated state's key values
-                    for r in job.resources:
-                        #for r in job.resources:
-                        self.estimated_state[r] += job.resources[r]
-
-                    logger.debug(f"Onprem cluster can fit {job}. Submitting to onprem.")
-                else:
-                    logger.debug(f"WAITING - CANNOT FIT ON PREM AND DID NOT TIMEOUT {job.job_name} ### Currtime {debug_time} Submitime {job.job_submit_time}")
-                    waited_time = time.time() - job.job_submit_time
-                    logger.debug(
-                        f"Waiting - Onprem cluster cannot fit {job}. Been waiting for {waited_time} seconds.")
-                    if self.loop: 
-                        pass
-                    else: 
-                        break
-        else:
-            logger.info("Job queue is empty.")
-            curr_time = time.perf_counter()
-
-            logger.debug("Completed process_queue(): ~~~ --- " + str(curr_time-start_time))
-
-            return
-
-class LinearCostWaitPolicy(BasePolicy):
-    """ Implements FIFO submission to only onprem. If job has been waiting longer than a threshold, submit to cloud. """
-
-    def __init__(self,
-                 onprem_manager: KubernetesManager,
-                 cloud_manager: KubernetesManager,
-                 wait_threshold: int = 0,
-                 loop: bool = False,
-                 preempt_cpu: bool = False,
-                 linear_wait_constant: int = 1,
-                 wait_until_scheduled: bool = False):
-        
-        self.wait_threshold = wait_threshold
-        self.loop = loop
-        self.preemmpt_cpu = preempt_cpu
-        self.linear_wait_constant = linear_wait_constant
-        self.estimated_state = {
-                        "cpu": 0,
-                        "memory": 0,
-                        "gpu": 0,
-                        #"nvidia.com/gpu": 0
-                    }
-        self.prevState = None
-        self.currState = None
-        self.curr_pods = None
-        self.prev_pods = None
-        self.wait_until_scheduled = wait_until_scheduled
-
-        super().__init__(onprem_manager, cloud_manager)
-
-
-    def process_queue(self, job_queue: List[Job]):
-        """ Process in FIFO order. Iterates over all jobs (no HoL blocking).
-        If job has been waiting longer than a threshold, submit to cloud. """
-        # Check if the onprem cluster can fit the job
-        import time
-        start_time = time.perf_counter()
-        curr_time = time.perf_counter()
-
-        logger.debug("Started process_queue(): ~~~ --- " + str(curr_time-start_time))
-        retry = 0 
-
-        #TODO: Mark jobs pending on the queue as pending, so they are not used to submit locally 
-        #TODO: Don't run and wait for process queue until empty
-
-        if job_queue:
-            curr_time = time.perf_counter()
-            logger.debug("Retry(" + str(retry) + ") " + "Started queue loop : ~~~ --- " + str(curr_time-start_time))
-            retry += 1
-            
-            # NOTE: Pops off pending jobs before submitting new jobs
-            job_id = 0
-            
-            for job in job_queue:
-                # Check job.submit_time and see if it has been waiting longer than the threshold
-                debug_time = time.time()
-                # TODO: Verify the key for retrieving gpu resources
-                if (time.time() - job.job_submit_time) * self.linear_wait_constant * job.resources['gpu'] > self.wait_threshold:
-                    logger.debug(f"SUBMIT - CLOUD {job.job_name} ### Delta {debug_time - job.job_submit_time} Timeout {self.wait_threshold}")
-                    logger.debug(f"SUBMIT - CLOUD ### Currtime {debug_time} Submitime {job.job_submit_time}")
-                    # Submit to cloud
-                    self.cloud_manager.submit_job(job)
-                    logger.debug(
-                        f"Deadline passed, spilling over {job}. Submitting to cloud.")
-                    # Remove from queue
-                    job_queue.remove(job)
-            # TODO: Figure out why the above doesn't work as intended         
-            for job in job_queue:
-                curr_time = time.perf_counter()
-                logger.debug("Job(" + str(job_id) + ") " + "Next job on queue : ~~~ --- " + str(curr_time-start_time))
-                job_id += 1 
-
-                debug_time = time.time()
-                # TODO: Don't submit cluster to onprem if cluster state remains the same from a previous job
-
-                # TODO: Retrieve the jobs on the cluster and list them 
-
-                if self.wait_until_scheduled: 
-                    self.currState, self.curr_pods = self.onprem_manager.get_allocatable_resources_per_node()
-
-                    if self.prevState and self.prev_pods: 
-                        while self.prevState == self.currState and self.prev_pods == self.curr_pods:
-                            logger.debug(f"SCHEDULER OVERCLOCKED ***")
-                            self.currState, self.curr_pods = self.onprem_manager.get_allocatable_resources_per_node()
-                            
-                    #self.prevState = None #self.currState
-                    self.currState = None
-                    self.curr_pods = None
-
-                if (time.time() - job.job_submit_time) * self.linear_wait_constant <= self.wait_threshold and self.onprem_manager.can_fit(job):
-                    if self.wait_until_scheduled: 
-                        self.currState, self.curr_pods = self.onprem_manager.get_allocatable_resources_per_node()
-
-                        if self.prevState == self.currState and self.curr_pods == self.prev_pods:
-                            logger.debug(f"SCHEDULER OVERCLOCKED ***")
-                                
-                        #self.prevState = self.currState
-                        logger.debug("PREV STATE IS " + str(self.prevState))
-                        logger.debug("CURR STATE IS " + str(self.currState))
-
-                        logger.debug("PREV PODS IS " + str(self.prev_pods))
-                        logger.debug("CURR PODS IS " + str(self.curr_pods))
-                        
-                        self.prevState = self.currState
-                        self.currState = None
-
-                        self.prev_pods = self.curr_pods
-                        self.curr_pods = None 
-
-                #if self.onprem_manager.can_fit(job):
-                    logger.debug(f"SUBMIT - ONPREM {job.job_name} ### Currtime {debug_time} Submitime {job.job_submit_time}")
-                    # TODO: Can_fit incorrectly executes here -- print out log of cluster state before and after submit_job
-                    # TODO: Figure out how to properly parse the job data from the cluster event logs
-                    # Remove from queue
-                    job_queue.remove(job)
-                    # Submit the job
-
-
-                    self.onprem_manager.submit_job(job)
-                    # TODO: Verify if job.resources matches estimated state's key values
-                    for r in job.resources:
-                        self.estimated_state[r] += job.resources[r]
-
-                    logger.debug(f"Onprem cluster can fit {job}. Submitting to onprem.")
-                else:
-                    logger.debug(f"WAITING - CANNOT FIT ON PREM AND DID NOT TIMEOUT {job.job_name} ### Currtime {debug_time} Submitime {job.job_submit_time}")
-                    waited_time = time.time() - job.job_submit_time
-                    logger.debug(
-                        f"Waiting - Onprem cluster cannot fit {job}. Been waiting for {waited_time} seconds.")
-                    if self.loop: 
-                        pass
-                    else: 
-                        break
-        else:
-            logger.info("Job queue is empty.")
-            curr_time = time.perf_counter()
-
-            logger.debug("Completed process_queue(): ~~~ --- " + str(curr_time-start_time))
-
+            logger.debug(f'End of process_queue function call || total time {str(curr_time-start_time)}')
             return
 
