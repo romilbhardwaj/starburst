@@ -100,9 +100,13 @@ class KubernetesManager(Manager):
         pods = pods.items
 
         for pod in pods:
-            if pod.status.phase in [
-                    'Running', 'Pending'
-            ] and pod.metadata.namespace == self.namespace:
+            container_creating = any(
+                status.state.waiting
+                and status.state.waiting.reason == "ContainerCreating"
+                for status in pod.status.container_statuses)
+            if pod.metadata.namespace == self.namespace and (
+                    pod.status.phase in ['Running', 'Pending']
+                    or container_creating):
                 node_name = pod.spec.node_name
                 if node_name is None:
                     continue
