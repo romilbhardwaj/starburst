@@ -1,10 +1,10 @@
 # Sweep Parameters
 workload_type: cpu_sleep
-submit_time: 15
+submit_time: 60
 random_seed: 13
 # Cluster Parameters
-onprem_cluster: mluo-onprem
-cloud_cluster: mluo-cloud
+onprem_cluster: gke_sky-burst_us-central1-c_mluo-onprem
+cloud_cluster: gke_sky-burst_us-central1-c_mluo-cloud
 # Job generation parameters
 arrival_dist: uniform
 arrival_param: 5
