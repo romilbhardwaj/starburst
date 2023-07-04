@@ -118,8 +118,9 @@ def parse_spillover_jobs(file_path: str):
     for log in cloud_log_list[1:-1]:
         # Regex to find the job id and the expected job duration.
         match = re.search(r"Cloud Job \|\| job name job-(\S+) \| (\S+)", log)
-        match = match.groups()
+        #match = match.groups()
         if match:
+            match = match.groups()
             # Convert the job id to an int.
             job_id = int(match[0])
             log_jobs.append(job_id)
