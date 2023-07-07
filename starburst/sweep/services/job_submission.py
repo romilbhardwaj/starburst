@@ -17,6 +17,7 @@ import traceback
 from typing import Any, Dict
 
 from kubernetes import client, config
+import sky
 import yaml
 
 from starburst.sweep import utils, submit_sweep
@@ -36,6 +37,7 @@ class JobStateTracker(object):
     def __init__(self, num_jobs):
         self.submit_state = {idx: False for idx in range(num_jobs)}
         self.finish_state = {idx: False for idx in range(num_jobs)}
+        self.temp = False
 
     def update_submit_idx(self, idx: int, state: Any):
         """
@@ -71,14 +73,27 @@ class JobStateTracker(object):
             cloud_cluster (Dict[str, Any]): Cloud cluster configuration.
         """
 
-        spill_to_cloud = cloud_cluster["spill_to_cloud"] == 'log'
+        spill_to_cloud = cloud_cluster["spill_to_cloud"]
         configs = [onprem_cluster, cloud_cluster]
         for idx, cluster_config in enumerate(configs):
-            if idx == 1 and spill_to_cloud:
+            if idx == 1 and spill_to_cloud == 'log':
                 cloud_log_path = cloud_cluster["cloud_cluster_path"]
                 cloud_jobs = parse_spillover_jobs(file_path=cloud_log_path)
                 for job_idx in cloud_jobs:
                     self.finish_state[job_idx] = True
+                continue
+            elif idx == 1 and spill_to_cloud == 'skypilot':
+                if not self.temp:
+                    self.temp = True
+                    time.sleep(10)
+                status_config = sky.status(refresh=True)
+                print(status_config)
+                for job_idx, job_state in self.finish_state.items():
+                    if not job_state:
+                        job_name = "job-" + str(job_idx)
+                        if not any(job_name in job_config["name"]
+                                   for job_config in status_config):
+                            self.finish_state[job_idx] = True
                 continue
             config.load_kube_config(context=cluster_config["name"])
             api = client.BatchV1Api()
@@ -117,7 +132,7 @@ def parse_spillover_jobs(file_path: str):
     log_jobs = []
     for log in cloud_log_list[1:-1]:
         # Regex to find the job id and the expected job duration.
-        match = re.search(r"Cloud Job \|\| job name job-(\S+) \| (\S+)", log)
+        match = re.search(r"Job: job-(\S+) \| (\S+)", log)
         match = match.groups()
         if match:
             # Convert the job id to an int.

@@ -7,8 +7,7 @@ import logging
 import time
 from typing import Dict, List
 
-from starburst.cluster_managers.manager import Manager
-from starburst.cluster_managers.log_manager import LogClusterManager
+from starburst.cluster_managers import Manager, LogClusterManager, SkyPilotManager
 from starburst.policies import waiting_policies
 from starburst.types.job import Job
 
@@ -99,6 +98,8 @@ class FIFOWaitPolicy(BasePolicy):
         if spill_to_cloud == 'log':
             self.cloud_manager = LogClusterManager(cloud_manager.cluster_name,
                                                    self.spilled_jobs_path)
+        elif spill_to_cloud == 'skypilot':
+            self.cloud_manager = SkyPilotManager(cloud_manager.cluster_name)
 
     def process_queue(self, job_queue: List[Job]):
 

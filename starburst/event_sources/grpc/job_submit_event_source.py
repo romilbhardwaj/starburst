@@ -50,7 +50,7 @@ class JobSubmissionServicer(job_submit_pb2_grpc.JobSubmissionServicer):
             # TODO: Parse out sleep time from logs and save it locally
             # job_dict['spec']['template']['spec']['containers'][0]['command'][1]
             job_end_time=0,
-            job_yaml=request.JobYAML,
+            job_yaml=job_dict,
             # TODO: Add parser for gpus
             resources={
                 "cpu": cpu,

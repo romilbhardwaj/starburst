@@ -39,12 +39,13 @@ def _plan_pod_allocation(pod, available_resources):
         available_resources: Available resources per node.
     """
     # Limited to single node pods for now.
+    cpu_resources = parse_resource_cpu(
+        pod.spec.containers[0].resources.requests.get("cpu", 0))
+    gpu_resources = float(pod.spec.containers[0].resources.requests.get(
+        "nvidia.com/gpu", 0))
     for node_name, node_resources in available_resources.items():
-        if node_resources["cpu"] >= float(
-                pod.spec.containers[0].resources.requests.get(
-                    "cpu", 0)) and node_resources["gpu"] >= float(
-                        pod.spec.containers[0].resources.requests.get(
-                            "nvidia.com/gpu", 0)):
+        if node_resources["cpu"] >= cpu_resources and node_resources[
+                "gpu"] >= gpu_resources:
             return node_name
     return None
 
@@ -178,7 +179,7 @@ class KubernetesManager(Manager):
             job: Job object containing the YAML file.
         """
         # Parse the YAML file into a dictionary
-        job_dict = yaml.safe_load(job.job_yaml)
+        job_dict = job.job_yaml  #yaml.safe_load(job.job_yaml)
         # Create a Kubernetes job object from the dictionary
         k8s_job = models.V1Job()
         # Append random string to job name to avoid name collision

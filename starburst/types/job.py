@@ -22,6 +22,10 @@ class Job(object):
         self._timeout = None
 
     @property
+    def yaml(self):
+        return self.job_yaml
+
+    @property
     def name(self):
         return self.job_name
 

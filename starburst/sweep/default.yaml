@@ -42,9 +42,22 @@ image: gcr.io/deeplearning-platform-release/pytorch-gpu.1-12
 #                                           Cluster Parameters                                       #
 #====================================================================================================#
 # GKE cluster name for on-prem cluster. This is used to submit jobs to the on-prem cluster.
-onprem_cluster: gke_sky-burst_us-central1-c_starburst
+onprem_cluster: mluo-onprem
 # GKE cluster name for cloud cluster. This is used to submit jobs to the cloud cluster.
-cloud_cluster: gke_sky-burst_us-central1-c_starburst-cloud
+cloud_cluster: mluo-cloud
+
+# onprem_cluster_config:
+#   cluster_type: kubernetes
+#   cluster_args:
+#     cluster_name: mluo-onprem
+#     namespace: default
+
+# cloud_cluster_config:
+#   cluster_type: log
+#   cluster_args:
+#     cluster_name: mluo-cloud
+#     log_file: None
+
 #====================================================================================================#
 #                                          Scheduler Parameters                                      #
 #====================================================================================================#
