@@ -81,10 +81,12 @@ def generate_runs(sweep_config: dict) -> List[dict]:
 
     # Generate runs from cartesian product.
     runs = {}
+    runs['config'] = sweep_config
     for run_index, trial in enumerate(grid_search):
         for key_index, key in enumerate(keys):
             base_config[key] = trial[key_index]
         runs[run_index] = copy.deepcopy(base_config)
+    
     return runs
 
 
@@ -199,6 +201,8 @@ def sweep_pipeline(sweep_config: str):
 
     # 4) Launch runs in sequence.
     for run_idx in runs_dict.keys():
+        if run_idx == 'config':
+            continue
         launch_run(run_config=runs_dict[run_idx],
                    sweep_name=cur_time,
                    run_index=str(run_idx))
