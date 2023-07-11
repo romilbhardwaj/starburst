@@ -247,6 +247,7 @@ def generate_jobs(run_config: utils.RunConfig):
     jobs = {}
     job_index = 0
     total_submit_time = 0
+
     # Loop to generate jobs.
     while True:
         if total_submit_time >= rc.submit_time:
