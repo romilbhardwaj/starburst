@@ -18,9 +18,9 @@ import yaml
 
 """
 # TODO: Integrate kubecost or GCP calculator
-# TODO: Include accurate cloud specific costs (e.g. network, disk, instance type)
 # TODO: Submit cloud quotas requests
 """
+
 SIGNAL_FILE = ""
 GCP_PRICES = {
 	"e2-medium": 0.038795,
@@ -41,53 +41,9 @@ SCALED_COSTS = {
 	"T4:vCPU": 7.5, #x
 }
 
-def retrieve_events_df_old(event_number=None, avoid_congestion=False, only_dict=False ):
-	'''
-	Offload all data cleaning to pandas, and none through python
-	'''
-	
+def retrieve_events_df(event_number=None, avoid_congestion=False, only_dict=False):	
 	"""Turns all logs from sweep into a pandas dataframe for analysis"""
-	all_jobs = {}
-	if event_number:
-		cluster_data_path = "../sweep_logs/" + str(event_number) + '/events/'
-		submission_data_path = "../sweep_logs/" + str(event_number) + '/jobs/'
-		sweep_data_path = "../sweep_logs/" + str(event_number) + "/sweep.json"
-		
-
-		files = os.listdir(cluster_data_path)
-
-		for i in range(len(files)):
-			#import pdb; pdb.set_trace()
-			file = str(i) + ".json"
-			cluster_log_path = cluster_data_path + file
-			submission_log_path = submission_data_path + file
-
-			try: 
-				cluster_event_data = read_cluster_event_data(cluster_log_path=cluster_log_path)
-				submission_data = read_submission_data(submission_log_path=submission_log_path)
-				with open(sweep_data_path, "r") as f: #"../logs/event_data.json", "r") as f:
-					sweep_data = json.load(f)
-				#jobs, num_nodes, hps = parse_event_logs(cluster_event_data=cluster_event_data, submission_data=submission_data, avoid_congestion=avoid_congestion)
-			except Exception as e:
-				print(e)
-				continue 
-
-	if only_dict:
-		return cluster_event_data, submission_data, sweep_data
-
-	cluster_event_data_df = pd.DataFrame.from_dict(cluster_event_data)
-	submission_data_df = pd.DataFrame.from_dict(submission_data)
-	sweep_data_df = pd.DataFrame.from_dict(sweep_data)
-
-	return cluster_event_data_df, submission_data_df, sweep_data_df
-
-def retrieve_events_df(event_number=None, avoid_congestion=False, only_dict=False):
-	'''
-	LOCAL AND REDACTED VERSION of retrieve_events_df
-	Offload all data cleaning to pandas, and none through python
-	'''
 	
-	"""Turns all logs from sweep into a pandas dataframe for analysis"""
 	events_dfs = {}
 	if event_number:
 		cluster_data_path = "../sweep_logs/" + str(event_number) + '/events/'
@@ -126,182 +82,6 @@ def retrieve_events_df(event_number=None, avoid_congestion=False, only_dict=Fals
 		return cluster_event_data, sweep_data
 	#return cluster_event_data_df, submission_data_df, sweep_data_df
 	return events_dfs, sweep_df
-
-def parse_event_logs(cluster_event_data=None, submission_data=None, event_time=None, avoid_congestion=True):
-	'''
-	Return values from parsed and joined logs (e.g. events, generated job data, and sweep values)
-
-	# TODO: Plot cloud and onprem cluster jobs together
-	# TODO: Note that event_job_id = job_data + 1
-	# NOTE: Parse `kube_pod_info` --> if node name is not found, then pod not scheduled onto a node
-
-	# TRACKING DIFFERENT TIMES: 
-	# Job Start time, Pod Start Time, Pod Scheduled Time
-	# Note: Pod only starts after pod has been scheduled ~ pod start == pod scheduled 
-	
-	# Delta 1:
-	# Waiting Time: Scheduled Time - Job Start Time
-	# Run Time: Job End Time - Scheduled Time
-
-	# Delta 2: Pod End Time - Job End Time
-	# Waiting Time: Scheduled Time - Pod Start Time
-	# Run Time: Job End Time - Scheduled Time
-
-	# AVOIDS CONGESTION
-	# Delta 3: 
-	# Runtime: Job End Time - Pod Start Time
-	# Waiting Time: Pod Start Time - Job Submit Time 
-
-	# Delta 4 
-	# Runtime: Job End Time - Pod Start Time
-	# Waiting Time: Pod Start Time - Job Scheduled Time  
-
-	# MISC
-	# SCHEDULER SUBMIT TIME IS TRUE ARRIVAL
-	#NOTE: Scheduler_submit_time == Job submit time
-	#TODO: Set job start times to pod start times
-	#TODO: Set pod end times to job end times associated with the pod that started
-
-	# Waiting Time: Pod Start Time (Arrival) - Job Submit Time (WITH CONGESTION)   
-	# Waiting Time: Pod Start Time (Arrival) - Job Scheduled Time (AVOID CONGESTION)
-
-	# TODO: Pass in a bool to look at JCT when assuming scheduled time vs. sumbission time
-	# TODO: Determine if logs should be initialized to submission_time or arrival_time
-	# TODO: Fix naming of allocated gpus -> allocated cpus && allocated gpus real to allocated gpus
-
-	#TODO: Rewrite this function within evaluation.ipynb -- save all event logs directly as pandas dataframe, then clean into a job_df
-	#TODO: Keep a new row for onprem versus cloud jobs 
-	'''
-
-	hyperparameters = None
-	if 'hyperparamters' in submission_data: 
-		hyperparameters = submission_data['hyperparameters']
-
-	job_names = {}
-
-	jobs = {'idx':[], 'runtime':[], 'arrival':[], 'num_gpus':[], 'allocated_gpus':[], 'allocated_gpus_real':[], 'allocated_node':[], 'start':[], 'instance_type':[], 'node_index': [], 'node': [], 'cpus': [], 'submission_time': [], 'wait_times':[]}
-
-	all_nodes = set()
-	nodes = {}
-	node_id = 0
-
-	onprem_event_logs = cluster_event_data['onprem']
-	cloud_event_logs = cluster_event_data['cloud']
-	clusters = {"onprem": onprem_event_logs, "cloud": cloud_event_logs}
-	for type in clusters:
-		cluster = clusters[type]
-		if cluster is not None:
-			start_times = cluster['container_start_times']
-			#pod_end_times = cluster['pod_end_times']
-			creation_times = cluster['job_creation_times']
-			completion_times = cluster['job_completion_times']
-			pod_nodes = cluster['scheduled_nodes']
-			job_pods = cluster['job_pods']
-			pod_jobs = {value: key for key, value in job_pods.items()}
-			node_instances = cluster['node_instances']
-
-			job_start_times = {}
-			job_end_times = {}
-			pod_start_times = {}
-
-			for pod in start_times:
-				pod_name = pod
-				pod_start_time = start_times[pod]
-				pod_start_times[pod_name] = pod_start_time
-				
-			min_arrival = math.inf
-
-			for job in creation_times:
-				job_name = job
-				job_start_time = creation_times[job]
-				job_start_times[job_name] = job_start_time
-			
-			for job in completion_times:
-				job_name = job
-				job_end_time = completion_times[job]
-				job_end_times[job_name] = job_end_time
-
-			for pod in pod_nodes:
-				pod_name = pod
-				all_nodes.add(pod_nodes[pod])
-
-			job_times = {}
-			for job in job_start_times:
-				if job in job_end_times:
-					job_times[job] = [job_start_times[job], job_end_times[job]]
-
-			pod_times = {}
-			for pod in pod_start_times:
-				job = pod_jobs[pod]
-				if job in job_end_times:
-					#job_completion_times[job] = [job_start_times[job], job_end_times[job]]
-					pod_times[job] = [pod_start_times[pod], job_end_times[job]]
-			
-			for n in all_nodes:
-				nodes[n] = node_id
-				node_id += 1
-
-			intervals = pod_times 
-			#intervals = job_times
-			for i, (key, value) in enumerate(intervals.items()):
-				job_id = re.findall(r'\d+', key)[0] #e.g. "sleep-26-100444"
-				job_names[i] = key
-				jobs['idx'].append(int(job_id))# - 1)#i)
-				jobs['runtime'].append(value[1] - value[0])
-				jobs['arrival'].append(value[0])
-				jobs['num_gpus'].append(1)
-				jobs['cpus'].append(submission_data[job_id]['resources']['cpu'])
-
-				if avoid_congestion:
-					submit_time = cluster['job_creation_times'][key] #Job start time
-				else:
-					submit_time = submission_data[job_id]['scheduler_submit_time'] #Job submission time
-
-				jobs['submission_time'].append(submit_time)
-
-				if not submit_time:
-					jobs['wait_times'].append(0)
-				else:
-					jobs['wait_times'].append(value[0] - submit_time)
-
-				#TODO: Currently cpu jobs map to gpu_indices
-				#TODO: Need to map gpu jobs to separate allocated_cpus and gpu jobs mapped to allocated_gpus
-
-				if job_pods[key] in pod_nodes:
-					jobs['allocated_gpus'].append({nodes[pod_nodes[job_pods[key]]]: []})
-					jobs['allocated_gpus_real'].append({nodes[pod_nodes[job_pods[key]]]: []})
-					jobs['node_index'].append(nodes[pod_nodes[job_pods[key]]])
-				else:
-					jobs['allocated_gpus'].append({})
-					jobs['allocated_gpus_real'].append({})
-					jobs['node_index'].append(None)
-				
-				if type == "cloud":
-					jobs['start'].append(None)
-				else:
-					jobs['start'].append(value[0])
-				
-				if job_pods[key] in pod_nodes:
-					jobs['node'].append(pod_nodes[job_pods[key]])
-				else:
-					jobs['node'].append("unknown")
-				
-				if job_pods[key] in pod_nodes:
-					jobs['instance_type'].append(node_instances[pod_nodes[job_pods[key]]])
-				else:
-					jobs['instance_type'].append("unknown")
-		
-	if not jobs['arrival']:
-		print("No job arrival times logged!")
-
-	min_arrival = min(jobs['submission_time'])
-	jobs['arrival'] = [i - min_arrival for i in jobs['arrival']]
-	jobs['submission_time'] = [i - min_arrival for i in jobs['submission_time']]
-	jobs['start'] = [i - min_arrival if i is not None else None for i in jobs['start']]
-	jobs['arrival'] = np.array(jobs['arrival'])
-	jobs['num_gpus'] =  np.array(jobs['num_gpus'])
-
-	return jobs, len(all_nodes), hyperparameters
 
 def retrieve_pod_logs(cluster="", file_name="cluster_pod_logs.txt"):
 	config.load_kube_config(context=cluster)
@@ -350,58 +130,6 @@ def retrieve_raw_events():
 	text_file = open("../../local/artifacts/raw_logs.txt", "w")
 	n = text_file.write(str(events))
 	text_file.close()
-
-def analyze_df(jobs_df):
-	"""
-	# TODO: Compute baseline cost and cost savings
-	#cost, cost_density, system_utilization = compute_metrics(jobs=jobs, num_nodes=num_nodes)
-	#metrics[i] = {"cost": cost, "cost_density": cost_density, "system_utilization": system_utilization, "hyperparameters": hyperparameters}
-	"""
-	return jobs_df
-
-def retrieve_df(event_number=None, avoid_congestion=False):
-	"""Turns all logs from sweep into a pandas dataframe for analysis"""
-	all_jobs = {}
-	if event_number:
-		cluster_data_path = "../sweep_logs/" + str(event_number) + '/events/'
-		submission_data_path = "../sweep_logs/" + str(event_number) + '/jobs/'
-		sweep_data_path = "../sweep_logs/" + str(event_number) + "/sweep.json"
-		with open(sweep_data_path, "r") as f: 
-			sweep = json.load(f)
-
-		files = os.listdir(cluster_data_path)
-
-		for i in range(len(files)):
-			#import pdb; pdb.set_trace()
-			file = str(i) + ".json"
-			cluster_log_path = cluster_data_path + file
-			submission_log_path = submission_data_path + file
-
-			try: 
-				cluster_event_data = read_cluster_event_data(cluster_log_path=cluster_log_path)
-				submission_data = read_submission_data(submission_log_path=submission_log_path)
-				jobs, num_nodes, hps = parse_event_logs(cluster_event_data=cluster_event_data, submission_data=submission_data, avoid_congestion=avoid_congestion)
-			except Exception as e:
-				print(e)
-				continue 
-			
-			hyperparameters = submission_data['hyperparameters']
-
-			for k, v in hyperparameters.items(): 
-				jobs[k] = v
-
-			sweep_metrics = sweep[str(i)]
-			jobs["varying_values"] = sweep["varying_values"].keys()
-			jobs["fixed_values"] = sweep["fixed_values"].keys()
-
-			for k, v in sweep_metrics.items(): 
-				jobs[k + "_sweep"] = v
- 			
-			all_jobs[i] = jobs
-
-	jobs_df = pd.DataFrame.from_dict(all_jobs)
-	jobs_df = jobs_df.transpose()
-	return jobs_df
 
 def read_cluster_event_data(cluster_log_path=None):
 	if not cluster_log_path: 
