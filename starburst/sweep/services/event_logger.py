@@ -101,6 +101,8 @@ def event_logger_loop(clusters: Dict[str, str], jobs: Dict[Any, Any],
         event_data = cluster_event_data[cluster_type]
         event_data['node_instances'] = retrieve_node_instance(
             apis[cluster_type])
+        event_data['cluster_size'] = len(apis[cluster_type].list_node(watch=False).items)
+        
 
     total_jobs = len(jobs)
     scheduled_pods = set()
