@@ -61,15 +61,15 @@ class SkyPilotManager(object):
         return True
 
     def submit_job(self, job: Job):
-        job_command = job.job_yaml['spec']['template']['spec']['containers'][
-            0]['args'][0]
+        job_command = job.yaml['spec']['template']['spec']['containers'][0][
+            'args'][0]
         print(
-            f'***************Submitting Skypilot Job: {job.job_name}***************'
+            f'***************Submitting Skypilot Job: {job.name}***************'
         )
         job_process = mp.Process(
             target=launch_skypilot_job,
             args=(
-                job.job_name,
+                job.name,
                 job_command,
                 job.resources,
             ),

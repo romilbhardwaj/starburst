@@ -170,7 +170,7 @@ class KubernetesManager(Manager):
                 return True
         return False
 
-    def submit_job(self, job: Job):
+    def submit_job(self, job: Job) -> None:
         """
         Submit a YAML which contains the Kubernetes Job declaration using the
         batch api.
@@ -179,7 +179,7 @@ class KubernetesManager(Manager):
             job: Job object containing the YAML file.
         """
         # Parse the YAML file into a dictionary
-        job_dict = job.job_yaml  #yaml.safe_load(job.job_yaml)
+        job_dict = job.yaml
         # Create a Kubernetes job object from the dictionary
         k8s_job = models.V1Job()
         # Append random string to job name to avoid name collision
@@ -190,7 +190,7 @@ class KubernetesManager(Manager):
                                             body=k8s_job)
         self.previous_job = job
 
-    def _get_job_status(self, job_name):
+    def _get_job_status(self, job_name: str) -> None:
         """ Get job status. """
         job = self.batch_v1.read_namespaced_job(job_name,
                                                 namespace=self.namespace)

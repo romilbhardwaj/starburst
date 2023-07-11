@@ -106,7 +106,8 @@ class StarburstScheduler:
         This is where the scheduler will process the queue and make
         intelligent decisions.
         """
-        self.event_logger.log_event(event)
+        if self.event_logger:
+            self.event_logger.log_event(event)
         # Process the queue
         self.queue_policy.process_queue(self.job_queue)
 
@@ -118,9 +119,11 @@ class StarburstScheduler:
         Args:
             event (JobAddEvent): Job add event.
         """
-        self.event_logger.log_event(event)
-        event.job.set_event_queue_add_time(time.time())
-        self.job_queue.append(event.job)
+        if self.event_logger:
+            self.event_logger.log_event(event)
+        add_job = event.job
+        add_job.set_scheduler_arrival(time.time())
+        self.job_queue.append(add_job)
 
     async def scheduler_loop(self):
         """

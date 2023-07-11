@@ -106,7 +106,7 @@ class FIFOWaitPolicy(BasePolicy):
         # Loop through queue to release jobs which timeout
         if job_queue:
             for job in job_queue:
-                wait_time = time.time() - job.job_submit_time
+                wait_time = time.time() - job.arrival
                 if job.timeout is None:
                     job.set_timeout(
                         self.waiting_policy_cls.compute_timeout(job))

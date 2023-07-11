@@ -34,8 +34,8 @@ class LogClusterManager(object):
         return True
 
     def submit_job(self, job: Job):
-        submission_time = job.job_event_queue_add_time
-        log_string = (f'Job: {job.job_name} | '
+        submission_time = job.scheduler_arrival
+        log_string = (f'Job: {job.name} | '
                       f'Arrival: {submission_time} | '
                       f'Start:  {time.time()} | '
                       f'Runtime: {job.runtime} | ')

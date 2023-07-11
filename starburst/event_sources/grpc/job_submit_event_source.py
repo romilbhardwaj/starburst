@@ -40,22 +40,15 @@ class JobSubmissionServicer(job_submit_pb2_grpc.JobSubmissionServicer):
 
         name = job_dict["metadata"]["name"]
         logger.debug(
-            f"****** Job Submitted to Event Queue -- Job {name} at Time {time.time()}"
+            f"****** Job Submitted to Event Queue -- Job {name} at Time {time.time()} ******"
         )
-        job = Job(
-            job_name=str(job_dict["metadata"]["name"]),  # "MyJob",
-            # TODO: Parse out job_name and save it locally
-            job_submit_time=time.time(),
-            job_start_time=0,
-            # TODO: Parse out sleep time from logs and save it locally
-            # job_dict['spec']['template']['spec']['containers'][0]['command'][1]
-            job_end_time=0,
-            job_yaml=job_dict,
-            # TODO: Add parser for gpus
-            resources={
-                "cpu": cpu,
-                "gpu": gpu
-            })
+        job = Job(name=str(job_dict["metadata"]["name"]),
+                  arrival=time.time(),
+                  yaml=job_dict,
+                  resources={
+                      "cpu": cpu,
+                      "gpu": gpu
+                  })
 
         if job_dict['metadata']['annotations']['estimated_runtime']:
             job.set_runtime(
