@@ -17,6 +17,9 @@ class RunConfig:
     def __init__(self, config_dict):
         self.__dict__.update(config_dict)
 
+    def get_dict(self):
+        return __dict__
+
 
 def load_yaml_file(file_path: str) -> dict:
     """
