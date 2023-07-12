@@ -3,10 +3,6 @@ workload_type: cpu_sleep
 submit_time: 15
 random_seed: 13
 
-# Cluster Parameters
-onprem_cluster: mluo-onprem
-cloud_cluster: mluo-cloud
-
 # Job generation parameters
 arrival_dist: uniform
 arrival_param: 5
@@ -23,5 +19,17 @@ waiting_coeff: 10
 waiting_budget: -1
 queue_policy: fifo
 loop: False
-spill_to_cloud: skypilot
 min_waiting_time: 0
+
+# Cluster Parameters
+clusters:
+  # On-premise cluster config.
+  onprem:
+    cluster_type: k8
+    cluster_args:
+      cluster_name: mluo-onprem
+  # Cloud cluster config.
+  cloud:
+    cluster_type: log
+    cluster_args:
+      cluster_name: mluo-cloud

@@ -256,7 +256,6 @@ def generate_jobs(run_config: utils.RunConfig):
             "job_id": job_index,
             "workload_type": rc.workload_type,
             "image": job_gen.image,
-            "spill_to_cloud": rc.spill_to_cloud,
         }
         job["resources"] = job_gen.get_resources()
         total_submit_time += job_gen.get_interarrival()

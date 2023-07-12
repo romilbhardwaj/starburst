@@ -63,11 +63,15 @@ def sample_gpu_train_job(gpu: int, duration: float) -> Tuple[int, str]:
     return jobs[min_id]
 
 
-def check_empty_cluster(clusters: Dict[str, str]) -> bool:
+def check_empty_cluster(clusters: Dict[str, Any]) -> bool:
     """
     Returns true if there are no pods/jobs in both on-prem and cloud clusters.
     """
-    for kube_cluster_name in clusters.values():
+    for _, cluster_config in clusters.items():
+        if cluster_config['cluster_type'] != 'k8':
+            continue
+        cluster_args = cluster_config['cluster_args']
+        kube_cluster_name = cluster_args['cluster_name']
         config.load_kube_config(context=kube_cluster_name)
         api = client.CoreV1Api()
         pods = api.list_namespaced_pod(namespace='default')
@@ -78,7 +82,7 @@ def check_empty_cluster(clusters: Dict[str, str]) -> bool:
     return True
 
 
-def clear_clusters(clusters: Dict[str, str]):
+def clear_clusters(clusters: Dict[str, Any]):
     """
     Automates clearing of cluster state by removing event, logs, and pods
     on both onprem and cloud cluster.
@@ -86,7 +90,11 @@ def clear_clusters(clusters: Dict[str, str]):
     while True:
         try:
             api_batch_list = []
-            for kube_cluster_name in clusters.values():
+            for _, cluster_config in clusters.items():
+                if cluster_config['cluster_type'] != 'k8':
+                    continue
+                cluster_args = cluster_config['cluster_args']
+                kube_cluster_name = cluster_args['cluster_name']
                 # Fetching cluster APIs
                 config.load_kube_config(context=kube_cluster_name)
                 api = client.CoreV1Api()

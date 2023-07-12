@@ -110,13 +110,9 @@ def launch_run(run_config: dict, sweep_name: str, run_index: int = 0):
                      f"jobs/{run_index}.yaml")
     utils.save_yaml_object(jobs, job_yaml_path)
 
-    clusters = {
-        "onprem": run_config.onprem_cluster,
-        "cloud": run_config.cloud_cluster
-    }
-    while not utils.check_empty_cluster(clusters=clusters):
+    while not utils.check_empty_cluster(clusters=run_config.clusters):
         logger.debug("Cleaning cluster pods, jobs, and event logs...")
-        utils.clear_clusters(clusters=clusters)
+        utils.clear_clusters(clusters=run_config.clusters)
         time.sleep(1)
     logger.debug(f"Starting Run ID: {run_index}.")
 
@@ -133,19 +129,17 @@ def launch_run(run_config: dict, sweep_name: str, run_index: int = 0):
         'loop': run_config.loop,
         'min_waiting_time': run_config.min_waiting_time,
     }
-    print(policy_config)
+    run_config.clusters['cloud']['cluster_args']['log_file'] = (
+        f'{LOG_DIRECTORY.format(name=sweep_name)}/events/'
+        f'{run_index}.log')
 
     scheduler_service = mp.Process(
         target=driver.launch_starburst_scheduler,
         args=(
             driver.GRPC_PORT,
             run_config.schedule_tick,
-            clusters["onprem"],
-            clusters["cloud"],
-            run_config.spill_to_cloud,
+            run_config.clusters,
             policy_config,
-            (f'{LOG_DIRECTORY.format(name=sweep_name)}/events/'
-             f'{run_index}.log'),
         ),
     )
     scheduler_service.start()
@@ -153,7 +147,7 @@ def launch_run(run_config: dict, sweep_name: str, run_index: int = 0):
     event_logger_service = mp.Process(
         target=event_logger.logger_service,
         args=(
-            clusters,
+            run_config.clusters,
             jobs,
             sweep_name,
             run_index,
@@ -163,7 +157,7 @@ def launch_run(run_config: dict, sweep_name: str, run_index: int = 0):
 
     job_submission_service = mp.Process(
         target=job_submission.job_submission_service,
-        args=(jobs, clusters, sweep_name, run_index),
+        args=(jobs, run_config.clusters, sweep_name, run_index),
     )
     job_submission_service.start()
 
@@ -187,7 +181,7 @@ def sweep_pipeline(sweep_config: str):
     clear_prior_sweeps(retry_limit=3)
 
     # 2) Create Log directory for sweep
-    cur_time = time.time()
+    cur_time = int(time.time())
     log_directory_path = LOG_DIRECTORY.format(name=str(cur_time))
     utils.create_log_directory(LOG_DIRECTORY.format(name=log_directory_path))
 
@@ -200,7 +194,7 @@ def sweep_pipeline(sweep_config: str):
     # 4) Launch runs in sequence.
     for run_idx in runs_dict.keys():
         launch_run(run_config=runs_dict[run_idx],
-                   sweep_name=cur_time,
+                   sweep_name=str(cur_time),
                    run_index=str(run_idx))
 
 

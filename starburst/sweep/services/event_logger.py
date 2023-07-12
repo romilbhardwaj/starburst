@@ -72,14 +72,14 @@ def retrieve_node_instance(api: client.CoreV1Api) -> Dict[str, str]:
     return instance_types
 
 
-def event_logger_loop(clusters: Dict[str, str], jobs: Dict[Any, Any],
+def event_logger_loop(clusters: Dict[str, Any], jobs: Dict[Any, Any],
                       sweep_name: str, run_index: int,
                       file_logger: LogManager):
     """
     Loop for logging events from the cluster.
 
     Args:
-        clusters (Dict[str, str]): Dictionary of cluster types and their names.
+        clusters (Dict[str, Any]): Dictionary of cluster types and their names.
         jobs (Dict[Any, Any]): Dictionary of job ids and their job data.
         sweep_name (str): Name of the sweep.
         run_index (int): Index of the run.
@@ -87,33 +87,39 @@ def event_logger_loop(clusters: Dict[str, str], jobs: Dict[Any, Any],
                                                    events.
     """
 
-    cluster_event_data = {
-        'onprem': copy.deepcopy(EVENT_DATA_TEMPLATE),
-        'cloud': copy.deepcopy(EVENT_DATA_TEMPLATE),
-    }
+    cluster_event_data = {}
     events_log_path = get_pod_events_path(sweep_name, run_index)
     apis = {}
 
     # Preprocessing cluster event data.
-    for cluster_type, cluster in clusters.items():
-        config.load_kube_config(context=cluster)
-        apis[cluster_type] = client.CoreV1Api()
-        event_data = cluster_event_data[cluster_type]
+    for cluster_cls, cluster_config in clusters.items():
+        cluster_name = cluster_config['cluster_args']['cluster_name']
+        cluster_type = cluster_config['cluster_type']
+        if cluster_type != 'k8':
+            continue
+        config.load_kube_config(context=cluster_name)
+        apis[cluster_cls] = client.CoreV1Api()
+        cluster_event_data[cluster_cls] = copy.deepcopy(EVENT_DATA_TEMPLATE)
+        event_data = cluster_event_data[cluster_cls]
         event_data['node_instances'] = retrieve_node_instance(
-            apis[cluster_type])
+            apis[cluster_cls])
 
     total_jobs = len(jobs)
     scheduled_pods = set()
     finished_jobs = set()
     while True:
-        for cluster_type, api in apis.items():
-            config.load_kube_config(context=cluster)
+        for cluster_cls, cluster_config in clusters.items():
+            if cluster_cls not in apis:
+                continue
+            cluster_name = cluster_config['cluster_args']['cluster_name']
+            config.load_kube_config(context=cluster_name)
+            api = apis[cluster_cls]
             # Get all events
             events = api.list_event_for_all_namespaces()
             # Get all pods
             pod_list = api.list_namespaced_pod(namespace="default")
 
-            event_data = cluster_event_data[cluster_type]
+            event_data = cluster_event_data[cluster_cls]
             for pod in pod_list.items:
                 pod_name = pod.metadata.name
                 if 'job' not in pod_name:

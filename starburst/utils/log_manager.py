@@ -1,5 +1,6 @@
 import collections
 import logging
+import os
 
 
 class LogManager(object):
@@ -12,6 +13,7 @@ class LogManager(object):
         self.logger.setLevel(logging.DEBUG)
         # Remove the default stdout handler from the logger
         self.logger.handlers = []
+        log_file_path = os.path.abspath(log_file_path)
         self.file_handler = logging.FileHandler(log_file_path)
         self.file_handler.setLevel(logging.DEBUG)
         self.formatter = logging.Formatter("%(message)s")
@@ -19,6 +21,11 @@ class LogManager(object):
         self.logger.addHandler(self.file_handler)
         # Prevent the logger from propagating to the root logger.
         self.logger.propagate = False
+
+        if not os.path.exists(log_file_path):
+            os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
+            with open(log_file_path, 'w') as f:
+                pass
 
     def append(self, message):
         self.logger.debug(message)

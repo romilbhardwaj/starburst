@@ -41,34 +41,30 @@ image: gcr.io/deeplearning-platform-release/pytorch-gpu.1-12
 #====================================================================================================#
 #                                           Cluster Parameters                                       #
 #====================================================================================================#
-# GKE cluster name for on-prem cluster. This is used to submit jobs to the on-prem cluster.
-onprem_cluster: mluo-onprem
-# GKE cluster name for cloud cluster. This is used to submit jobs to the cloud cluster.
-cloud_cluster: mluo-cloud
-
-# onprem_cluster_config:
-#   cluster_type: kubernetes
-#   cluster_args:
-#     cluster_name: mluo-onprem
-#     namespace: default
-
-# cloud_cluster_config:
-#   cluster_type: log
-#   cluster_args:
-#     cluster_name: mluo-cloud
-#     log_file: None
+clusters:
+  # On-premise cluster config.
+  onprem:
+    # Limitation: Only k8 for now.
+    cluster_type: k8
+    cluster_args:
+      # GKE cluster name for on-prem cluster. This is used to submit jobs to the on-prem cluster.
+      cluster_name: mluo-onprem
+  # Cloud cluster config.
+  cloud:
+    # Which cluster manager type the cluster is.
+    # Possible options: ['log', 'k8', 'skypilot']
+    #   • Log: Logs the jobs onto a log file.
+    #   • K8: Uses `cloud_cluster` (GKE cluster) to submit and run jobs.
+    #   • Skypilot: Uses Skypilot to automatically provision a cloud cluster and submit and run jobs on the cluster.
+    cluster_type: k8
+    cluster_args:
+      cluster_name: mluo-cloud
 
 #====================================================================================================#
 #                                          Scheduler Parameters                                      #
 #====================================================================================================#
 # Scheduling tick, how often the scheduler is invoked (in seconds).
 schedule_tick: 1
-# How jobs should spill to cloud
-# Possible options: ['log', 'cluster', 'skypilot']
-#   • Log: Logs the jobs that spill to the cloud.
-#   • Cluster: Uses `cloud_cluster` (GKE cluster) to submit jobs to the cloud.
-#   • Skypilot: Uses Skypilot to automatically provision a cloud cluster and submit jobs on the cluster.
-spill_to_cloud: log
 # Queueing policy which sets the order of the jobs in the queue
 # Possible options: ['fifo', 'sjf']
 queue_policy: fifo

@@ -45,23 +45,13 @@ class JobStateTracker(object):
         """
         self.submit_state[idx] = state
 
-    def update_submit_file_state(self, idx: int, file_path: str):
-        """
-        Updates the submission state of the job with the given index to a file.
-        """
-        file_path = os.path.abspath(file_path)
-        job_data = utils.load_yaml_file(file_path)
-        job_data[idx]["scheduler_submit_time"] = self.submit_state[idx]
-        utils.save_yaml_object(job_data, file_path)
-
     def check_if_jobs_submitted(self) -> bool:
         """
         Check if all jobs have been submitted.
         """
         return all(self.submit_state.values())
 
-    def update_finished_jobs(self, onprem_cluster: Dict[str, Any],
-                             cloud_cluster: Dict[str, Any]):
+    def update_finished_jobs(self, clusters: Dict[str, Any]):
         """
         Updates the finished state of the jobs.        
         For the on-premise cluster,it polls Kubernetes for the job status.
@@ -72,22 +62,21 @@ class JobStateTracker(object):
             onprem_cluster (Dict[str, Any]): On-prem cluster configuration.
             cloud_cluster (Dict[str, Any]): Cloud cluster configuration.
         """
-
-        spill_to_cloud = cloud_cluster["spill_to_cloud"]
-        configs = [onprem_cluster, cloud_cluster]
-        for idx, cluster_config in enumerate(configs):
-            if idx == 1 and spill_to_cloud == 'log':
-                cloud_log_path = cloud_cluster["cloud_cluster_path"]
+        for cluster_config in clusters.values():
+            cluster_args = cluster_config['cluster_args']
+            cluster_name = cluster_args['cluster_name']
+            cluster_type = cluster_config['cluster_type']
+            if cluster_type == 'log':
+                cloud_log_path = cluster_args['log_file']
                 cloud_jobs = parse_spillover_jobs(file_path=cloud_log_path)
                 for job_idx in cloud_jobs:
                     self.finish_state[job_idx] = True
                 continue
-            elif idx == 1 and spill_to_cloud == 'skypilot':
+            elif cluster_type == 'skypilot':
                 if not self.temp:
                     self.temp = True
                     time.sleep(10)
                 status_config = sky.status(refresh=True)
-                print(status_config)
                 for job_idx, job_state in self.finish_state.items():
                     if not job_state:
                         job_name = "job-" + str(job_idx)
@@ -95,19 +84,22 @@ class JobStateTracker(object):
                                    for job_config in status_config):
                             self.finish_state[job_idx] = True
                 continue
-            config.load_kube_config(context=cluster_config["name"])
-            api = client.BatchV1Api()
-            job_list, _, _ = api.list_namespaced_job_with_http_info(
-                namespace="default", limit=None, _continue="")
-            for job_idx, job_state in self.finish_state.items():
-                try:
-                    if not job_state:
-                        curr_job = find_job_with_substring(
-                            job_list.items, "job-" + str(job_idx))
-                        if curr_job.status.succeeded == 1:
-                            self.finish_state[job_idx] = True
-                except Exception:
-                    pass
+            elif cluster_type == 'k8':
+                config.load_kube_config(context=cluster_name)
+                api = client.BatchV1Api()
+                job_list, _, _ = api.list_namespaced_job_with_http_info(
+                    namespace="default", limit=None, _continue="")
+                for job_idx, job_state in self.finish_state.items():
+                    try:
+                        if not job_state:
+                            curr_job = find_job_with_substring(
+                                job_list.items, "job-" + str(job_idx))
+                            if curr_job.status.succeeded == 1:
+                                self.finish_state[job_idx] = True
+                    except Exception:
+                        pass
+            else:
+                raise ValueError(f"Invalid cluster type: {cluster_type}")
 
     def check_if_jobs_finished(self) -> bool:
         return all(self.finish_state.values())
@@ -130,9 +122,11 @@ def parse_spillover_jobs(file_path: str):
     with open(file_path, "r") as f:
         cloud_log_list = f.read().split("\n")
     log_jobs = []
-    for log in cloud_log_list[1:-1]:
+    for log in cloud_log_list:
         # Regex to find the job id and the expected job duration.
         match = re.search(r"Job: job-(\S+) \| (\S+)", log)
+        if match is None:
+            continue
         match = match.groups()
         if match:
             # Convert the job id to an int.
@@ -176,7 +170,7 @@ def submit_job_to_scheduler(job_yaml: dict):
 
 def submission_loop(
     jobs: Dict[Any, Any],
-    clusters: Dict[str, str],
+    clusters: Dict[str, Any],
     sweep_name: str,
     run_index: int,
     file_logger: LogManager,
@@ -187,15 +181,6 @@ def submission_loop(
     """
     total_jobs = len(jobs)
     job_tracker = JobStateTracker(total_jobs)
-    onprem_cluster = {
-        "name": clusters["onprem"],
-    }
-    cloud_cluster = {
-        "name": clusters["cloud"],
-        "spill_to_cloud": jobs[0]["spill_to_cloud"],
-        "cloud_cluster_path":
-        get_event_submission_log_path(sweep_name, run_index),
-    }
 
     # Primary loop for submitting jobs to the scheduler.
     # Will submit jobs until all jobs have been submitted.
@@ -209,11 +194,6 @@ def submission_loop(
             submit_job_to_scheduler(job["kube_yaml"])
             submit_time = time.time()
             job_tracker.update_submit_idx(job_index, submit_time)
-            job_tracker.update_submit_file_state(
-                job_index,
-                f"{submit_sweep.LOG_DIRECTORY.format(name=str(sweep_name))}"
-                f"/jobs/{run_index}.yaml",
-            )
             file_logger.append(f"Submitting Job {job_index}: {str(job)} "
                                f"during time {submit_time}.")
             job_index += 1
@@ -229,13 +209,13 @@ def submission_loop(
     while True:
         if job_tracker.check_if_jobs_finished():
             break
-        job_tracker.update_finished_jobs(onprem_cluster, cloud_cluster)
+        job_tracker.update_finished_jobs(clusters)
         file_logger.append("Finished Jobs State: " +
                            str(job_tracker.finish_state))
         time.sleep(JOB_COMPLETION_TICK)
 
 
-def job_submission_service(jobs: Dict[Any, Any], clusters: Dict[str, str],
+def job_submission_service(jobs: Dict[Any, Any], clusters: Dict[str, Any],
                            sweep_name: str, run_index: int):
     """
     Calls loop that submit jobs to the scheduler. 

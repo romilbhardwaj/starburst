@@ -49,21 +49,16 @@ def parse_args():
                         type=str,
                         default=CLOUD_K8S_CLUSTER_NAME,
                         help='Name of cloud K8s cluster')
-    parser.add_argument('--log',
-                        type=str,
-                        default=None,
-                        help='Log file to write to')
     args = parser.parse_args()
     return args
 
 
-def launch_starburst_scheduler(grpc_port=None,
-                               sched_tick_time=SCHED_TICK_TIME,
-                               onprem_k8s_cluster_name=ONPREM_K8S_CLUSTER_NAME,
-                               cloud_k8s_cluster_name=CLOUD_K8S_CLUSTER_NAME,
-                               spill_to_cloud='log',
-                               policy_config=None,
-                               log_file=None):
+def launch_starburst_scheduler(
+    grpc_port=None,
+    sched_tick_time=SCHED_TICK_TIME,
+    clusters={},
+    policy_config=None,
+):
     # Create event queue, logger and sources.
     event_queue = asyncio.Queue()
     event_logger = SimpleEventLogger()
@@ -81,11 +76,8 @@ def launch_starburst_scheduler(grpc_port=None,
     event_sources = [grpc_job_submit_event_source]
     starburst = StarburstScheduler(event_queue,
                                    event_logger,
-                                   onprem_cluster_name=onprem_k8s_cluster_name,
-                                   cloud_cluster_name=cloud_k8s_cluster_name,
-                                   spill_to_cloud=spill_to_cloud,
-                                   policy_config=policy_config,
-                                   log_file=log_file)
+                                   clusters=clusters,
+                                   policy_config=policy_config)
 
     # Create event sources
     for s in event_sources:
@@ -99,10 +91,22 @@ def launch_starburst_scheduler(grpc_port=None,
 
 if __name__ == '__main__':
     args = parse_args()
-    launch_starburst_scheduler(
-        grpc_port=args.grpc_port,
-        sched_tick_time=args.sched_tick_time,
-        onprem_k8s_cluster_name=args.onprem_k8s_cluster_name,
-        cloud_k8s_cluster_name=args.cloud_k8s_cluster_name,
-        policy_config={'waiting_policy': None},
-        log_file=args.log)
+    onprem_config = {
+        'cluster_type': 'k8',
+        'cluster_args': {
+            'cluster_name': args.onprem_k8s_cluster_name
+        }
+    }
+    cloud_config = {
+        'cluster_type': 'k8',
+        'cluster_args': {
+            'cluster_name': args.cloud_k8s_cluster_name
+        }
+    }
+    launch_starburst_scheduler(grpc_port=args.grpc_port,
+                               sched_tick_time=args.sched_tick_time,
+                               clusters={
+                                   'onprem': onprem_config,
+                                   'cloud': cloud_config
+                               },
+                               policy_config={'waiting_policy': None})

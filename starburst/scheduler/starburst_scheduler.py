@@ -5,16 +5,43 @@ import asyncio
 import logging
 import time
 import traceback
-from typing import Dict
+from typing import Any, Dict
 
 from starburst.policies import queue_policies
-from starburst.cluster_managers.kubernetes_manager import KubernetesManager
+from starburst.cluster_managers import Manager, KubernetesManager, LogClusterManager, SkyPilotManager
 from starburst.types.events import BaseEvent, EventTypes, SchedTick, \
     JobAddEvent
 
 logger = logging.getLogger(__name__)
 
 SCHED_TICK = 1
+
+
+def create_cluster_manager(cluster_config: Dict[str, Any]) -> Manager:
+    """ Create a cluster manager based on the cluster config. """
+    cluster_type = cluster_config['cluster_type']
+    cluster_args = cluster_config['cluster_args']
+    cluster_manager_cls = None
+    if cluster_type == 'k8':
+        cluster_manager_cls = KubernetesManager
+    elif cluster_type == 'log':
+        cluster_manager_cls = LogClusterManager
+    elif cluster_type == 'skypilot':
+        cluster_manager_cls = SkyPilotManager
+    else:
+        raise ValueError("Invalid cluster type: {}".format(cluster_type))
+
+    # Get the constructor of the class
+    constructor = cluster_manager_cls.__init__
+    # Get the parameter names of the constructor
+    class_params = constructor.__code__.co_varnames[1:constructor.__code__.
+                                                    co_argcount]
+
+    # Filter the dictionary keys based on parameter names
+    args = {k: v for k, v in cluster_args.items() if k in class_params}
+
+    # Create an instance of the class with the extracted arguments
+    return cluster_manager_cls(**args)
 
 
 class StarburstScheduler:
@@ -29,11 +56,8 @@ class StarburstScheduler:
         self,
         event_queue: asyncio.Queue,
         event_logger: object,
-        onprem_cluster_name: str,
-        cloud_cluster_name: str,
-        spill_to_cloud: str,
+        clusters: Dict[str, Any],
         policy_config: Dict[str, str],
-        log_file: str = None,
     ):
         """
         Main Starburst scheduler class.
@@ -47,8 +71,7 @@ class StarburstScheduler:
                                    storing events in the system.
             onprem_cluster_name (str): Name of the on-prem cluster (the name
                                        of the context in kubeconfig).
-            cloud_cluster_name (str): Name of the cloud cluster (the name
-                                      of the context in kubeconfig).
+            cloud_config (Dict[str, object]): Configuration for the cloud.
         """
         # Scheduler objects
         self.event_queue = event_queue
@@ -57,28 +80,20 @@ class StarburstScheduler:
         # Job queue
         # TODO(mluo): Move to within Kubernetes instead.
         self.job_queue = []
-        self.log_file = log_file
 
+        self.cluster_managers = {}
         # Create the cluster maangers for on-prem and cloud.
-        self.onprem_cluster_name = onprem_cluster_name
-        self.cloud_cluster_name = cloud_cluster_name
-        self.onprem_cluster_manager = KubernetesManager(
-            self.onprem_cluster_name)
-        self.cloud_cluster_manager = KubernetesManager(self.cloud_cluster_name)
-        self.spill_to_cloud = spill_to_cloud
+        for cluster_cls, cluster_config in clusters.items():
+            self.cluster_managers[cluster_cls] = create_cluster_manager(
+                cluster_config)
+
         self.policy_config = policy_config
         # Set up policy
         queue_policy_class = queue_policies.get_policy(self.policy_config)
-        if 'FifoOnpremOnlyPolicy' not in str(queue_policy_class):
-            self.queue_policy = queue_policy_class(
-                self.onprem_cluster_manager,
-                self.cloud_cluster_manager,
-                spill_to_cloud=self.spill_to_cloud,
-                policy_config=self.policy_config,
-                log_file=self.log_file)
-        else:
-            self.queue_policy = queue_policy_class(self.onprem_cluster_manager,
-                                                   self.cloud_cluster_manager)
+        self.queue_policy = queue_policy_class(
+            self.cluster_managers['onprem'],
+            self.cluster_managers['cloud'],
+            policy_config=self.policy_config)
 
     def process_event(self, event: BaseEvent):
         '''

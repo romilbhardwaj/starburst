@@ -72,13 +72,9 @@ class FIFOWaitPolicy(BasePolicy):
         self,
         onprem_manager: Manager,
         cloud_manager: Manager,
-        spill_to_cloud: str = 'cluster',
         policy_config: Dict[str, str] = POLICY_CONFIG_TEMPLATE,
-        log_file: str = None,
     ):
         super().__init__(onprem_manager, cloud_manager)
-        self.spill_to_cloud = spill_to_cloud
-
         copy_dict = dict(POLICY_CONFIG_TEMPLATE)
         copy_dict.update(policy_config)
         self.policy_config = copy_dict
@@ -87,19 +83,9 @@ class FIFOWaitPolicy(BasePolicy):
         self.queue_policy = policy_config['queue_policy']
         self.loop = policy_config['loop']
         self.min_waiting_time = policy_config['min_waiting_time']
-        self.log_file = log_file
 
         self.waiting_policy_cls = waiting_policies.get_waiting_policy_cls(
             self.waiting_policy)(self.waiting_coeff)
-
-        self.spilled_jobs_path = self.log_file
-        with open(self.spilled_jobs_path, "a") as f:
-            f.write("Scheduler spun up! \n")
-        if spill_to_cloud == 'log':
-            self.cloud_manager = LogClusterManager(cloud_manager.cluster_name,
-                                                   self.spilled_jobs_path)
-        elif spill_to_cloud == 'skypilot':
-            self.cloud_manager = SkyPilotManager(cloud_manager.cluster_name)
 
     def process_queue(self, job_queue: List[Job]):
 
