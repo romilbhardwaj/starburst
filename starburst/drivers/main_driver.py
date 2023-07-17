@@ -4,11 +4,13 @@ Driver for Starburst. Use this to run Starburst.
 import argparse
 import asyncio
 import logging
+import os
+import yaml
 
 from starburst.event_sources.grpc.job_submit_event_source import \
- JobSubmissionEventSource
+    JobSubmissionEventSource
 from starburst.event_sources.sched_tick_event_source import\
- SchedTickEventSource
+    SchedTickEventSource
 from starburst.scheduler.starburst_scheduler import StarburstScheduler
 from starburst.utils.log_manager import SimpleEventLogger
 
@@ -49,8 +51,53 @@ def parse_args():
                         type=str,
                         default=CLOUD_K8S_CLUSTER_NAME,
                         help='Name of cloud K8s cluster')
-    args = parser.parse_args()
-    return args
+    parser.add_argument('--config',
+                        type=str,
+                        help='Optional policy config file')
+
+    policy_parser = argparse.ArgumentParser(
+        description='Launches Starburst scheduler with specified policy.')
+    policy_parser.add_argument('--queue_policy',
+                               type=str,
+                               default='fifo',
+                               help='Queueing policy which sets the order of the jobs in the queue. Possible options: [\'fifo\', \'sjf\', \']')
+    policy_parser.add_argument('--waiting_policy',
+                               type=str,
+                               default='constant',
+                               help='Waiting policy which sets how long jobs wait in queue before timing out to the cloud.')
+    policy_parser.add_argument('--waiting_coeff',
+                               type=float,
+                               default=10,
+                               help='Sets the hyperparameter for each waiting policy')
+    policy_parser.add_argument('--waiting_budget',
+                               type=float,
+                               default=-1,
+                               help='Estimates the waiting coeff based on the waiting budget. Overrides waiting_coeff if it is set to a non-negative value.')
+    policy_parser.add_argument('--min_waiting_time',
+                               type=float,
+                               default=10,
+                               help='Minimum waiting waiting for jobs. Equivalent to Kubernetes cluster autoscaler 10 (s) waiting time.')
+    policy_parser.add_argument('--loop',
+                               type=str,
+                               default='False',
+                               help='Removes head of line blocking, allows scheduler to loop through all jobs in the queue.')
+
+    args, unknown = parser.parse_known_args()
+    policy_args, _ = policy_parser.parse_known_args(unknown)
+
+    if policy_args.loop is not None:
+        policy_args.loop = policy_args.loop.lower() in ['true', '1']
+
+    return args, policy_args
+
+
+def load_config(config_path):
+    file_path = os.path.abspath(config_path)
+    if not os.path.isfile(file_path):
+        raise FileNotFoundError(f"Sweep config YAML not found: {file_path}")
+    with open(file_path, 'r') as file:
+        data = yaml.safe_load(file)
+    return data
 
 
 def launch_starburst_scheduler(
@@ -90,7 +137,11 @@ def launch_starburst_scheduler(
 
 
 if __name__ == '__main__':
-    args = parse_args()
+    args, policy_args = parse_args()
+
+    policy_config = load_config(
+        args.config) if args.config else vars(policy_args)
+
     onprem_config = {
         'cluster_type': 'k8',
         'cluster_args': {
@@ -103,10 +154,11 @@ if __name__ == '__main__':
             'cluster_name': args.cloud_k8s_cluster_name
         }
     }
-    launch_starburst_scheduler(grpc_port=args.grpc_port,
-                               sched_tick_time=args.sched_tick_time,
-                               clusters={
-                                   'onprem': onprem_config,
-                                   'cloud': cloud_config
-                               },
-                               policy_config={'waiting_policy': None})
+    launch_starburst_scheduler(
+        grpc_port=args.grpc_port,
+        sched_tick_time=args.sched_tick_time,
+        clusters={
+            'onprem': onprem_config,
+            'cloud': cloud_config
+        },
+        policy_config=policy_config,)
