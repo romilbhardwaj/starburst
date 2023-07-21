@@ -150,16 +150,22 @@ def handle_cluster_type_specific_args(type, args, config):
 
 
 def parse_args():
+    # If config file passed, use values in config file as defaults
+    # Otherwise, use hardcoded values
     config_parser = get_config_argparse()
     config_args, unknown = config_parser.parse_known_args()
     config = load_config(
         config_args.config) if config_args.config is not None else {}
 
+    # Create separate argparser for scheduler and policy args
     scheduler_parser = get_scheduler_argparse(config)
     policy_parser = get_policy_argparse(config)
 
     scheduler_args, unknown = scheduler_parser.parse_known_args(unknown)
     policy_args, unknown = policy_parser.parse_known_args(unknown)
+
+    # Cloud cluster can be one of k8, log, skypilot
+    # Create and handle each type with a different parser
     cluster_args = handle_cluster_type_specific_args(
         scheduler_args.cloud_cluster_type, unknown, config)
 
