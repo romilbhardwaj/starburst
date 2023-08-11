@@ -204,7 +204,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--config",
         type=str,
-        default="../../scripts/cpu_sweep.yaml",
+        default="../../sweep_examples/cpu_sweep.yaml",
         help="Input YAML config for sweep.",
     )
     parser.add_argument("--debug",

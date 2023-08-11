@@ -2,7 +2,9 @@
 workload_type: cpu_sleep
 submit_time: 15
 random_seed: 13
-
+# Cluster Parameters
+onprem_cluster: gke_sky-burst_us-central1-c_jc-onprem
+cloud_cluster: gke_sky-burst_us-central1-c_jc-cloud
 # Job generation parameters
 arrival_dist: uniform
 arrival_param: 5
@@ -27,9 +29,9 @@ clusters:
   onprem:
     cluster_type: k8
     cluster_args:
-      cluster_name: mluo-onprem
+      cluster_name: gke_sky-burst_us-central1-c_jc-onprem
   # Cloud cluster config.
   cloud:
     cluster_type: log
     cluster_args:
-      cluster_name: mluo-cloud
+      cluster_name: gke_sky-burst_us-central1-c_jc-cloud
