@@ -129,7 +129,7 @@ def launch_run(run_config: dict, sweep_name: str, run_index: int = 0):
         'loop': run_config.loop,
         'min_waiting_time': run_config.min_waiting_time,
     }
-    run_config.clusters['cloud']['cluster_args']['log_file'] = (
+    run_config.clusters['cloud']['log_file'] = (
         f'{LOG_DIRECTORY.format(name=sweep_name)}/events/'
         f'{run_index}.log')
 

@@ -33,23 +33,31 @@ ONPREM_K8S_CLUSTER_NAME = 'kind-onprem'
 CLOUD_CLUSTER_NAME = 'kind-cloud'
 
 
+def cluster_csv_to_dict(s):
+    if not s:
+        return {}
+
+    pairs = s.split(',')
+    return {pair.split('=')[0]: pair.split('=')[1] for pair in pairs}
+
+
 def get_config_argparse():
     parser = argparse.ArgumentParser(
         description='Starburst argparse for config file.')
     parser.add_argument('--config',
                         type=str,
                         help='Optional policy config file')
-    return parser
-
-
-def get_scheduler_argparse():
-    parser = argparse.ArgumentParser(
-        description='Launches Starburst scheduler.')
     parser.add_argument('--grpc_port',
                         type=int,
                         default=GRPC_PORT,
                         choices=range(1, 2**16),
                         help='GRPC port to listen on')
+    parser.add_argument('--onprem-args',
+                        type=str,
+                        help='CSV representation of onprem cluster args')
+    parser.add_argument('--cloud-args',
+                        type=str,
+                        help='CSV representation of cloud cluster args')
     return parser
 
 
@@ -101,31 +109,10 @@ def parse_args():
         config_args.config) if config_args.config is not None else {}
 
     # Create separate argparser for scheduler and policy args
-    scheduler_parser = get_scheduler_argparse()
     policy_parser = get_policy_argparse(config)
-
-    scheduler_args, unknown = scheduler_parser.parse_known_args(unknown)
     policy_args, unknown = policy_parser.parse_known_args(unknown)
 
-    # Cloud cluster can be one of k8, log, skypilot
-    # Create and handle each type with a different parser
-    clusters = config.get("clusters") or {"onprem": {}, "cloud": {}}
-    current_cluster = None
-
-    for item in unknown:
-        if item in ['onprem', 'cloud']:
-            current_cluster = item
-            clusters[current_cluster] = {}
-        elif current_cluster is not None:
-            cluster_attribute, value = item.split('=')
-            if cluster_attribute == 'cluster_type':
-                clusters[current_cluster]['cluster_type'] = value
-            else:
-                if 'cluster_args' not in clusters[current_cluster]:
-                    clusters[current_cluster]['cluster_args'] = {}
-                clusters[current_cluster]['cluster_args'][cluster_attribute] = value
-
-    return scheduler_args, policy_args, clusters
+    return config_args, policy_args
 
 
 def load_config(config_path):
@@ -173,15 +160,18 @@ def launch_starburst_scheduler(
 
 
 if __name__ == '__main__':
-    scheduler_args, policy_args, clusters = parse_args()
+    config_args, policy_args = parse_args()
 
-    print(clusters["onprem"])
-    print(clusters["cloud"])
+    onprem_args = cluster_csv_to_dict(config_args.onprem_args)
+    cloud_args = cluster_csv_to_dict(config_args.cloud_args)
+
+    print(f"onprem_args: {onprem_args}")
+    print(f"cloud_args: {cloud_args}")
 
     launch_starburst_scheduler(
-        grpc_port=scheduler_args.grpc_port,
+        grpc_port=config_args.grpc_port,
         clusters={
-            'onprem': clusters["onprem"],
-            'cloud': clusters["cloud"]
+            'onprem': onprem_args,
+            'cloud': cloud_args,
         },
         policy_config=vars(policy_args),)

@@ -20,7 +20,7 @@ SCHED_TICK = 1
 def create_cluster_manager(cluster_config: Dict[str, Any]) -> Manager:
     """ Create a cluster manager based on the cluster config. """
     cluster_type = cluster_config['cluster_type']
-    cluster_args = cluster_config['cluster_args']
+    del cluster_config['cluster_type']
     cluster_manager_cls = None
     if cluster_type == 'k8':
         cluster_manager_cls = KubernetesManager
@@ -38,7 +38,7 @@ def create_cluster_manager(cluster_config: Dict[str, Any]) -> Manager:
                                                     co_argcount]
 
     # Filter the dictionary keys based on parameter names
-    args = {k: v for k, v in cluster_args.items() if k in class_params}
+    args = {k: v for k, v in cluster_config.items() if k in class_params}
 
     # Create an instance of the class with the extracted arguments
     return cluster_manager_cls(**args)
@@ -46,7 +46,7 @@ def create_cluster_manager(cluster_config: Dict[str, Any]) -> Manager:
 
 class StarburstScheduler:
     """ Starburst scheduler.
-    
+
     Description: Starburst scheduler is responsible for scheduling jobs on both
     the on-prem and cloud clusters. It is also responsible for handling events,
     such as job add events (JobAdd) and scheduling ticks (SchedulerTick).
@@ -61,7 +61,7 @@ class StarburstScheduler:
     ):
         """
         Main Starburst scheduler class.
-        
+
         Responsible for processing events in the provided event queue.
 
         Args:
@@ -143,7 +143,7 @@ class StarburstScheduler:
     async def scheduler_loop(self):
         """
         Main scheduler loop.
-        
+
         This is the main loop for the scheduler. It will process events
         """
         while True:

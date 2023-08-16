@@ -28,10 +28,8 @@ clusters:
   # On-premise cluster config.
   onprem:
     cluster_type: k8
-    cluster_args:
-      cluster_name: gke_sky-burst_us-central1-c_jc-onprem
+    cluster_name: gke_sky-burst_us-central1-c_jc-onprem
   # Cloud cluster config.
   cloud:
     cluster_type: log
-    cluster_args:
-      cluster_name: gke_sky-burst_us-central1-c_jc-cloud
+    cluster_name: gke_sky-burst_us-central1-c_jc-cloud

@@ -63,7 +63,7 @@ class JobStateTracker(object):
             cloud_cluster (Dict[str, Any]): Cloud cluster configuration.
         """
         for cluster_config in clusters.values():
-            cluster_args = cluster_config['cluster_args']
+            cluster_args = cluster_config
             cluster_name = cluster_args['cluster_name']
             cluster_type = cluster_config['cluster_type']
             if cluster_type == 'log':

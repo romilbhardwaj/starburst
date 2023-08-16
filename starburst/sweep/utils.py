@@ -70,7 +70,7 @@ def check_empty_cluster(clusters: Dict[str, Any]) -> bool:
     for _, cluster_config in clusters.items():
         if cluster_config['cluster_type'] != 'k8':
             continue
-        cluster_args = cluster_config['cluster_args']
+        cluster_args = cluster_config
         kube_cluster_name = cluster_args['cluster_name']
         config.load_kube_config(context=kube_cluster_name)
         api = client.CoreV1Api()
@@ -93,7 +93,7 @@ def clear_clusters(clusters: Dict[str, Any]):
             for _, cluster_config in clusters.items():
                 if cluster_config['cluster_type'] != 'k8':
                     continue
-                cluster_args = cluster_config['cluster_args']
+                cluster_args = cluster_config
                 kube_cluster_name = cluster_args['cluster_name']
                 # Fetching cluster APIs
                 config.load_kube_config(context=kube_cluster_name)
