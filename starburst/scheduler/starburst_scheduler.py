@@ -20,7 +20,6 @@ SCHED_TICK = 1
 def create_cluster_manager(cluster_config: Dict[str, Any]) -> Manager:
     """ Create a cluster manager based on the cluster config. """
     cluster_type = cluster_config['cluster_type']
-    del cluster_config['cluster_type']
     cluster_manager_cls = None
     if cluster_type == 'k8':
         cluster_manager_cls = KubernetesManager
