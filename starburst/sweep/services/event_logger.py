@@ -93,7 +93,7 @@ def event_logger_loop(clusters: Dict[str, Any], jobs: Dict[Any, Any],
 
     # Preprocessing cluster event data.
     for cluster_cls, cluster_config in clusters.items():
-        cluster_name = cluster_config['cluster_args']['cluster_name']
+        cluster_name = cluster_config['cluster_name']
         cluster_type = cluster_config['cluster_type']
         if cluster_type != 'k8':
             continue

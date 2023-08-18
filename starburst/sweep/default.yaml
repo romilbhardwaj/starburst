@@ -46,9 +46,8 @@ clusters:
   onprem:
     # Limitation: Only k8 for now.
     cluster_type: k8
-    cluster_args:
-      # GKE cluster name for on-prem cluster. This is used to submit jobs to the on-prem cluster.
-      cluster_name: mluo-onprem
+    # GKE cluster name for on-prem cluster. This is used to submit jobs to the on-prem cluster.
+    cluster_name: mluo-onprem
   # Cloud cluster config.
   cloud:
     # Which cluster manager type the cluster is.
@@ -57,8 +56,7 @@ clusters:
     #   • K8: Uses `cloud_cluster` (GKE cluster) to submit and run jobs.
     #   • Skypilot: Uses Skypilot to automatically provision a cloud cluster and submit and run jobs on the cluster.
     cluster_type: k8
-    cluster_args:
-      cluster_name: mluo-cloud
+    cluster_name: mluo-cloud
 
 #====================================================================================================#
 #                                          Scheduler Parameters                                      #
