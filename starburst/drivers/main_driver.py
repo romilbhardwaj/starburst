@@ -165,9 +165,6 @@ if __name__ == '__main__':
     onprem_args = cluster_csv_to_dict(config_args.onprem_args)
     cloud_args = cluster_csv_to_dict(config_args.cloud_args)
 
-    print(f"onprem_args: {onprem_args}")
-    print(f"cloud_args: {cloud_args}")
-
     launch_starburst_scheduler(
         grpc_port=config_args.grpc_port,
         clusters={

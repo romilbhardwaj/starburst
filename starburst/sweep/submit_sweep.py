@@ -133,11 +133,12 @@ def launch_run(run_config: dict, sweep_name: str, run_index: int = 0):
         f'{LOG_DIRECTORY.format(name=sweep_name)}/events/'
         f'{run_index}.log')
 
+    policy_config['schedule_tick'] = run_config.schedule_tick
+
     scheduler_service = mp.Process(
         target=driver.launch_starburst_scheduler,
         args=(
             driver.GRPC_PORT,
-            run_config.schedule_tick,
             run_config.clusters,
             policy_config,
         ),

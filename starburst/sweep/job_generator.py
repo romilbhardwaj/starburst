@@ -134,9 +134,11 @@ class GPUSleepJobGenerator(JobGenerator):
     """
 
     def get_resources(self) -> Dict[str, int]:
+        cpu_dist = self.config["cpu_dist"]
         gpu_dist = self.config["gpu_dist"]
+        cpus = int(np.random.choice(self.config["cpu_sizes"], p=cpu_dist))
         gpus = int(np.random.choice(self.config["gpu_sizes"], p=gpu_dist))
-        return {"cpu": 11 * gpus, "gpu": gpus}
+        return {"cpu": cpus, "gpu": gpus}
 
     def get_jinja_template(self):
         return "sleep_job.yaml.jinja"
