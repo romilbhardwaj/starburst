@@ -366,13 +366,13 @@ SWEEPS = {
 		    "sample_real_workloads": True,
 		    "job_type": "train",
 			# Training jobs have pytroch image to override this lol.
-		    "image": "gcr.io/sky-burst/skyburst:latest",
+		    "image": "gcr.io/deeplearning-platform-release/pytorch-gpu.1-12",
         },
 	    "varying_values": {	
 		    "policy": ['star-wait'], # Computes the optimal values
 
             "wait_time": [15], # TODO: Specify 10~15 seconds wait -- moved from 5 to 15 
-            "arrival_rate": [32/3600]#[24.5/(60*60), 32/3600] # Moved from 20 to 32 -- job/second ~ 45 minutes per job jobs per hour / 32 gpu cluster  -- system util 75 -- 32 jobs ~ 1.3 jobs * 32 jobs = 41jobs (1 gpu ~ 45min per job) -- 41 / 2 ~ 21 jobs per hour 
+            "arrival_rate": [24.5, 32/3600]#[24.5/(60*60), 32/3600] # Moved from 20 to 32 -- job/second ~ 45 minutes per job jobs per hour / 32 gpu cluster  -- system util 75 -- 32 jobs ~ 1.3 jobs * 32 jobs = 41jobs (1 gpu ~ 45min per job) -- 41 / 2 ~ 21 jobs per hour 
         }
     },
 	"49": { # Final Sweep -- OVERLOADED util 

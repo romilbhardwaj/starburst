@@ -408,8 +408,6 @@ def generate_sampled_job_yaml(job_id=0, job=None):
 
 	for w in workload: 
 		if workload[w] > 0: 
-			if w == 'gpu':
-				continue
 			template = env.get_template("{}_resource.yaml.jinja".format(w))
 			output += "\n" + template.render({w: workload[w]})
 
@@ -421,9 +419,7 @@ def generate_sampled_job_yaml(job_id=0, job=None):
 			break 
 
 	for w in workload: 
-		if workload[w] > 0: 
-			if w == 'gpu':
-				continue
+		if workload[w] > 0:
 			template = env.get_template("{}_resource.yaml.jinja".format(w))
 			output += "\n" + template.render({w: workload[w]})
 
