@@ -14,7 +14,7 @@ spec:
       schedulerName: chakra
       containers: 
       - name: sleep
-        image: gcr.io/deeplearning-platform-release/pytorch-gpu.1-12
+        image: {{image}}
         volumeMounts: 
         - name: dshm
           mountPath: /dev/shm

@@ -10,13 +10,15 @@ class Job(object):
                  job_start_time: float,
                  job_end_time: float,
                  job_yaml: str,
-                 resources: dict = None):
+                 resources: dict = None,
+                 preempted: bool = False):
         self.job_name = job_name
         self.job_submit_time = job_submit_time
         self.job_event_queue_add_time = None
         self.job_start_time = job_start_time
         self.job_end_time = job_end_time
         self.job_yaml = job_yaml
+        self.preempted = preempted
         self.resources = resources  # Ideally read from job yaml
         self.job_id = str(random.randint(0, 1000000))
 

@@ -117,46 +117,47 @@ def generate_jobs(hyperparameters):
 	# TODO: Add 10 jobs at the very beginning separated by 10 seconds seach 
 	
 	#i = 0 
-	while True:
-		if job_index >= 5:
-			break
-		job = {}
-		gpus = int(np.random.choice(hp.gpu_sizes, p=hp.gpu_dist)) #min(0, int(np.random.exponential(scale=2)))
-		cpus = 11 * gpus
-		memory = min(0, int(np.random.exponential(scale=50)))
-		workload = {"gpu": gpus, "cpu":cpus, "memory":memory}
-		job['workload'] = workload
-		submit_time += 30
-		job_duration = max(30, np.random.exponential(scale=hp.mean_duration))
-		job_duration = min(job_duration, 10000) # Set upperbound
+	# while True:
+	# 	if job_index >= 5:
+	# 		break
+	# 	job = {}
+	# 	gpus = int(np.random.choice(hp.gpu_sizes, p=hp.gpu_dist)) #min(0, int(np.random.exponential(scale=2)))
+	# 	cpus = 11 * gpus
+	# 	memory = min(0, int(np.random.exponential(scale=50)))
+	# 	workload = {"gpu": gpus, "cpu":cpus, "memory":memory}
+	# 	job['workload'] = workload
+	# 	submit_time += 30
+	# 	job_duration = max(30, np.random.exponential(scale=hp.mean_duration))
+	# 	job_duration = min(job_duration, 10000) # Set upperbound
 
-		# TODO: Implement training -- include estimate runtime
-		if hp.sample_real_workloads:
-			logger.debug(f'sampling real world workloads')
-			estimated_runtime, training_job_script = sample_training_job(gpus, job_duration)
-			job['setup_script'] = training_job_script
-			job['job_duration'] = estimated_runtime #train_job['estimated_training_runtime'] 
-		elif hp.job_type == 'train':
-			logger.debug(f'sampling train jobs')
-			train_config = np.random.choice(hp.train_names, p=hp.train_dist)
-			train_job = TRAINING_JOBS[train_config]
-			job['setup_script'] = train_job['train_script']
-			job['job_duration'] = train_job['estimated_training_runtime']
-		else:
-			job['setup_script'] = hp.setup_script
-			job['job_duration'] = job_duration
-		# TODO: First find set of all jobs with same # of gpus
-		# TODO: Find job with closest time given gpu distribution 
-		job['submit_time'] = submit_time
-		job['scheduler_submit_time'] = None
-		job['image'] = hp.image
-		#job['sleep'] = hp.sleep
-		job['job_type'] = hp.job_type
-		jobs[job_index] = job
-		arrivals.append((job_index, submit_time))
-		job_index += 1
+	# 	# TODO: Implement training -- include estimate runtime
+	# 	if hp.sample_real_workloads:
+	# 		logger.debug(f'sampling real world workloads')
+	# 		estimated_runtime, training_job_script = sample_training_job(gpus, job_duration)
+	# 		job['setup_script'] = training_job_script
+	# 		job['job_duration'] = estimated_runtime #train_job['estimated_training_runtime'] 
+	# 	elif hp.job_type == 'train':
+	# 		logger.debug(f'sampling train jobs')
+	# 		train_config = np.random.choice(hp.train_names, p=hp.train_dist)
+	# 		train_job = TRAINING_JOBS[train_config]
+	# 		job['setup_script'] = train_job['train_script']
+	# 		job['job_duration'] = train_job['estimated_training_runtime']
+	# 	else:
+	# 		job['setup_script'] = hp.setup_script
+	# 		job['job_duration'] = job_duration
+	# 	# TODO: First find set of all jobs with same # of gpus
+	# 	# TODO: Find job with closest time given gpu distribution 
+	# 	job['submit_time'] = submit_time
+	# 	job['scheduler_submit_time'] = None
+	# 	job['image'] = hp.image
+	# 	#job['sleep'] = hp.sleep
+	# 	job['job_type'] = hp.job_type
+	# 	jobs[job_index] = job
+	# 	arrivals.append((job_index, submit_time))
+	# 	job_index += 1
 	
 	while True:
+		# Mod
 		if hp.time_constrained == True and submit_time > hp.batch_time:
 			break
 		elif hp.time_constrained == False and job_index >= hp.total_jobs:
@@ -164,13 +165,15 @@ def generate_jobs(hyperparameters):
 		job = {}
 		gpus = int(np.random.choice(hp.gpu_sizes, p=hp.gpu_dist)) #min(0, int(np.random.exponential(scale=2)))
 		cpus = 11 * gpus
-		memory = min(0, int(np.random.exponential(scale=50)))
+		memory = 0
+		#memory = min(0, int(np.random.exponential(scale=50)))
 		workload = {"gpu": gpus, "cpu":cpus, "memory":memory}
 		job['workload'] = workload
 
 		if hp.uniform_submission:
 			submit_time += hp.uniform_arrival
-		else: 
+		else:
+			# mod
 			submit_time += max(3, np.random.exponential(scale=1/hp.arrival_rate))
 
 		job_duration = max(30, np.random.exponential(scale=hp.mean_duration))
@@ -205,7 +208,6 @@ def generate_jobs(hyperparameters):
 		jobs[job_index] = job
 		arrivals.append((job_index, submit_time))
 		job_index += 1
-
 	return jobs, arrivals
 
 def save_jobs(jobs, repo, tag):
@@ -252,18 +254,31 @@ def submit(jobs={}, arrivals=[], timestamp=None, index=None, clusters=None):
 		curr_time = time.time()
 		if job_index < total_jobs and curr_time > arrivals[job_index][1] + start_time:
 			job = jobs[job_index]
-			generate_sampled_job_yaml(job_id=job_index, job=job)
+			#generate_sampled_job_yaml(job_id=job_index, job=job)
 			submit_time = time.time()
-			subprocess.run(['python3', '-m', 'starburst.drivers.submit_job', '--job-yaml', '../../examples/sampled/sampled_job.yaml', '--submit-time', str(submit_time)])
+			retry_count = 0
+			max_retries = 5
+			while retry_count < max_retries:
+				try:
+					# Attempt to run the subprocess with a timeout
+					generate_sampled_job_yaml(job_id=job_index, job=job)
+					subprocess.run(['python3', '-m', 'starburst.drivers.submit_job', '--job-yaml', '../../examples/sampled/sampled_job.yaml', '--submit-time', str(submit_time)], timeout=10)
+					break  # Break the loop if subprocess completes successfully
+				except subprocess.TimeoutExpired:
+					# Handle the timeout
+					print(f"Subprocess timed out. Attempt {retry_count + 1} of {max_retries}.")
+					retry_count += 1  # Increment retry count
+
 			#logger.debug(f'****** Job {job_index} submission time {time.time()}')
 			submit_time = time.time()
 			submit_times[job_index] = submit_time
 			job_index += 1
 			with open(p2_log, "a") as f:
-				f.write("Submitting job " + str(job) + '\n')
+				f.write(f"Submitting job {job_index}: " + str(job) + '\n')
 			update_scheduler_submit_times(submit_times=submit_times)
 		#TODO: Improve stop condition -- wait until last job completes
-		if job_index >= total_jobs: 
+		time.sleep(0.01)
+		if job_index >= total_jobs:
 			break
 	
 	update_scheduler_submit_times(submit_times=submit_times)
@@ -288,8 +303,8 @@ def submit(jobs={}, arrivals=[], timestamp=None, index=None, clusters=None):
 			log_jobs = []
 			for log in cloud_log_list[1:-1]:
 				match = re.search(r"Cloud Job \|\| job id (\S+) \| (\S+)", log)
-				match = match.groups()
 				if match:
+					match = match.groups()
 					job = int(match[0])
 					log_jobs.append(job)
 			return log_jobs
@@ -344,7 +359,7 @@ def submit(jobs={}, arrivals=[], timestamp=None, index=None, clusters=None):
 		with open(p2_log, "a") as f:
 			f.write("Check Time (seconds): " + str(check_end - check_start) + '\n')
 
-		time.sleep(1)
+		time.sleep(5)
 
 	with open(p2_log, "a") as f:
 		f.write("reached end of p2 " + str(index) + '\n')
@@ -375,9 +390,9 @@ def generate_sampled_job_yaml(job_id=0, job=None):
 	#sleep=job['sleep']
 	job_type=job['job_type']
 
-	if job_type == 'sleep': 
+	if job_type == 'sleep' or job_type == 'train':
 		template = env.get_template("sampled_job.yaml.jinja")
-		output += template.render({"job":str(job_id), "time":str(sleep_time)})
+		output += template.render({"job":str(job_id), "time":str(sleep_time), "image":str(image)})
 	elif job_type == 'train':
 		template = env.get_template("train_job.yaml.jinja")
 		output += template.render({"job":str(job_id), "image":str(image), "setup_script":str(setup_script)})
@@ -390,9 +405,11 @@ def generate_sampled_job_yaml(job_id=0, job=None):
 			template = env.get_template("resource_limit.yaml.jinja")
 			output += "\n" + template.render()
 			break 
-	
+
 	for w in workload: 
 		if workload[w] > 0: 
+			if w == 'gpu':
+				continue
 			template = env.get_template("{}_resource.yaml.jinja".format(w))
 			output += "\n" + template.render({w: workload[w]})
 
@@ -405,12 +422,13 @@ def generate_sampled_job_yaml(job_id=0, job=None):
 
 	for w in workload: 
 		if workload[w] > 0: 
+			if w == 'gpu':
+				continue
 			template = env.get_template("{}_resource.yaml.jinja".format(w))
 			output += "\n" + template.render({w: workload[w]})
 
 	template = env.get_template("restart_limit.yaml.jinja")
 	output += "\n" + template.render()
-
 	job_yaml = open("../../examples/sampled/sampled_job.yaml", "w")
 	job_yaml.write(output)
 	job_yaml.close()

@@ -1,6 +1,6 @@
-export PYTHONPATH=/home/surya/starburst/
+export PYTHONPATH=/home/gcpuser/starburst/
 
-cd /home/surya/starburst/starburst/utils
+cd /home/gcpuser/starburst/starburst/utils
 
 current_time=$(date +%s)
 
@@ -17,5 +17,5 @@ python3 clean_processes.py
 python3 clean_processes.py
 python3 clean_processes.py
 
-#nohup python3 submit_jobs.py run $1 > ../logs/logs/output_$2.log 2>&1 &
+#python3 submit_jobs.py run $1 $current_time 
 nohup python3 submit_jobs.py run $1 $current_time > ../logs/archive/$current_time/starburst.log 2>&1 &

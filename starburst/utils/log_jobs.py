@@ -91,7 +91,7 @@ def retrieve_events_df(event_number=None, avoid_congestion=False, only_dict=Fals
 
 		files = os.listdir(cluster_data_path)
 
-		for i in range(len(files)):
+		for i in range(len(files)//2):
 			#import pdb; pdb.set_trace()
 			file = str(i) + ".json"
 			cluster_log_path = cluster_data_path + file
@@ -370,8 +370,9 @@ def retrieve_df(event_number=None, avoid_congestion=False):
 			sweep = json.load(f)
 
 		files = os.listdir(cluster_data_path)
+		print(files)
 
-		for i in range(len(files)):
+		for i in range(len(files)//2):
 			#import pdb; pdb.set_trace()
 			file = str(i) + ".json"
 			cluster_log_path = cluster_data_path + file

@@ -40,8 +40,17 @@ def run_client(ip, port, job_yaml_path):
         curr_time = time.time()
         print(f'****** Job Sent to GRPC SERVER -- Job {args.submit_time} at Time {curr_time} with Delta {curr_time - args.submit_time}')
         #print(f'****** Job Reached GRPC SERVER -- Job {job_yaml} at Time {time.time()}')
-        ret = stub.SubmitJob(job_submit_pb2.JobMessage(JobYAML=job_yaml))
-        print(f"Got retcode {ret.retcode}")
+        for attempt in range(5):
+            try:
+                ret = stub.SubmitJob(job_submit_pb2.JobMessage(JobYAML=job_yaml), timeout=5)
+                print(f"Got retcode {ret.retcode}")
+                return ret.retcode
+            except grpc.RpcError as e:
+                if e.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
+                    print(f"Attempt {attempt + 1}: Timeout occurred, retrying...")
+                else:
+                    print(f"An error occurred: {e}")
+                    break
 
 
 if __name__ == '__main__':

@@ -2,14 +2,48 @@
 import logging
 import time
 from typing import Iterable, List
+import tempfile
+import threading
 import heapq 
 import os 
+import time
+import subprocess
+
+import asyncio
 
 from starburst.cluster_managers.kubernetes_manager import KubernetesManager
 from starburst.types.job import Job
 
 logger = logging.getLogger(__name__)
 
+def resubmit_job(job):
+    # Emulates running for 300 - 2 seconds
+    time.sleep(298)
+
+    with tempfile.NamedTemporaryFile(mode='w+', delete=False, suffix='.yaml') as temp_file:
+        temp_file.write(job.job_yaml)
+        job_yaml_path = temp_file.name
+
+    submit_time = time.time()
+    print(f'RESUBMITTING PREEMPTED JOB {job.job_name}: {submit_time}, {job_yaml_path}', flush=True)
+    # Running a subprocess with shell features
+    retry_count = 0
+    max_retries = 5
+    while retry_count < max_retries:
+        try:
+            # Attempt to run the subprocess with a timeout
+            subprocess.run(['python3', '-m', 'starburst.drivers.submit_job', '--job-yaml', job_yaml_path, '--submit-time', str(submit_time)], timeout=10)
+            os.remove(job_yaml_path)
+            break  # Break the loop if subprocess completes successfully
+        except subprocess.TimeoutExpired:
+            # Handle the timeout
+            print(f"Subprocess timed out. Attempt {retry_count + 1} of {max_retries}.")
+            retry_count += 1  # Increment retry count
+
+def submit_preempted_job(job):
+    # Resubmit preempted job in a separate thread that sleeps for 29.8 seconds
+    t = threading.Thread(target=resubmit_job, args=(job,))
+    t.start()
 
 def get_policy(policy: str):
     """ Get the policy object based on the policy name. """
@@ -77,7 +111,6 @@ class FIFOWaitPolicy(BasePolicy):
                  batch_repo: int = 0,
                  index: int = 0, 
                  ):
-        
         self.wait_threshold = wait_threshold
         self.policy = policy
         self.loop = loop
@@ -128,8 +161,10 @@ class FIFOWaitPolicy(BasePolicy):
         self.compute_wait_coefficient = (self.linear_wait_constant * self.total_jobs) / self.total_workload_volume # TODO: Computing incorrect value
         
         self.avg_job_size = self.total_workload_surface_area/self.total_jobs
+        self.avg_runtime = self.total_workload_time/self.total_jobs
         
         self.compute_wait_coefficient = self.max_tolerance/self.avg_job_size
+        self.resource_wait_coefficient = self.max_tolerance * self.avg_runtime / self.avg_job_size
 
         #self.onprem_only = self.job_data['hyperparameters']['onprem_only']
 
@@ -161,6 +196,7 @@ class FIFOWaitPolicy(BasePolicy):
     (1) Constant Wait 
     (2) Compute Wait = runtime * resources
     (3) Starburst = compute wait + loop + cpu balking 
+    (4) Starburst No Time Estimator = Star-Wait + loop + cpu balking
 
     Misc Todos
     # TODO: Mark jobs pending on the queue as pending, so they are not used to submit locally 
@@ -194,9 +230,11 @@ class FIFOWaitPolicy(BasePolicy):
                 job_id = int(job.job_name[4:])
                 job_duration = self.job_data[job_id]['job_duration']
                 job_resource = job.resources['gpu']
+                preempted = self.job_data[job_id]['preempted'] if 'preempted' in self.job_data[job_id] else False
                 timeout = 0
                 job_timed_out = False
                 if self.policy == 'constant': 
+                    # No-Wait (15 seconds, very small, due to system lag)
                     timeout = self.wait_threshold
                     job_timed_out = wait_time > timeout
                 elif self.policy == 'constant_optimal': 
@@ -208,19 +246,42 @@ class FIFOWaitPolicy(BasePolicy):
                 elif self.policy == 'resource_optimal': 
                     timeout = job.resources['gpu'] * self.resource_wait_coefficient
                     job_timed_out = wait_time > timeout #self.wait_threshold * self.linear_wait_constant
+                elif self.policy == 'star-wait':
+                    if preempted == False:
+                        # Initially No-Wait
+                        timeout = self.wait_threshold
+                        job_timed_out = wait_time > timeout
+                    else:
+                        timeout = self.job_data[job_id]['workload']['gpu'] * 3 * self.resource_wait_coefficient
+                        #timeout = job.resources['gpu'] * 3 * self.resource_wait_coefficient
+                        job_timed_out = wait_time > timeout
                 elif self.policy == 'compute_optimal' or self.policy == 'starburst': 
                     timeout = job_duration * job.resources['gpu'] * self.compute_wait_coefficient
                     job_timed_out = wait_time > timeout #self.wait_threshold * job.resources['gpus']
                 logger.debug(f'Cloud Timeout Submission Check || policy {self.policy} | job timed out {job_timed_out} | timeout value {timeout} | wait threshold {self.wait_threshold} | wait time {wait_time} | event queue wait time {event_wait_time} | curr time {loop_time} | submission time {job.job_submit_time} | event added time {job.job_event_queue_add_time} | input job duration {job_duration} | input job resources {str(job_resource)} | input job name {str(job_id)}')
                 if job_timed_out:
-                    logger.debug(f'Cloud Timeout Submission Entered || job {job.job_name} | spilling to cloud  {self.spill_to_cloud} | queue {job_queue}')
-                    if self.spill_to_cloud:
-                        self.cloud_manager.submit_job(job)
-                    job_queue.remove(job)
-                    # TODO: Share and save job runtimes for cloud jobs when spill over begins 
-                    # TODO: Log jobs name and time job reaches this condition
-                    with open(self.spilled_jobs_path, "a") as f:
-                        f.write(f'Cloud Job || job id {job_id} | job name {job.job_name} | estimated cloud start time {time.time()} | estimated job duration {job_duration} | submission time {job.job_event_queue_add_time} | gpus {job_resource} \n')
+                    if self.policy == 'star-wait' and not preempted and job_duration > 300:
+                        # Jobs longer than 5 min are preempted from cloud back to onprem.
+                        logger.debug(f'Preempted job entered || job {job.job_name} | spilling to cloud  {self.spill_to_cloud} | queue {job_queue}')
+                        if not self.spill_to_cloud:
+                            # Log preempted jobs.
+                            with open(self.spilled_jobs_path, "a") as f:
+                                f.write(f'Preempted Job || job id {job_id} | job name {job.job_name} | estimated cloud start time {time.time()} | estimated job duration {job_duration} | submission time {job.job_event_queue_add_time} | gpus {job_resource} \n')
+                            self.job_data[job_id]['preempted'] = True
+                            # Start thread
+                            submit_preempted_job(job)
+                        else:
+                            self.cloud_manager.submit_job(job)
+                        job_queue.remove(job)
+                    else:
+                        logger.debug(f'Cloud Timeout Submission Entered || job {job.job_name} | spilling to cloud  {self.spill_to_cloud} | queue {job_queue}')
+                        if self.spill_to_cloud:
+                            self.cloud_manager.submit_job(job)
+                        job_queue.remove(job)
+                        # TODO: Share and save job runtimes for cloud jobs when spill over begins 
+                        # TODO: Log jobs name and time job reaches this condition
+                        with open(self.spilled_jobs_path, "a") as f:
+                            f.write(f'Cloud Job || job id {job_id} | job name {job.job_name} | estimated cloud start time {time.time()} | estimated job duration {job_duration} | submission time {job.job_event_queue_add_time} | gpus {job_resource} \n')
 
             cloud_end_time = time.time()
             logger.debug(f"Looped through queue for cloud timeout || processing time {cloud_end_time - cloud_start_time}")
@@ -254,7 +315,7 @@ class FIFOWaitPolicy(BasePolicy):
                 else:
                     logger.debug(f'Onprem submission adverted | job {job.job_name} | queue {job_queue} | submission time {job.job_submit_time} | debug time {debug_time}')
                     #if self.loop:
-                    if self.policy == 'starburst': 
+                    if self.policy == 'starburst' or self.policy == 'star-wait': 
                         pass
                     else: 
                         break
